@@ -32,10 +32,11 @@ class LinuxProcStat:
 
 
 class PidInspectState(Enum):
-    """Whether a PID could be inspected as live, gone, or unverifiable."""
+    """Whether a PID could be inspected as live, gone, zombie, or unverifiable."""
 
     LIVE = "live"
     GONE = "gone"
+    ZOMBIE = "zombie"
     UNVERIFIABLE = "unverifiable"
 
 
@@ -96,7 +97,7 @@ def _read_linux_proc_stat(pid: int) -> PidInspectResult:
     if parsed is None:
         return PidInspectResult(PidInspectState.UNVERIFIABLE)
     if parsed.state in {"Z", "X"}:
-        return PidInspectResult(PidInspectState.GONE, parsed)
+        return PidInspectResult(PidInspectState.ZOMBIE, parsed)
     return PidInspectResult(PidInspectState.LIVE, parsed)
 
 
@@ -157,12 +158,17 @@ def inspect_pid_liveness(
     except subprocess.TimeoutExpired:
         return PidInspectState.UNVERIFIABLE
     if zombie:
-        return PidInspectState.GONE
+        return PidInspectState.ZOMBIE
     return PidInspectState.LIVE
 
 
 def is_pid_alive(pid: int, *, timeout: float | None = None) -> bool:
-    return inspect_pid_liveness(pid, timeout=timeout) is not PidInspectState.GONE
+    state = inspect_pid_liveness(pid, timeout=timeout)
+    return state in {PidInspectState.LIVE, PidInspectState.UNVERIFIABLE}
+
+
+def is_pid_reaped(pid: int, *, timeout: float | None = None) -> bool:
+    return inspect_pid_liveness(pid, timeout=timeout) is PidInspectState.GONE
 
 
 def read_process_group_id(pid: int, *, timeout: float | None = None) -> int | None:
@@ -273,8 +279,6 @@ def _list_darwin_process_group_pids(
         state = parts[2]
         if member_pgid != pgid:
             continue
-        if not state or state[0] in {"Z", "X"}:
-            continue
         members.append(pid)
     return members
 
@@ -326,20 +330,23 @@ def wait_process_group_gone(pgid: int, *, timeout: float) -> ProcessGroupState:
 def _wait_pid(pid: int, *, timeout: float) -> bool:
     deadline = timeout
     interval = 0.05
-    while deadline > 0 and is_pid_alive(pid):
+    while deadline > 0 and not is_pid_reaped(pid):
         try:
             waited_pid, _status = os.waitpid(pid, os.WNOHANG)
             if waited_pid == pid:
                 return True
         except ChildProcessError:
-            return not is_pid_alive(pid)
+            return is_pid_reaped(pid)
         except OSError:
             break
-        import time
-
         time.sleep(min(interval, deadline))
         deadline -= interval
-    return not is_pid_alive(pid)
+    if not is_pid_reaped(pid):
+        try:
+            os.waitpid(pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            pass
+    return is_pid_reaped(pid)
 
 
 def terminate_pid_tree(
@@ -457,9 +464,33 @@ def terminate_process_tree(
             "drain": "clean",
             "stop_requested": True,
         }
+        while True:
+            try:
+                pid, _status = os.waitpid(-1, os.WNOHANG)
+            except (ChildProcessError, OSError):
+                break
+            if pid == 0:
+                break
         return complete_bound_secondary_clean(proc, payload)
-    if proc.poll() is not None and process_group_state(
-        proc.pid, timeout=remaining()
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            break
+        if pid == 0:
+            break
+    raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
+    exited = False
+    if callable(raw_poll):
+        try:
+            exited = raw_poll() is not None
+        except Exception:
+            exited = proc.poll() is not None
+    else:
+        exited = proc.poll() is not None
+    if exited and process_group_state(
+        resolved_pgid if resolved_pgid is not None else proc.pid,
+        timeout=remaining(),
     ) is ProcessGroupState.GONE:
         return True
     return False
@@ -472,6 +503,7 @@ __all__ = [
     "ProcessGroupState",
     "inspect_pid_liveness",
     "is_pid_alive",
+    "is_pid_reaped",
     "list_process_group_pids",
     "pgid_has_live_members",
     "process_group_state",

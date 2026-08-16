@@ -68,7 +68,7 @@ from core_tools.provider.session_janitor import (
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
 DEFAULT_TURN_TREE_CLEANUP_SECONDS = 2.0
-_TRACK_IDENTITY_ENRICH_SECONDS = 0.5
+_MAX_IDLE_RESCUE_BYTES = 256 * 1024
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
@@ -413,21 +413,31 @@ class _SubprocessStdoutIterator(Iterator[str]):
         while True:
             if b"\n" in self._stdout_buf:
                 return True
+            if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
+                return False
             remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
             if deadline is not None and remaining <= 0:
                 while b"\n" not in self._stdout_buf and not self._stdout_eof:
+                    if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
+                        return False
                     if not self._fill_stdout_buffer(0.0):
                         break
                 if self._proc.poll() is not None and not self._stdout_eof:
                     self._drain_stdout_to_eof()
-                if self._stdout_buf and b"\n" not in self._stdout_buf:
-                    self._stdout_buf.extend(b"\n")
-                    return True
                 if self._stdout_eof or self._proc.poll() is not None:
                     if self._stdout_buf and b"\n" not in self._stdout_buf:
                         self._stdout_buf.extend(b"\n")
                     return bool(self._stdout_buf) or self._stdout_eof
-                return b"\n" in self._stdout_buf
+                if b"\n" in self._stdout_buf:
+                    return True
+                if (
+                    timeout == 0.0
+                    and self._stdout_buf
+                    and len(self._stdout_buf) < _MAX_IDLE_RESCUE_BYTES
+                ):
+                    self._stdout_buf.extend(b"\n")
+                    return True
+                return False
             if not self._fill_stdout_buffer(remaining):
                 if deadline is None:
                     continue
@@ -646,6 +656,7 @@ class _TrackedTurnProc:
     pgid: int | None = None
     member_identities: tuple[ProcessIdentity, ...] | None = None
     group_observed_gone: bool = False
+    generation: int = 0
 
 
 class CursorProvider:
@@ -1764,13 +1775,17 @@ class CursorProvider:
         if context is None:
             return
         with self._turn_proc_lock:
-            if proc.pid in self._tracked_turn_procs:
+            existing = self._tracked_turn_procs.get(proc.pid)
+            if existing is not None and existing.proc is proc:
                 return
+            if existing is not None:
+                self._tracked_turn_procs.pop(proc.pid, None)
             session_id, role = context
             self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
                 session_id=session_id,
                 role=role,
                 proc=proc,
+                generation=id(proc),
             )
         if timeout == 0:
             return
@@ -1818,7 +1833,9 @@ class CursorProvider:
                 members = tuple(captured)
         with self._turn_proc_lock:
             current = self._tracked_turn_procs.get(proc.pid)
-            if current is None:
+            if current is None or current is not entry or current.proc is not proc:
+                return
+            if current.generation and entry.generation and current.generation != entry.generation:
                 return
             current.identity = identity
             current.pgid = pgid
@@ -1893,7 +1910,7 @@ class CursorProvider:
                 return True
             if entry.group_observed_gone:
                 return False
-            return True
+            return False
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
@@ -1962,7 +1979,6 @@ class CursorProvider:
             stream: Iterator[str] | None = None
             teardown_deadline: list[float | None] = [None]
             detect_deadline: float | None = None
-            enricher: threading.Thread | None = None
             try:
                 if runner is default_process_runner:
                     iterator = _SubprocessStdoutIterator(
@@ -2014,16 +2030,6 @@ class CursorProvider:
 
                 if active_proc[0] is not None:
                     self._register_tracked_turn_proc(active_proc[0], timeout=0)
-                    proc_for_enrich = active_proc[0]
-                    enricher = threading.Thread(
-                        target=self._enrich_tracked_turn_proc,
-                        kwargs={
-                            "proc": proc_for_enrich,
-                            "timeout": _TRACK_IDENTITY_ENRICH_SECONDS,
-                        },
-                        name="cursor-track-identity",
-                        daemon=True,
-                    )
 
                 if idle_timeout > 0:
                     context = self._get_collect_context()
@@ -2044,26 +2050,24 @@ class CursorProvider:
                         first = next(lines)
                     except StopIteration:
                         return
-                    if enricher is not None and not enricher.ident:
-                        enricher.start()
+                    if (
+                        active_proc[0] is not None
+                        and teardown_deadline[0] is None
+                    ):
+                        teardown_deadline[0] = (
+                            time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
+                        )
                     yield first
                     yield from lines
 
                 yield from _observe()
-                if enricher is not None and not enricher.ident:
-                    enricher.start()
             finally:
                 proc = active_proc[0]
                 try:
-                    if enricher is not None:
-                        if not enricher.ident:
-                            enricher.start()
-                        leftover = (
-                            DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                            if teardown_deadline[0] is None
-                            else max(0.0, teardown_deadline[0] - time.monotonic())
+                    if teardown_deadline[0] is None:
+                        teardown_deadline[0] = (
+                            time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
                         )
-                        enricher.join(timeout=leftover)
                     if proc is not None:
                         tracked = self._tracked_turn_procs.get(proc.pid)
                         returncode = proc.poll()
@@ -2073,10 +2077,6 @@ class CursorProvider:
                             status if isinstance(status, dict) else None,
                         ):
                             tracked.group_observed_gone = True
-                        if teardown_deadline[0] is None:
-                            teardown_deadline[0] = (
-                                time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                            )
                         if tracked is not None:
                             self._refresh_tracked_members(
                                 tracked,

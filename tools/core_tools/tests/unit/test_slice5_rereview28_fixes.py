@@ -111,7 +111,7 @@ def test_darwin_group_scan_classifies_state_without_nested_liveness() -> None:
             elapsed = time.monotonic() - started
     assert elapsed < 0.5
     assert hung["count"] == 0
-    assert members == [10]
+    assert members == [10, 11]
     assert any("state=" in " ".join(argv) for argv in calls)
 
 

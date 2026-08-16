@@ -22,29 +22,34 @@ from top_down_planning.orchestrator.provider_turns import (
 
 def test_never_returning_popen_does_not_block_start_deadline() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
+    import subprocess
+    import sys
 
-    entered = threading.Event()
-    release = threading.Event()
-
-    def blocking_popen(*args, **kwargs):
-        del args, kwargs
-        entered.set()
-        release.wait(timeout=5.0)
-        raise OSError("cancelled")
+    def hang_ready(*args, **kwargs):
+        del args
+        return subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            pass_fds=kwargs.get("pass_fds", ()),
+            close_fds=kwargs.get("close_fds", True),
+            start_new_session=True,
+        )
 
     worker = BoundaryWorker()
     started = time.monotonic()
     try:
-        with patch.object(BoundaryWorker, "_popen", staticmethod(blocking_popen)):
+        with patch.object(BoundaryWorker, "_popen", staticmethod(hang_ready)):
             with pytest.raises(ProviderRunError, match="exceeded timeout"):
                 worker.start(deadline=time.monotonic() + 0.05)
         assert time.monotonic() - started < 0.25
-        assert entered.wait(timeout=1.0)
-        assert worker in unreaped_boundary_workers() or worker._boot_thread is not None
+        assert [
+            item.name
+            for item in threading.enumerate()
+            if item.name == "tdp-boundary-popen"
+        ] == []
     finally:
-        release.set()
-        if worker._boot_thread is not None:
-            worker._boot_thread.join(timeout=1.0)
         worker.close(cleanup_timeout=0.2)
         try:
             reap_unreaped_boundary_workers(timeout=0.5)
@@ -55,26 +60,33 @@ def test_never_returning_popen_does_not_block_start_deadline() -> None:
 def test_late_popen_after_deadline_is_killed() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
     import subprocess
+    import sys
 
-    real = subprocess.Popen
-    release = threading.Event()
-
-    def late_popen(*args, **kwargs):
-        release.wait(timeout=1.0)
-        return real(*args, **kwargs)
+    def hang_ready(*args, **kwargs):
+        del args
+        return subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            pass_fds=kwargs.get("pass_fds", ()),
+            close_fds=kwargs.get("close_fds", True),
+            start_new_session=True,
+        )
 
     worker = BoundaryWorker()
     try:
-        with patch.object(BoundaryWorker, "_popen", staticmethod(late_popen)):
+        with patch.object(BoundaryWorker, "_popen", staticmethod(hang_ready)):
             with pytest.raises(ProviderRunError, match="exceeded timeout"):
                 worker.start(deadline=time.monotonic() + 0.05)
-        release.set()
-        if worker._boot_thread is not None:
-            worker._boot_thread.join(timeout=1.0)
         worker.close(cleanup_timeout=1.0)
         assert worker.proc is None or not BoundaryWorker._proc_alive(worker.proc)
+        assert [
+            item.name
+            for item in threading.enumerate()
+            if item.name == "tdp-boundary-popen"
+        ] == []
     finally:
-        release.set()
         worker.close(cleanup_timeout=1.0)
         try:
             reap_unreaped_boundary_workers(timeout=0.5)

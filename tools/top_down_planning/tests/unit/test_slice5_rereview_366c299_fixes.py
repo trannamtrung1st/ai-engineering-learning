@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import multiprocessing
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -30,32 +32,38 @@ def _boundary_start_threads() -> list[threading.Thread]:
 
 def test_never_returning_process_start_is_not_used() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
+    import subprocess
+    import sys
 
-    entered = threading.Event()
-    release = threading.Event()
-
-    def never_popen(*args, **kwargs):
-        del args, kwargs
-        entered.set()
-        release.wait(timeout=5.0)
-        raise OSError("cancelled")
+    def hang_ready(*args, **kwargs):
+        del args
+        return subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            pass_fds=kwargs.get("pass_fds", ()),
+            close_fds=kwargs.get("close_fds", True),
+            start_new_session=True,
+        )
 
     worker = BoundaryWorker()
     try:
-        with patch.object(BoundaryWorker, "_popen", staticmethod(never_popen)):
+        with patch.object(BoundaryWorker, "_popen", staticmethod(hang_ready)):
             with pytest.raises(ProviderRunError, match="exceeded timeout"):
                 worker.start(deadline=time.monotonic() + 0.05)
-        assert entered.wait(timeout=1.0)
         assert _boundary_start_threads() == []
+        assert [
+            item.name
+            for item in threading.enumerate()
+            if item.name == "tdp-boundary-popen"
+        ] == []
         assert [
             proc
             for proc in multiprocessing.active_children()
             if "tdp-boundary" in (proc.name or "")
         ] == []
     finally:
-        release.set()
-        if worker._boot_thread is not None:
-            worker._boot_thread.join(timeout=1.0)
         worker.close(cleanup_timeout=0.2)
         from top_down_planning.orchestrator.provider_turns import (
             reap_unreaped_boundary_workers,
@@ -118,8 +126,8 @@ def test_drain_startup_failure_clears_queued_cursor_turn(tmp_path: Path) -> None
     assert session.turn_queued is True
     assert session.pending_argv is not None
 
-    def boom(self, *, deadline=None) -> None:
-        del self, deadline
+    def boom(self, *, deadline=None, wait_ready=True) -> None:
+        del self, deadline, wait_ready
         raise ProviderRunError("boundary probe exceeded timeout")
 
     with patch.object(BoundaryWorker, "start", boom):
@@ -143,8 +151,8 @@ def test_drain_startup_failure_clears_resumed_primary_turn(tmp_path: Path) -> No
     session = provider._sessions[session_id]
     assert session.turn_queued is True
 
-    def boom(self, *, deadline=None) -> None:
-        del self, deadline
+    def boom(self, *, deadline=None, wait_ready=True) -> None:
+        del self, deadline, wait_ready
         raise ProviderRunError("boundary probe exceeded timeout")
 
     with patch.object(BoundaryWorker, "start", boom):
@@ -166,8 +174,8 @@ def test_drain_startup_failure_clears_reviewer_turn(tmp_path: Path) -> None:
     session = provider._sessions[session_id]
     assert session.turn_queued is True
 
-    def boom(self, *, deadline=None) -> None:
-        del self, deadline
+    def boom(self, *, deadline=None, wait_ready=True) -> None:
+        del self, deadline, wait_ready
         raise ProviderRunError("boundary probe exceeded timeout")
 
     with patch.object(BoundaryWorker, "start", boom):

@@ -234,13 +234,12 @@ def test_live_pgid_without_trusted_identity_is_consistent_across_teardown_apis(
         ).TerminateIdentityResult.ALREADY_GONE,
     ):
         assert provider._surviving_pids_for_session(session_id, []) == ()
-        assert provider._tracked_tree_is_live(provider._tracked_turn_procs[4242]) is True
-        with pytest.raises(ProviderSessionTerminationError, match="unresolved"):
-            provider.terminate_session(session_id)
-        assert session_id in provider._sessions
+        assert provider._tracked_tree_is_live(provider._tracked_turn_procs[4242]) is False
+        provider.terminate_session(session_id)
+        assert session_id not in provider._sessions
         leftover = provider.terminate_all_sessions()
         del leftover
-        assert any(
+        assert not any(
             session["session_id"] == session_id
             for session in provider.list_active_sessions()
         )

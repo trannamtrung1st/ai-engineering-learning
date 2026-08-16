@@ -228,6 +228,8 @@ def inspect_process_identity(
     pid_state = inspect_pid_liveness(identity.pid, timeout=remaining())
     if pid_state is PidInspectState.GONE:
         return IdentityInspectState.GONE
+    if pid_state is PidInspectState.ZOMBIE:
+        return IdentityInspectState.GONE
     if pid_state is PidInspectState.UNVERIFIABLE:
         return IdentityInspectState.UNVERIFIABLE
     current = read_process_identity(

@@ -688,6 +688,41 @@ def _kill_agent(agent: subprocess.Popen[Any]) -> None:
             pass
 
 
+def _reap_zombie_children() -> None:
+    if not hasattr(os, "waitpid"):
+        return
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if pid == 0:
+            return
+
+
+def _close_inherited_stdio_write_ends() -> None:
+    """Let the parent observe stdout EOF while group cleanup continues."""
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+    finally:
+        if devnull not in {1, 2}:
+            try:
+                os.close(devnull)
+            except OSError:
+                pass
+
+
 def _wait_peers_gone(
     deadline: CleanupDeadline,
     *,
@@ -700,6 +735,7 @@ def _wait_peers_gone(
     phase_end = now() + min(max(0.0, budget), deadline.remaining())
     last: DrainResult = DrainResult.SURVIVORS
     while now() < phase_end and deadline.remaining() > 0:
+        _reap_zombie_children()
         peers = _peer_pids(deadline, pgid=pgid, me=me, exclude=exclude)
         if peers is None:
             return DrainResult.UNVERIFIABLE
@@ -729,6 +765,7 @@ def _drain_group(
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         _signal_group(signal.SIGTERM)
+        _reap_zombie_children()
         result = _wait_peers_gone(deadline, budget=_TERM_DRAIN_SECONDS)
         if result is DrainResult.CLEAN:
             return result
@@ -1308,7 +1345,8 @@ def main(
 
     cleanup_deadline = CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
     stop_copy.set()
-    stdout_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
+    stdout_thread.join(timeout=min(0.02, max(0.0, cleanup_deadline.remaining())))
+    _close_inherited_stdio_write_ends()
     stderr_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
     observed = agent.poll()
     drain = drain_once()

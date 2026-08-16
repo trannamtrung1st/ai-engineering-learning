@@ -540,7 +540,7 @@ def test_linux_group_enumeration_reads_proc_stat_without_ps(
         assert is_pid_alive(11) is True
         assert is_pid_alive(12) is False
 
-    assert members == [10, 11]
+    assert members == [10, 11, 12]
     run_ps.assert_not_called()
 
 
