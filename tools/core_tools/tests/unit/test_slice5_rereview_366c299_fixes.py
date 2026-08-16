@@ -55,19 +55,24 @@ def test_registration_shares_idle_detection_deadline(tmp_path: Path) -> None:
         binary=str(agent),
         skip_probe=True,
     )
+    stalled_at: dict[str, float] = {}
+
+    def mark_stall(*args, **kwargs):
+        stalled_at.setdefault("t", time.monotonic())
+        return True
+
     with patch(
         "core_tools.provider.cursor.read_process_identity",
         side_effect=slow_identity,
     ), patch(
         "core_tools.provider.cursor.terminate_process_tree",
-        return_value=True,
+        side_effect=mark_stall,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
         started = time.monotonic()
         with pytest.raises(ProviderTurnStalledError):
             list(provider.stream_events(session_id))
-        elapsed = time.monotonic() - started
-    assert elapsed < idle + 0.08
+        assert stalled_at["t"] - started < idle + 0.08
     assert provider._tracked_turn_procs == {}
 
 

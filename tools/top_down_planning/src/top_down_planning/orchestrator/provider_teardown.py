@@ -351,6 +351,8 @@ def teardown_provider_sessions(
     survivors: list[int] = []
     termination_records: list[dict[str, Any]] = []
     deferred_error: BaseException | None = None
+    stale_reconciled: list[int] = []
+    sweep_error: BaseException | None = None
 
     try:
         from top_down_planning.orchestrator.provider_turns import (
@@ -358,6 +360,10 @@ def teardown_provider_sessions(
         )
 
         reap_unreaped_boundary_workers()
+    except BaseException as exc:
+        sweep_error = exc
+
+    try:
         termination_records = provider.terminate_all_sessions()
         terminated_pids, failed_identities, unresolved_pids = (
             _partition_agent_termination_records(termination_records)
@@ -452,6 +458,15 @@ def teardown_provider_sessions(
             )
     except BaseException as exc:
         deferred_error = exc
+
+    if sweep_error is not None:
+        if deferred_error is None:
+            deferred_error = sweep_error
+        else:
+            try:
+                deferred_error.add_note(f"boundary sweep: {sweep_error!r}")
+            except Exception:
+                pass
 
     verified_terminated = sorted(set(verified_terminated))
     alive_survivors = tuple(pid for pid in survivors if is_pid_alive(pid))

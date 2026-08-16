@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,23 +29,42 @@ def _boundary_start_threads() -> list[threading.Thread]:
 
 
 def test_never_returning_process_start_is_not_used() -> None:
-    def never_start(self) -> None:
-        del self
-        threading.Event().wait()
+    from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
-    with patch("multiprocessing.process.BaseProcess.start", never_start):
-        result = _invoke_boundary_bounded(
-            LiteralBoundarySignal(),
-            threading.Event(),
-            timeout=0.4,
+    entered = threading.Event()
+    release = threading.Event()
+
+    def never_popen(*args, **kwargs):
+        del args, kwargs
+        entered.set()
+        release.wait(timeout=5.0)
+        raise OSError("cancelled")
+
+    worker = BoundaryWorker()
+    try:
+        with patch.object(BoundaryWorker, "_popen", staticmethod(never_popen)):
+            with pytest.raises(ProviderRunError, match="exceeded timeout"):
+                worker.start(deadline=time.monotonic() + 0.05)
+        assert entered.wait(timeout=1.0)
+        assert _boundary_start_threads() == []
+        assert [
+            proc
+            for proc in multiprocessing.active_children()
+            if "tdp-boundary" in (proc.name or "")
+        ] == []
+    finally:
+        release.set()
+        if worker._boot_thread is not None:
+            worker._boot_thread.join(timeout=1.0)
+        worker.close(cleanup_timeout=0.2)
+        from top_down_planning.orchestrator.provider_turns import (
+            reap_unreaped_boundary_workers,
         )
-    assert result is None
-    assert _boundary_start_threads() == []
-    assert [
-        proc
-        for proc in multiprocessing.active_children()
-        if "tdp-boundary" in (proc.name or "")
-    ] == []
+
+        try:
+            reap_unreaped_boundary_workers(timeout=0.5)
+        except ProviderRunError:
+            pass
 
 
 def test_oneshot_close_failure_keeps_reachable_owner() -> None:

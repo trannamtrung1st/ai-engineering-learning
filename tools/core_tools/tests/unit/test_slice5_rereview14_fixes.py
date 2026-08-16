@@ -211,6 +211,7 @@ def test_terminate_session_does_not_fail_on_reused_member_pid(tmp_path: Path) ->
         pgid=4242,
         member_identities=(leader, child),
     )
+    provider._tracked_turn_procs[4242].group_observed_gone = True
 
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=True):
         with patch(
@@ -224,6 +225,10 @@ def test_terminate_session_does_not_fail_on_reused_member_pid(tmp_path: Path) ->
                     fromlist=["TerminateIdentityResult"],
                 ).TerminateIdentityResult.ALREADY_GONE,
             ):
-                provider.terminate_session(session_id)
+                with patch(
+                    "core_tools.provider.cursor.process_group_state",
+                    return_value=ProcessGroupState.LIVE,
+                ):
+                    provider.terminate_session(session_id)
 
     assert session_id not in provider._sessions

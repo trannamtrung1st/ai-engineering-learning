@@ -68,6 +68,7 @@ from core_tools.provider.session_janitor import (
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
 DEFAULT_TURN_TREE_CLEANUP_SECONDS = 2.0
+_TRACK_IDENTITY_ENRICH_SECONDS = 0.5
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
@@ -414,7 +415,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 return True
             remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
             if deadline is not None and remaining <= 0:
-                self._fill_stdout_buffer(0.0)
+                while b"\n" not in self._stdout_buf and not self._stdout_eof:
+                    if not self._fill_stdout_buffer(0.0):
+                        break
                 if self._proc.poll() is not None and not self._stdout_eof:
                     self._drain_stdout_to_eof()
                 if self._stdout_buf and b"\n" not in self._stdout_buf:
@@ -901,6 +904,15 @@ class CursorProvider:
                 surviving_pids=surviving_pids,
             )
         self._prune_dead_tracked_pids_for_session(canonical_id)
+        if self._session_has_surviving_pids(canonical_id):
+            raise ProviderSessionTerminationError(
+                (
+                    f"failed to terminate provider session {canonical_id}: "
+                    "unresolved provider process ownership"
+                ),
+                session_id=canonical_id,
+                surviving_pids=(),
+            )
         with self._session_registry_lock:
             self._remove_session(canonical_id)
 
@@ -997,6 +1009,8 @@ class CursorProvider:
             if pid in seen_pids:
                 continue
             seen_pids.add(pid)
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            self._refresh_tracked_members(entry, timeout=remaining)
             remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
             record = self._termination_record_for_tracked_proc(entry)
             result = terminate_verified_process_identity(
@@ -1752,30 +1766,50 @@ class CursorProvider:
         with self._turn_proc_lock:
             if proc.pid in self._tracked_turn_procs:
                 return
-        session_id, role = context
+            session_id, role = context
+            self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
+                session_id=session_id,
+                role=role,
+                proc=proc,
+            )
+        if timeout == 0:
+            return
+        self._enrich_tracked_turn_proc(proc, timeout=timeout)
+
+    def _enrich_tracked_turn_proc(
+        self,
+        proc: subprocess.Popen[str],
+        *,
+        timeout: float | None = None,
+    ) -> None:
+        with self._turn_proc_lock:
+            entry = self._tracked_turn_procs.get(proc.pid)
+        if entry is None:
+            return
         run_id = self._extra_env.get("TDP_RUN_ID")
-        if isinstance(run_id, str):
-            run_id_value: str | None = run_id
-        else:
-            run_id_value = None
+        run_id_value: str | None = run_id if isinstance(run_id, str) else None
         remaining = _remaining_fn(timeout)
-        identity = read_process_identity(
-            proc.pid, run_id=run_id_value, timeout=remaining()
-        )
+        identity = entry.identity
         if identity is None:
-            start_time = read_process_start_time(proc.pid, timeout=remaining())
-            if start_time is not None:
-                identity = ProcessIdentity(
-                    pid=proc.pid,
-                    start_time=start_time,
-                    run_id=run_id_value,
-                )
-        pgid = (
-            read_process_group_id(proc.pid, timeout=remaining())
-            if is_pid_alive(proc.pid, timeout=remaining())
-            else None
-        )
-        members = None
+            identity = read_process_identity(
+                proc.pid, run_id=run_id_value, timeout=remaining()
+            )
+            if identity is None:
+                start_time = read_process_start_time(proc.pid, timeout=remaining())
+                if start_time is not None:
+                    identity = ProcessIdentity(
+                        pid=proc.pid,
+                        start_time=start_time,
+                        run_id=run_id_value,
+                    )
+        pgid = entry.pgid
+        if pgid is None:
+            pgid = (
+                read_process_group_id(proc.pid, timeout=remaining())
+                if is_pid_alive(proc.pid, timeout=remaining())
+                else None
+            )
+        members = entry.member_identities
         if identity is not None:
             captured = capture_process_group_identities(
                 identity, timeout=remaining()
@@ -1783,14 +1817,34 @@ class CursorProvider:
             if captured:
                 members = tuple(captured)
         with self._turn_proc_lock:
-            self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
-                session_id=session_id,
-                role=role,
-                proc=proc,
-                identity=identity,
-                pgid=pgid,
-                member_identities=members,
+            current = self._tracked_turn_procs.get(proc.pid)
+            if current is None:
+                return
+            current.identity = identity
+            current.pgid = pgid
+            current.member_identities = members
+
+    def _refresh_tracked_members(
+        self,
+        entry: _TrackedTurnProc,
+        *,
+        timeout: float | None = None,
+    ) -> None:
+        remaining = _remaining_fn(timeout)
+        identity = entry.identity
+        if identity is None and entry.proc is not None:
+            identity = read_process_identity(
+                entry.proc.pid, timeout=remaining()
             )
+            if identity is not None:
+                entry.identity = identity
+        if identity is None:
+            return
+        captured = capture_process_group_identities(identity, timeout=remaining())
+        if captured:
+            entry.member_identities = tuple(captured)
+        if entry.pgid is None and entry.proc is not None:
+            entry.pgid = read_process_group_id(entry.proc.pid, timeout=remaining())
 
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
         if proc is None:
@@ -1908,6 +1962,7 @@ class CursorProvider:
             stream: Iterator[str] | None = None
             teardown_deadline: list[float | None] = [None]
             detect_deadline: float | None = None
+            enricher: threading.Thread | None = None
             try:
                 if runner is default_process_runner:
                     iterator = _SubprocessStdoutIterator(
@@ -1958,13 +2013,16 @@ class CursorProvider:
                             self._unregister_tracked_turn_proc(proc)
 
                 if active_proc[0] is not None:
-                    self._register_tracked_turn_proc(
-                        active_proc[0],
-                        timeout=(
-                            None
-                            if detect_deadline is None
-                            else max(0.0, detect_deadline - time.monotonic())
-                        ),
+                    self._register_tracked_turn_proc(active_proc[0], timeout=0)
+                    proc_for_enrich = active_proc[0]
+                    enricher = threading.Thread(
+                        target=self._enrich_tracked_turn_proc,
+                        kwargs={
+                            "proc": proc_for_enrich,
+                            "timeout": _TRACK_IDENTITY_ENRICH_SECONDS,
+                        },
+                        name="cursor-track-identity",
+                        daemon=True,
                     )
 
                 if idle_timeout > 0:
@@ -1979,10 +2037,33 @@ class CursorProvider:
                     )
 
                 assert stream is not None
-                yield from stream
+
+                def _observe() -> Iterator[str]:
+                    lines = iter(stream)
+                    try:
+                        first = next(lines)
+                    except StopIteration:
+                        return
+                    if enricher is not None and not enricher.ident:
+                        enricher.start()
+                    yield first
+                    yield from lines
+
+                yield from _observe()
+                if enricher is not None and not enricher.ident:
+                    enricher.start()
             finally:
                 proc = active_proc[0]
                 try:
+                    if enricher is not None:
+                        if not enricher.ident:
+                            enricher.start()
+                        leftover = (
+                            DEFAULT_TURN_TREE_CLEANUP_SECONDS
+                            if teardown_deadline[0] is None
+                            else max(0.0, teardown_deadline[0] - time.monotonic())
+                        )
+                        enricher.join(timeout=leftover)
                     if proc is not None:
                         tracked = self._tracked_turn_procs.get(proc.pid)
                         returncode = proc.poll()
@@ -1995,6 +2076,13 @@ class CursorProvider:
                         if teardown_deadline[0] is None:
                             teardown_deadline[0] = (
                                 time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
+                            )
+                        if tracked is not None:
+                            self._refresh_tracked_members(
+                                tracked,
+                                timeout=max(
+                                    0.0, teardown_deadline[0] - time.monotonic()
+                                ),
                             )
                         tree_clean = terminate_process_tree(
                             proc,

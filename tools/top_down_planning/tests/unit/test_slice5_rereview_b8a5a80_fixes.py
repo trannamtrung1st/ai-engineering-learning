@@ -34,8 +34,13 @@ def test_late_returning_popen_is_reaped_after_deadline() -> None:
     worker = BoundaryWorker()
     try:
         with patch.object(BoundaryWorker, "_popen", staticmethod(late_popen)):
+            started = time.monotonic()
             with pytest.raises(ProviderRunError, match="exceeded timeout"):
                 worker.start(deadline=time.monotonic() + 0.02)
+            assert time.monotonic() - started < 0.07
+        if worker._boot_thread is not None:
+            worker._boot_thread.join(timeout=1.0)
+        worker.close(cleanup_timeout=1.0)
         assert worker.proc is None
         assert worker not in unreaped_boundary_workers()
     finally:
@@ -56,21 +61,13 @@ def test_blocked_popen_does_not_use_startup_helper_thread() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
     worker = BoundaryWorker()
-    error: list[BaseException] = []
-
-    def run() -> None:
-        try:
-            with patch.object(BoundaryWorker, "_popen", staticmethod(blocking_popen)):
-                worker.start(deadline=time.monotonic() + 0.05)
-        except BaseException as exc:
-            error.append(exc)
-
-    thread = threading.Thread(target=run, daemon=True)
     try:
-        thread.start()
+        with patch.object(BoundaryWorker, "_popen", staticmethod(blocking_popen)):
+            started = time.monotonic()
+            with pytest.raises(ProviderRunError, match="exceeded timeout"):
+                worker.start(deadline=time.monotonic() + 0.05)
+            assert time.monotonic() - started < 0.25
         assert entered.wait(timeout=1.0)
-        time.sleep(0.08)
-        assert thread.is_alive()
         assert [
             item.name
             for item in threading.enumerate()
@@ -78,9 +75,13 @@ def test_blocked_popen_does_not_use_startup_helper_thread() -> None:
         ] == []
     finally:
         release.set()
-        thread.join(timeout=2.0)
+        if worker._boot_thread is not None:
+            worker._boot_thread.join(timeout=2.0)
         worker.close(cleanup_timeout=0.2)
-        reap_unreaped_boundary_workers(timeout=0.2)
+        try:
+            reap_unreaped_boundary_workers(timeout=0.2)
+        except ProviderRunError:
+            pass
 
 
 def test_sweep_reaps_worker_that_survived_first_close() -> None:
