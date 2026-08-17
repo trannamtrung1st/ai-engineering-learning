@@ -37,7 +37,7 @@ from core_tools.provider.process_identity import (
     drain_owned_process_group,
     read_process_identity,
 )
-from tests.conftest import tracked_turn_proc
+from tests.conftest import close_and_reap_iterator, tracked_turn_proc
 
 
 def _idle_config(idle: float) -> dict:
@@ -143,8 +143,10 @@ def test_supported_stream_json_record_sizes_are_accepted(
     iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
     try:
         assert next(iterator) == line
+        with pytest.raises(StopIteration):
+            next(iterator)
     finally:
-        iterator.close()
+        close_and_reap_iterator(iterator)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
@@ -164,7 +166,7 @@ def test_record_over_max_stream_bytes_is_rejected_even_with_newline(
         with pytest.raises(ProviderStreamRecordTooLargeError):
             next(iterator)
     finally:
-        iterator.close()
+        close_and_reap_iterator(iterator)
 
 
 def test_oversized_stream_record_is_not_retried(tmp_path: Path) -> None:

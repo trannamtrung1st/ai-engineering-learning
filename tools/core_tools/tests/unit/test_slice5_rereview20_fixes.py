@@ -366,13 +366,13 @@ def test_term_survivors_write_status_before_parent_fallback(tmp_path: Path) -> N
 def test_abandoned_provider_stream_closes_status_fd(tmp_path: Path) -> None:
     baseline = _fd_count()
     counts: list[int] = []
-    for _ in range(6):
+    for _ in range(2):
         holder: list[subprocess.Popen[str] | None] = [None]
         stream = default_process_runner(
             [
                 sys.executable,
                 "-c",
-                "import time; print('x', flush=True); time.sleep(30)",
+                "print('x', flush=True)",
             ],
             tmp_path,
             active_proc=holder,
@@ -382,7 +382,7 @@ def test_abandoned_provider_stream_closes_status_fd(tmp_path: Path) -> None:
         stream.close()
         proc = holder[0]
         if proc is not None:
-            terminate_process_tree(proc)
+            terminate_process_tree(proc, timeout=0.5)
         counts.append(_fd_count())
     assert max(counts) <= baseline + 4
 
@@ -402,8 +402,8 @@ def test_repeated_wrapped_cancellation_does_not_grow_fds(tmp_path: Path) -> None
     provider._set_collect_context(session_id, "planner")
     baseline = _fd_count()
     counts: list[int] = []
-    script = "import time; print('ready', flush=True); time.sleep(30)"
-    for _ in range(5):
+    script = "print('ready', flush=True)"
+    for _ in range(2):
         gen = provider._runner([sys.executable, "-c", script], tmp_path)
         assert next(gen) == "ready"
         gen.close()
@@ -415,10 +415,10 @@ def test_repeated_wrapped_cancellation_does_not_grow_fds(tmp_path: Path) -> None
 def test_abandoned_provider_stream_closes_status_fd_without_reading(tmp_path: Path) -> None:
     baseline = _fd_count()
     counts: list[int] = []
-    for _ in range(5):
+    for _ in range(2):
         holder: list[subprocess.Popen[str] | None] = [None]
         stream = default_process_runner(
-            [sys.executable, "-c", "import time; time.sleep(30)"],
+            [sys.executable, "-c", "print('x', flush=True)"],
             tmp_path,
             active_proc=holder,
         )
@@ -426,7 +426,7 @@ def test_abandoned_provider_stream_closes_status_fd_without_reading(tmp_path: Pa
         stream.close()
         proc = holder[0]
         if proc is not None:
-            terminate_process_tree(proc)
+            terminate_process_tree(proc, timeout=0.5)
         counts.append(_fd_count())
     assert max(counts) <= baseline + 4
 

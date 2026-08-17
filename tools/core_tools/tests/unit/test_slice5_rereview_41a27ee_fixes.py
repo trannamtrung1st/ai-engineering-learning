@@ -13,7 +13,7 @@ import pytest
 from core_tools.provider.cursor import CursorProvider, _SubprocessStdoutIterator
 from core_tools.provider.errors import ProviderTurnError, ProviderTurnStalledError
 from core_tools.provider.process_identity import terminate_verified_process_identity
-from tests.conftest import reap_process_group, spawn_sigterm_ignoring_leader_with_child
+from tests.conftest import close_and_reap_iterator, reap_process_group, spawn_sigterm_ignoring_leader_with_child
 
 
 def _idle_config() -> dict:
@@ -97,9 +97,7 @@ def test_windows_silent_stdout_wait_readable_times_out(tmp_path: Path) -> None:
                 assert iterator.wait_readable(0.05) is False
                 assert time.monotonic() - started <= 0.25
     finally:
-        iterator.close()
-        if iterator._proc.poll() is None:
-            reap_process_group(iterator._proc)
+        close_and_reap_iterator(iterator)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

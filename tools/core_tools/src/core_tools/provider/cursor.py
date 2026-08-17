@@ -14,7 +14,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -1760,14 +1760,9 @@ class CursorProvider:
         with self._turn_proc_lock:
             for pid, entry in list(self._tracked_turn_procs.items()):
                 if entry.session_id == old_session_id:
-                    self._tracked_turn_procs[pid] = _TrackedTurnProc(
+                    self._tracked_turn_procs[pid] = replace(
+                        entry,
                         session_id=new_session_id,
-                        role=entry.role,
-                        identity=entry.identity,
-                        proc=entry.proc,
-                        pgid=entry.pgid,
-                        member_identities=entry.member_identities,
-                        group_observed_gone=entry.group_observed_gone,
                     )
         context = self._get_collect_context()
         if context is not None and context[0] == old_session_id:

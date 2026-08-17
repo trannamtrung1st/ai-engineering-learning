@@ -99,7 +99,17 @@ jobs:
           python -m pytest -p no:xdist -o addopts='' --tb=short -s \
             tests/unit/test_slice5_rereview_b8a5a80_fixes.py::test_zero_budget_still_drains_buffered_final_line
 
+      - name: Isolated stream-framing iterator tests
+        env:
+          TDP_TRACE_PROCESS_SIGNALS: "1"
+        run: |
+          cd tools/core_tools
+          python -m pytest -p no:xdist -o addopts='' --tb=short -s \
+            tests/unit/test_slice5_rereview_c67af97_fixes.py
+
       - name: Serial process-lifecycle tests
+        env:
+          TDP_TRACE_PROCESS_SIGNALS: "1"
         run: |
           cd tools/core_tools
           python -m pytest -p no:xdist -o addopts='' --tb=short \

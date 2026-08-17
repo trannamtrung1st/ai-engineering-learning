@@ -16,6 +16,23 @@ from core_tools.provider.cursor import _TrackedTurnProc
 from core_tools.provider.process_identity import ProcessIdentity
 
 
+def close_and_reap_iterator(iterator) -> None:
+    """Close a direct stdout iterator and reap its janitor through raw Popen."""
+
+    proc = getattr(iterator, "_proc", None)
+    iterator.close()
+    if proc is None:
+        return
+    raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
+    raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+    if raw_poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    raw_wait(timeout=2)
+
+
 def tracked_turn_proc(
     session_id: str,
     role: str,

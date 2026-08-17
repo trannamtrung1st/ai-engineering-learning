@@ -23,7 +23,7 @@ from core_tools.provider.process_identity import (
     inspect_process_identity,
     terminate_verified_process_identity,
 )
-from tests.conftest import reap_process_group
+from tests.conftest import close_and_reap_iterator
 
 
 def _idle_config() -> dict:
@@ -248,6 +248,4 @@ def test_iterator_close_reaps_exited_writer(tmp_path: Path) -> None:
         lines = list(iterator)
         assert any("hi" in line for line in lines)
     finally:
-        iterator.close()
-        if iterator._proc.poll() is None:
-            reap_process_group(iterator._proc)
+        close_and_reap_iterator(iterator)

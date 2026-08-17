@@ -25,7 +25,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.process_identity import ProcessIdentity
-from tests.conftest import tracked_turn_proc, wait_published_pid
+from tests.conftest import close_and_reap_iterator, tracked_turn_proc, wait_published_pid
 
 
 def _idle_config(idle: float) -> dict:
@@ -110,7 +110,7 @@ def test_exited_process_preserves_64kib_final_line(tmp_path: Path) -> None:
         assert second is not None
         assert blob[:32] in second
     finally:
-        iterator.close()
+        close_and_reap_iterator(iterator)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
