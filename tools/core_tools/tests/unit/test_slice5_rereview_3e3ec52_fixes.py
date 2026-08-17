@@ -157,14 +157,14 @@ def test_lineage_unresolved_when_group_members_cannot_be_listed() -> None:
         )
 
 
-def test_lineage_unresolved_when_live_group_has_no_capturable_members() -> None:
+def test_lineage_gone_when_group_has_no_members() -> None:
     with patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=[],
     ):
         assert (
             current_process_group_lineage(4242, expected_run_id="run-owned")
-            is GroupLineageState.UNRESOLVED
+            is GroupLineageState.GONE
         )
 
 

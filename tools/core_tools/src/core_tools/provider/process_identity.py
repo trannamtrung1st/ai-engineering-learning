@@ -56,6 +56,7 @@ class GroupLineageState(Enum):
     OWNED = "owned"
     FOREIGN = "foreign"
     UNRESOLVED = "unresolved"
+    GONE = "gone"
 
 
 _RUN_ID_ENV_VAR = "TDP_RUN_ID"
@@ -540,8 +541,10 @@ def current_process_group_lineage(
 
     remaining = _remaining_fn(timeout)
     current = _current_group_identities(pgid, run_id=None, timeout=remaining())
-    if not current:
+    if current is None:
         return GroupLineageState.UNRESOLVED
+    if not current:
+        return GroupLineageState.GONE
     owners: list[str | None] = []
     run_ids: list[str | None] = []
     for identity in current:

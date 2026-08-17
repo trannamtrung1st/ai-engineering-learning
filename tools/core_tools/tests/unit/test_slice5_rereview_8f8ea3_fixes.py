@@ -9,6 +9,7 @@ from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderSessionTerminationError
 from core_tools.provider.process_cleanup import ProcessGroupState
 from core_tools.provider.process_identity import (
+    GroupLineageState,
     ProcessIdentity,
     TerminateIdentityResult,
 )
@@ -50,8 +51,11 @@ def test_failed_termination_does_not_unregister_when_tree_probe_says_dead(
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
     ), patch(
-        "core_tools.provider.cursor.CursorProvider._tracked_tree_is_live",
+        "core_tools.provider.cursor.process_identity_is_live",
         return_value=False,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.UNRESOLVED,
     ):
         records = provider._terminate_tracked_turn_procs()
 
@@ -81,8 +85,11 @@ def test_surviving_pids_include_live_group_members_not_in_historical_identities(
     ), patch(
         "core_tools.provider.cursor.is_pid_alive",
         side_effect=lambda pid, timeout=None: pid == 5151,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.OWNED,
     ):
-        surviving = provider._surviving_pids_for_session(
+        survival = provider._surviving_pids_for_session(
             session_id,
             [
                 {
@@ -90,10 +97,11 @@ def test_surviving_pids_include_live_group_members_not_in_historical_identities(
                     "reason": "termination_failed",
                     "pgid": 4242,
                     "tree_status": "unresolved",
+                    "run_id": "run-a",
                 }
             ],
         )
-    assert 5151 in surviving
+    assert 5151 in survival.pids
 
 
 def test_terminate_session_fails_closed_when_group_member_survives(
@@ -128,6 +136,9 @@ def test_terminate_session_fails_closed_when_group_member_survives(
     ), patch(
         "core_tools.provider.cursor.is_pid_alive",
         side_effect=lambda pid, timeout=None: pid == 5151,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.OWNED,
     ), patch(
         "core_tools.provider.cursor.CursorProvider.abort_turn",
     ), patch(

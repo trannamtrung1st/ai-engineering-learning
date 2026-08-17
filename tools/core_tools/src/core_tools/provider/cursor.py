@@ -729,6 +729,25 @@ class _CursorSession:
         self.condition = threading.Condition(self.lock)
 
 
+@dataclass(frozen=True)
+class _SessionSurvival:
+    pids: tuple[int, ...] = ()
+    unresolved: bool = False
+
+    def __iter__(self):
+        return iter(self.pids)
+
+    def __contains__(self, item: object) -> bool:
+        return item in self.pids
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _SessionSurvival):
+            return self.pids == other.pids and self.unresolved == other.unresolved
+        if isinstance(other, tuple):
+            return self.pids == other
+        return NotImplemented
+
+
 @dataclass
 class _TrackedTurnProc:
     session_id: str
@@ -985,21 +1004,31 @@ class CursorProvider:
             timeout=remaining,
         )
         remaining = max(0.0, deadline - time.monotonic())
-        probe = max(remaining, 0.2)
-        surviving_pids = self._surviving_pids_for_session(
-            canonical_id, records, timeout=probe
+        survival = self._surviving_pids_for_session(
+            canonical_id, records, timeout=remaining
         )
-        if surviving_pids:
+        if survival.pids:
             raise ProviderSessionTerminationError(
                 (
                     f"failed to terminate provider session {canonical_id}: "
-                    f"surviving agent processes {list(surviving_pids)}"
+                    f"surviving agent processes {list(survival.pids)}"
                 ),
                 session_id=canonical_id,
-                surviving_pids=surviving_pids,
+                surviving_pids=survival.pids,
             )
-        self._prune_dead_tracked_pids_for_session(canonical_id)
-        if self._session_has_surviving_pids(canonical_id):
+        if survival.unresolved:
+            raise ProviderSessionTerminationError(
+                (
+                    f"failed to terminate provider session {canonical_id}: "
+                    "unresolved provider process ownership"
+                ),
+                session_id=canonical_id,
+                surviving_pids=(),
+            )
+        remaining = max(0.0, deadline - time.monotonic())
+        self._prune_dead_tracked_pids_for_session(canonical_id, timeout=remaining)
+        remaining = max(0.0, deadline - time.monotonic())
+        if self._session_has_surviving_pids(canonical_id, timeout=remaining):
             raise ProviderSessionTerminationError(
                 (
                     f"failed to terminate provider session {canonical_id}: "
@@ -1040,14 +1069,14 @@ class CursorProvider:
             timeout=remaining,
         )
         remaining = max(0.0, deadline - time.monotonic())
-        surviving = self._surviving_pids_for_session(
+        survival = self._surviving_pids_for_session(
             canonical_id, records, timeout=remaining
         )
-        if surviving:
+        if survival.pids or survival.unresolved:
             raise ProviderLifecycleTimeoutError(
                 (
                     f"abort_turn exceeded {timeout:g}s with surviving agent "
-                    f"processes {list(surviving)}"
+                    f"processes {list(survival.pids)}"
                 ),
                 session_id=canonical_id,
             )
@@ -1125,19 +1154,14 @@ class CursorProvider:
             elif result is TerminateIdentityResult.IDENTITY_MISMATCH:
                 self._unregister_tracked_turn_proc_by_pid(pid)
             elif result is TerminateIdentityResult.ALREADY_GONE:
-                if not self._tracked_tree_is_live(entry):
+                if not self._tracked_tree_is_live(entry, timeout=remaining):
                     self._unregister_tracked_turn_proc_by_pid(pid)
             elif result == TerminateIdentityResult.FAILED:
                 terminated.append(
                     {**record, "reason": "termination_failed", "tree_status": "unresolved"}
                 )
                 remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
-                group_state = ProcessGroupState.UNVERIFIABLE
-                if entry.pgid is not None:
-                    group_state = process_group_state(entry.pgid, timeout=remaining)
-                if group_state is ProcessGroupState.GONE and not self._tracked_tree_is_live(
-                    entry, timeout=remaining
-                ):
+                if self._failed_tracking_is_stale(entry, timeout=remaining):
                     self._unregister_tracked_turn_proc_by_pid(pid)
         return terminated
 
@@ -2020,7 +2044,7 @@ class CursorProvider:
     ) -> bool:
         remaining = _remaining_fn(timeout)
         if entry.proc is not None:
-            raw_poll = getattr(entry.proc, "_core_tools_raw_poll", entry.proc.poll)
+            raw_poll = entry.proc.__dict__.get("_core_tools_raw_poll", entry.proc.poll)
             if callable(raw_poll):
                 try:
                     if raw_poll() is None:
@@ -2086,6 +2110,9 @@ class CursorProvider:
                 return False
             if lineage is GroupLineageState.OWNED:
                 return True
+            if lineage is GroupLineageState.GONE:
+                # process_group_state is LIVE; empty capture is unresolved, not gone.
+                pass
             if expected_owner_id or expected_run_id:
                 return True
             if not states:
@@ -2100,18 +2127,106 @@ class CursorProvider:
         )
         return is_pid_alive(pid, timeout=remaining())
 
-    def _prune_dead_tracked_pids_for_session(self, session_id: str) -> None:
+    def _historical_identities_still_live(
+        self,
+        entry: _TrackedTurnProc,
+        *,
+        timeout: float | None = None,
+    ) -> bool:
+        remaining = _remaining_fn(timeout)
+        if entry.proc is not None:
+            raw_poll = entry.proc.__dict__.get("_core_tools_raw_poll", entry.proc.poll)
+            if callable(raw_poll):
+                try:
+                    if raw_poll() is None:
+                        return True
+                except Exception:
+                    if entry.proc.poll() is None:
+                        return True
+            elif entry.proc.poll() is None:
+                return True
+        if entry.identity is not None and process_identity_is_live(
+            entry.identity, timeout=remaining()
+        ):
+            return True
+        if entry.member_identities:
+            return any(
+                process_identity_is_live(identity, timeout=remaining())
+                for identity in entry.member_identities
+            )
+        return False
+
+    def _failed_tracking_is_stale(
+        self,
+        entry: _TrackedTurnProc,
+        *,
+        timeout: float | None = None,
+    ) -> bool:
+        """True when a FAILED tree may be unregistered (GONE or FOREIGN)."""
+
+        remaining = _remaining_fn(timeout)
+        if self._historical_identities_still_live(entry, timeout=remaining()):
+            return False
+        if entry.pgid is None:
+            return False
+        leftover = remaining()
+        if leftover is not None and leftover <= 0:
+            return False
+        if entry.group_observed_gone:
+            return True
+        state = process_group_state(entry.pgid, timeout=leftover)
+        if state is ProcessGroupState.GONE:
+            entry.group_observed_gone = True
+            return True
+        if state is ProcessGroupState.UNVERIFIABLE:
+            return False
+        leftover = remaining()
+        if leftover is not None and leftover <= 0:
+            return False
+        expected_run_id = (
+            entry.identity.run_id if entry.identity is not None else None
+        )
+        expected_owner_id = entry.owner_id
+        if expected_owner_id is None and entry.identity is not None:
+            expected_owner_id = entry.identity.owner_id
+        lineage = current_process_group_lineage(
+            entry.pgid,
+            expected_run_id=expected_run_id,
+            expected_owner_id=expected_owner_id,
+            timeout=leftover,
+        )
+        if lineage is GroupLineageState.GONE:
+            entry.group_observed_gone = True
+            return True
+        return lineage is GroupLineageState.FOREIGN
+
+    def _prune_dead_tracked_pids_for_session(
+        self,
+        session_id: str,
+        *,
+        timeout: float | None = None,
+    ) -> None:
         tracked_ids = self._tracked_session_ids(session_id)
+        remaining = _remaining_fn(timeout)
         with self._turn_proc_lock:
             for pid, entry in list(self._tracked_turn_procs.items()):
-                if entry.session_id in tracked_ids and not self._tracked_tree_is_live(entry):
+                if entry.session_id in tracked_ids and not self._tracked_tree_is_live(
+                    entry, timeout=remaining()
+                ):
                     self._tracked_turn_procs.pop(pid, None)
 
-    def _session_has_surviving_pids(self, session_id: str) -> bool:
+    def _session_has_surviving_pids(
+        self,
+        session_id: str,
+        *,
+        timeout: float | None = None,
+    ) -> bool:
         tracked_ids = self._tracked_session_ids(session_id)
+        remaining = _remaining_fn(timeout)
         with self._turn_proc_lock:
             return any(
-                entry.session_id in tracked_ids and self._tracked_tree_is_live(entry)
+                entry.session_id in tracked_ids
+                and self._tracked_tree_is_live(entry, timeout=remaining())
                 for entry in self._tracked_turn_procs.values()
             )
 
@@ -2121,23 +2236,57 @@ class CursorProvider:
         records: list[dict[str, Any]],
         *,
         timeout: float | None = None,
-    ) -> tuple[int, ...]:
+    ) -> _SessionSurvival:
         tracked_ids = self._tracked_session_ids(session_id)
         surviving: set[int] = set()
+        unresolved = False
+        scanned: set[int] = set()
         remaining = _remaining_fn(timeout)
 
-        def _add_live_group_members(pgid: int | None) -> None:
-            if pgid is None:
+        def _consider_group(
+            pgid: int | None,
+            *,
+            expected_run_id: str | None,
+            expected_owner_id: str | None,
+            observed_gone: bool,
+        ) -> None:
+            nonlocal unresolved
+            if pgid is None or pgid in scanned:
                 return
-            budget = remaining()
-            if budget is not None:
-                budget = max(budget, 0.2)
-            members = list_process_group_pids(pgid, timeout=budget)
+            scanned.add(pgid)
+            if observed_gone:
+                return
+            leftover = remaining()
+            if leftover is not None and leftover <= 0:
+                unresolved = True
+                return
+            lineage = current_process_group_lineage(
+                pgid,
+                expected_run_id=expected_run_id,
+                expected_owner_id=expected_owner_id,
+                timeout=leftover,
+            )
+            if lineage is GroupLineageState.FOREIGN:
+                return
+            if lineage is GroupLineageState.GONE:
+                return
+            if lineage is GroupLineageState.UNRESOLVED:
+                unresolved = True
+                return
+            leftover = remaining()
+            if leftover is not None and leftover <= 0:
+                unresolved = True
+                return
+            members = list_process_group_pids(pgid, timeout=leftover)
             if members is None:
-                surviving.add(pgid)
+                unresolved = True
                 return
             for member_pid in members:
-                if is_pid_alive(member_pid, timeout=budget):
+                leftover = remaining()
+                if leftover is not None and leftover <= 0:
+                    unresolved = True
+                    return
+                if is_pid_alive(member_pid, timeout=leftover):
                     surviving.add(member_pid)
 
         for record in records:
@@ -2145,24 +2294,54 @@ class CursorProvider:
                 continue
             identities = process_identities_from_termination_record(record)
             for identity in identities:
-                if process_identity_is_live(identity, timeout=remaining()):
+                leftover = remaining()
+                if leftover is not None and leftover <= 0:
+                    unresolved = True
+                    break
+                if process_identity_is_live(identity, timeout=leftover):
                     surviving.add(identity.pid)
             pgid = record.get("pgid")
-            _add_live_group_members(int(pgid) if isinstance(pgid, int) else None)
+            _consider_group(
+                int(pgid) if isinstance(pgid, int) else None,
+                expected_run_id=record.get("run_id")
+                if isinstance(record.get("run_id"), str)
+                else None,
+                expected_owner_id=record.get("provider_owner_id")
+                if isinstance(record.get("provider_owner_id"), str)
+                else None,
+                observed_gone=False,
+            )
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
                 if entry.session_id not in tracked_ids:
                     continue
                 if entry.member_identities:
                     for identity in entry.member_identities:
-                        if process_identity_is_live(identity, timeout=remaining()):
+                        leftover = remaining()
+                        if leftover is not None and leftover <= 0:
+                            unresolved = True
+                            break
+                        if process_identity_is_live(identity, timeout=leftover):
                             surviving.add(identity.pid)
-                if entry.identity is not None and process_identity_is_live(
-                    entry.identity, timeout=remaining()
-                ):
-                    surviving.add(entry.identity.pid)
-                _add_live_group_members(entry.pgid)
-        return tuple(sorted(surviving))
+                if entry.identity is not None:
+                    leftover = remaining()
+                    if leftover is not None and leftover <= 0:
+                        unresolved = True
+                    elif process_identity_is_live(entry.identity, timeout=leftover):
+                        surviving.add(entry.identity.pid)
+                expected_run_id = (
+                    entry.identity.run_id if entry.identity is not None else None
+                )
+                expected_owner_id = entry.owner_id
+                if expected_owner_id is None and entry.identity is not None:
+                    expected_owner_id = entry.identity.owner_id
+                _consider_group(
+                    entry.pgid,
+                    expected_run_id=expected_run_id,
+                    expected_owner_id=expected_owner_id,
+                    observed_gone=entry.group_observed_gone,
+                )
+        return _SessionSurvival(pids=tuple(sorted(surviving)), unresolved=unresolved)
 
     def _remove_session(self, canonical_id: str) -> None:
         self._sessions.pop(canonical_id, None)
