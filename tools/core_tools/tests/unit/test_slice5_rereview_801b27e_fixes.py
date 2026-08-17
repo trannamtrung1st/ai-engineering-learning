@@ -13,6 +13,7 @@ from core_tools.provider.errors import (
 from core_tools.provider.process_cleanup import ProcessGroupState
 from core_tools.provider.process_identity import (
     GroupLineageState,
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
 )
@@ -213,6 +214,12 @@ def test_exhausted_teardown_budget_does_not_inflate_inspection_timeout(
         "core_tools.provider.cursor.process_identity_is_live",
         return_value=False,
     ), patch(
+        "core_tools.provider.cursor.inspect_process_identity",
+        return_value=IdentityInspectState.GONE,
+    ), patch(
+        "core_tools.provider.cursor.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.cursor.list_process_group_pids",
         side_effect=record_list,
     ), patch(
@@ -230,6 +237,7 @@ def test_exhausted_teardown_budget_does_not_inflate_inspection_timeout(
             provider.terminate_session(session_id, timeout=0.05)
         except (ProviderSessionTerminationError, ProviderLifecycleTimeoutError):
             pass
+    assert seen
     assert all(
         timeout is not None and timeout <= 0.05 + 1e-6 for timeout in seen
     )

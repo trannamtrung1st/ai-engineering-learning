@@ -2172,18 +2172,22 @@ class CursorProvider:
                         return True
             elif entry.proc.poll() is None:
                 return True
+        identities: list[ProcessIdentity] = []
         if entry.identity is not None:
-            leftover = remaining()
-            if inspect_process_identity(entry.identity, timeout=leftover) in present:
-                return True
-            if process_identity_is_live(entry.identity, timeout=leftover):
-                return True
+            identities.append(entry.identity)
         if entry.member_identities:
-            return any(
-                inspect_process_identity(identity, timeout=remaining()) in present
-                or process_identity_is_live(identity, timeout=remaining())
-                for identity in entry.member_identities
-            )
+            identities.extend(entry.member_identities)
+        seen: set[tuple[int, str]] = set()
+        for identity in identities:
+            token = (identity.pid, identity.start_time)
+            if token in seen:
+                continue
+            seen.add(token)
+            leftover = remaining()
+            if leftover is not None and leftover <= 0:
+                return True
+            if inspect_process_identity(identity, timeout=leftover) in present:
+                return True
         return False
 
     def _failed_tracking_is_stale(

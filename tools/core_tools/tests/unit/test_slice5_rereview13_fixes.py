@@ -209,14 +209,22 @@ def test_failed_tree_drain_keeps_tracking_when_leader_is_dead(tmp_path: Path) ->
 
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
         with patch(
-            "core_tools.provider.process_identity._identity_still_alive",
-            side_effect=lambda identity, timeout=None: identity.pid == 5151,
+            "core_tools.provider.cursor.inspect_process_identity",
+            side_effect=lambda identity, timeout=None: (
+                IdentityInspectState.LIVE_MATCH
+                if identity.pid == 5151
+                else IdentityInspectState.GONE
+            ),
         ):
             with patch(
-                "core_tools.provider.cursor.terminate_verified_process_identity",
-                return_value=TerminateIdentityResult.FAILED,
+                "core_tools.provider.process_identity._identity_still_alive",
+                side_effect=lambda identity, timeout=None: identity.pid == 5151,
             ):
-                records = provider._terminate_tracked_turn_procs()
+                with patch(
+                    "core_tools.provider.cursor.terminate_verified_process_identity",
+                    return_value=TerminateIdentityResult.FAILED,
+                ):
+                    records = provider._terminate_tracked_turn_procs()
 
     assert 4242 in provider._tracked_turn_procs
     assert records[0]["reason"] == "termination_failed"
@@ -283,15 +291,23 @@ def test_terminate_session_raises_when_leader_dead_and_tree_unresolved(
 
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
         with patch(
-            "core_tools.provider.process_identity._identity_still_alive",
-            side_effect=lambda identity, timeout=None: identity.pid == 5151,
+            "core_tools.provider.cursor.inspect_process_identity",
+            side_effect=lambda identity, timeout=None: (
+                IdentityInspectState.LIVE_MATCH
+                if identity.pid == 5151
+                else IdentityInspectState.GONE
+            ),
         ):
             with patch(
-                "core_tools.provider.cursor.terminate_verified_process_identity",
-                return_value=TerminateIdentityResult.FAILED,
+                "core_tools.provider.process_identity._identity_still_alive",
+                side_effect=lambda identity, timeout=None: identity.pid == 5151,
             ):
-                with pytest.raises(ProviderSessionTerminationError) as exc_info:
-                    provider.terminate_session(session_id)
+                with patch(
+                    "core_tools.provider.cursor.terminate_verified_process_identity",
+                    return_value=TerminateIdentityResult.FAILED,
+                ):
+                    with pytest.raises(ProviderSessionTerminationError) as exc_info:
+                        provider.terminate_session(session_id)
 
     assert session_id in provider._sessions
     assert 4242 in provider._tracked_turn_procs
