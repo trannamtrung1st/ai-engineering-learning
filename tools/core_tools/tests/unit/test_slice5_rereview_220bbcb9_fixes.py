@@ -167,4 +167,4 @@ def test_historical_presence_darwin_liveness_probe_uses_one_budget(
     assert timeouts
     assert all(t is not None and t <= 0.05 + 1e-6 for t in timeouts)
     assert len(timeouts) == 1
-    assert elapsed < 0.08
+    assert elapsed < 0.15

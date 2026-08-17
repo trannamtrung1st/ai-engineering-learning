@@ -987,9 +987,15 @@ class CursorProvider:
         abort_budget = min(timeout, timeout / 2.0)
         try:
             self.abort_turn(canonical_id, timeout=abort_budget)
-        except ProviderLifecycleTimeoutError:
-            if time.monotonic() >= deadline:
-                raise
+        except ProviderLifecycleTimeoutError as exc:
+            raise ProviderSessionTerminationError(
+                (
+                    f"failed to terminate provider session {canonical_id}: "
+                    f"{exc}"
+                ),
+                session_id=canonical_id,
+                surviving_pids=exc.surviving_pids,
+            ) from exc
         remaining = max(0.0, deadline - time.monotonic())
         try:
             self.wait_turn_settled(canonical_id, timeout=remaining)
@@ -1079,6 +1085,7 @@ class CursorProvider:
                     f"processes {list(survival.pids)}"
                 ),
                 session_id=canonical_id,
+                surviving_pids=survival.pids,
             )
         if survival.unresolved:
             raise ProviderLifecycleTimeoutError(
@@ -1163,6 +1170,7 @@ class CursorProvider:
                 self._unregister_tracked_turn_proc_by_pid(pid)
             elif result is TerminateIdentityResult.ALREADY_GONE:
                 if not self._tracked_tree_is_live(entry, timeout=remaining):
+                    terminated.append({**record, "reason": "terminated"})
                     self._unregister_tracked_turn_proc_by_pid(pid)
             elif result == TerminateIdentityResult.FAILED:
                 remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
@@ -2281,12 +2289,11 @@ class CursorProvider:
             expected_owner_id: str | None,
             observed_gone: bool,
         ) -> None:
+            del observed_gone
             nonlocal unresolved
             if pgid is None or pgid in scanned:
                 return
             scanned.add(pgid)
-            if observed_gone:
-                return
             leftover = remaining()
             if leftover is not None and leftover <= 0:
                 unresolved = True
@@ -2321,29 +2328,30 @@ class CursorProvider:
                     surviving.add(member_pid)
 
         for record in records:
-            if record.get("reason") != "termination_failed":
-                continue
             if record.get("tree_status") == "stale_reconciled":
                 continue
-            identities = process_identities_from_termination_record(record)
-            for identity in identities:
-                leftover = remaining()
-                if leftover is not None and leftover <= 0:
-                    unresolved = True
-                    break
-                if process_identity_is_live(identity, timeout=leftover):
-                    surviving.add(identity.pid)
-            pgid = record.get("pgid")
-            _consider_group(
-                int(pgid) if isinstance(pgid, int) else None,
-                expected_run_id=record.get("run_id")
-                if isinstance(record.get("run_id"), str)
-                else None,
-                expected_owner_id=record.get("provider_owner_id")
-                if isinstance(record.get("provider_owner_id"), str)
-                else None,
-                observed_gone=bool(record.get("group_observed_gone")),
-            )
+            reason = record.get("reason")
+            if reason == "termination_failed":
+                identities = process_identities_from_termination_record(record)
+                for identity in identities:
+                    leftover = remaining()
+                    if leftover is not None and leftover <= 0:
+                        unresolved = True
+                        break
+                    if process_identity_is_live(identity, timeout=leftover):
+                        surviving.add(identity.pid)
+            if reason in {"termination_failed", "terminated"}:
+                pgid = record.get("pgid")
+                _consider_group(
+                    int(pgid) if isinstance(pgid, int) else None,
+                    expected_run_id=record.get("run_id")
+                    if isinstance(record.get("run_id"), str)
+                    else None,
+                    expected_owner_id=record.get("provider_owner_id")
+                    if isinstance(record.get("provider_owner_id"), str)
+                    else None,
+                    observed_gone=bool(record.get("group_observed_gone")),
+                )
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
                 if entry.session_id not in tracked_ids:

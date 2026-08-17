@@ -20,7 +20,11 @@ from core_tools.provider.cursor import (
     _SubprocessStdoutIterator,
     _TrackedTurnProc,
 )
-from core_tools.provider.errors import ProviderSessionTerminationError, ProviderStreamRecordTooLargeError
+from core_tools.provider.errors import (
+    ProviderLifecycleTimeoutError,
+    ProviderSessionTerminationError,
+    ProviderStreamRecordTooLargeError,
+)
 from core_tools.provider.process_cleanup import (
     ProcessGroupState,
     is_pid_alive,
@@ -294,7 +298,7 @@ def test_unexpected_janitor_exit_after_late_child_reaps_or_fail_closes(
         try:
             provider.terminate_session(session_id)
             released = True
-        except ProviderSessionTerminationError:
+        except (ProviderSessionTerminationError, ProviderLifecycleTimeoutError):
             released = False
         if released:
             assert is_pid_alive(child_pid) is False

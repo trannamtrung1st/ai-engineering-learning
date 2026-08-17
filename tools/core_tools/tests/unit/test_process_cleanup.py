@@ -21,7 +21,16 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.stub import StubProvider
-from tests.conftest import tracked_turn_proc
+from tests.conftest import _is_pytest_infrastructure, tracked_turn_proc
+
+
+def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:
+    assert _is_pytest_infrastructure(
+        "python -c from multiprocessing.resource_tracker import main"
+    )
+    assert _is_pytest_infrastructure("python -m multiprocessing.forkserver")
+    assert _is_pytest_infrastructure("/usr/bin/python execnet gateway")
+    assert not _is_pytest_infrastructure("python -c import time; time.sleep(60)")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

@@ -78,6 +78,16 @@ class ProviderTurnCleanupError(ProviderTurnError):
 class ProviderLifecycleTimeoutError(ProviderSessionError):
     """A provider abort or terminate call did not finish within its timeout."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        surviving_pids: tuple[int, ...] = (),
+    ) -> None:
+        super().__init__(message, session_id=session_id)
+        self.surviving_pids = surviving_pids
+
 
 class ProviderReplacementIdentityError(ProviderSessionError):
     """A replacement session canonicalized to a forbidden replaced provider id."""

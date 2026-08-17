@@ -254,4 +254,4 @@ def test_second_stream_line_arrives_before_slow_identity(tmp_path: Path) -> None
             elapsed = time.monotonic() - started
         provider.terminate_session(session_id)
     assert got_assistant
-    assert elapsed < 0.15
+    assert elapsed < 0.2

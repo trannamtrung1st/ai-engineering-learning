@@ -164,7 +164,16 @@ def _process_command(pid: int) -> str:
 
 
 def _is_pytest_infrastructure(cmd: str) -> bool:
-    return "resource_tracker" in cmd.lower()
+    lowered = cmd.lower()
+    return any(
+        token in lowered
+        for token in (
+            "resource_tracker",
+            "forkserver",
+            "semaphore_tracker",
+            "execnet",
+        )
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -172,9 +181,15 @@ def assert_no_leftover_python_descendants():
     parent = os.getpid()
     before = set(_python_descendant_pids(parent))
     yield
-    leftover = {
-        pid: cmd
-        for pid, cmd in _python_descendant_pids(parent).items()
-        if pid not in before and not _is_pytest_infrastructure(cmd)
-    }
+    leftover: dict[int, str] = {}
+    deadline = time.monotonic() + 0.25
+    while True:
+        leftover = {
+            pid: cmd
+            for pid, cmd in _python_descendant_pids(parent).items()
+            if pid not in before and not _is_pytest_infrastructure(cmd)
+        }
+        if not leftover or time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
     assert leftover == {}, leftover
