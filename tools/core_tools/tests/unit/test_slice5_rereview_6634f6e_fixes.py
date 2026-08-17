@@ -81,7 +81,50 @@ def test_janitor_is_tracked_before_started_byte(tmp_path: Path) -> None:
     thread.join(timeout=3.0)
     assert seen["started"] is False
     assert seen["pid"] in tracked
+    assert tracked[seen["pid"]].pgid == seen["pid"]
     del errors
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
+def test_zero_timeout_registration_records_known_session_pgid(tmp_path: Path) -> None:
+    provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
+    provider._set_collect_context("sess-spawn-pgid", "planner")
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", "import time; time.sleep(8)"],
+        tmp_path,
+    )
+    proc = iterator._proc
+    try:
+        assert getattr(proc, "_core_tools_session_pgid") == proc.pid
+        provider._register_tracked_turn_proc(proc, timeout=0)
+        entry = provider._tracked_turn_procs[proc.pid]
+        assert entry.pgid == proc.pid
+        assert entry.identity is None
+    finally:
+        iterator.close()
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, 9)
+            except OSError:
+                pass
+            raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+            raw_wait(timeout=2)
+
+
+def test_zero_timeout_registration_does_not_infer_pgid_for_plain_popen(
+    tmp_path: Path,
+) -> None:
+    provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
+    provider._set_collect_context("sess-plain", "planner")
+
+    class PlainProc:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    provider._register_tracked_turn_proc(PlainProc(), timeout=0)  # type: ignore[arg-type]
+    assert provider._tracked_turn_procs[4242].pgid is None
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")

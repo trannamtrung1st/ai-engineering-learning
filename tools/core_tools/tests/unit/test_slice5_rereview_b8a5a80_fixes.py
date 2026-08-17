@@ -66,10 +66,10 @@ def test_zero_budget_still_drains_buffered_final_line(tmp_path: Path) -> None:
         return iterator
 
     def consume_budget(pid, run_id=None, command=None, timeout=None):
-        del pid, run_id, command
+        del run_id, command
         if timeout:
-            time.sleep(timeout)
-        return ProcessIdentity(pid=1, start_time="1")
+            time.sleep(min(0.05, float(timeout)))
+        return ProcessIdentity(pid=pid, start_time="synthetic-test")
 
     provider = _provider(tmp_path, runner)
     try:
@@ -221,16 +221,24 @@ def test_cleanup_deadline_is_not_reset_in_finally(tmp_path: Path) -> None:
 def test_stall_decision_ignores_cleanup_wall_time(tmp_path: Path) -> None:
     idle = 0.08
     script = "import time\ntime.sleep(60)\n"
-    stalled_at: dict[str, float] = {}
+    clock = {"t": 0.0}
+    stall_clock: dict[str, float] = {}
+
+    def fake_monotonic() -> float:
+        return clock["t"]
+
+    def fake_read_nonempty_line(self, timeout: float):
+        del self
+        clock["t"] += max(0.0, timeout)
+        return None
 
     def runner(argv: list[str], cwd: Path):
         del argv
         return _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
 
-    def slow_cleanup(*args, **kwargs):
+    def cleanup_without_wall_clock(*args, **kwargs):
         del args, kwargs
-        stalled_at.setdefault("t", time.monotonic())
-        time.sleep(0.15)
+        stall_clock["t"] = clock["t"]
         return True
 
     agent = tmp_path / "agent"
@@ -242,15 +250,18 @@ def test_stall_decision_ignores_cleanup_wall_time(tmp_path: Path) -> None:
         binary=str(agent),
         skip_probe=True,
     )
-    started = time.monotonic()
-    with patch(
+    with patch("core_tools.provider.cursor.time.monotonic", fake_monotonic), patch.object(
+        _SubprocessStdoutIterator,
+        "read_nonempty_line",
+        fake_read_nonempty_line,
+    ), patch(
         "core_tools.provider.cursor.terminate_process_tree",
-        side_effect=slow_cleanup,
+        side_effect=cleanup_without_wall_clock,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
         with pytest.raises(ProviderTurnStalledError):
             list(provider.stream_events(session_id))
-    assert stalled_at["t"] - started < idle + 0.08
+    assert stall_clock["t"] <= idle + 1e-6
 
 
 def test_reused_pgid_occupant_is_not_a_session_survivor(tmp_path: Path) -> None:

@@ -111,15 +111,24 @@ def test_terminate_session_slow_identity_inspect_stays_within_timeout(
 ) -> None:
     provider = _provider(tmp_path)
     session_id, _entry = _tracked(provider)
+    clock = {"t": 0.0}
+
+    def fake_monotonic() -> float:
+        return clock["t"]
 
     def slow_inspect(identity, timeout=None):
         del identity
         budget = 0.05 if timeout is None else max(0.0, timeout)
-        time.sleep(min(0.04, budget))
+        clock["t"] += min(0.04, budget)
         return IdentityInspectState.GONE
 
-    started = time.monotonic()
-    with patch(
+    with patch("core_tools.provider.cursor.time.monotonic", fake_monotonic), patch(
+        "core_tools.provider.process_identity.time.monotonic",
+        fake_monotonic,
+    ), patch(
+        "core_tools.provider.process_cleanup.time.monotonic",
+        fake_monotonic,
+    ), patch(
         "core_tools.provider.cursor.terminate_verified_process_identity",
         return_value=TerminateIdentityResult.FAILED,
     ), patch(
@@ -137,7 +146,7 @@ def test_terminate_session_slow_identity_inspect_stays_within_timeout(
             provider.terminate_session(session_id, timeout=0.05)
         except (ProviderSessionTerminationError, ProviderLifecycleTimeoutError):
             pass
-    assert time.monotonic() - started < 0.12
+    assert clock["t"] <= 0.05 + 1e-6
 
 
 def test_historical_presence_darwin_liveness_probe_uses_one_budget(

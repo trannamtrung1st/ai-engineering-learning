@@ -224,7 +224,7 @@ def test_second_stream_line_arrives_before_slow_identity(tmp_path: Path) -> None
         time.sleep(0.2)
         if timeout is not None and timeout == 0:
             return None
-        return ProcessIdentity(pid=1, start_time="1")
+        return ProcessIdentity(pid=424242, start_time="synthetic-test")
 
     agent = tmp_path / "agent"
     agent.write_text("", encoding="utf-8")

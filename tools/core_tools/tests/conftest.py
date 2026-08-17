@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -189,6 +190,80 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
             "spawn_main",
         )
     )
+
+
+def _open_fds() -> set[int]:
+    proc_fd = Path("/proc/self/fd")
+    if proc_fd.exists():
+        names = os.listdir(proc_fd)
+    else:
+        names = os.listdir("/dev/fd")
+    fds: set[int] = set()
+    for name in names:
+        try:
+            fds.add(int(name))
+        except ValueError:
+            continue
+    return fds
+
+
+def _cursor_turn_enrich_threads() -> list[threading.Thread]:
+    return [
+        thread
+        for thread in threading.enumerate()
+        if thread.name == "cursor-turn-enrich" and thread.is_alive()
+    ]
+
+
+@pytest.fixture(autouse=True)
+def assert_no_cursor_turn_enrich_threads():
+    yield
+    leftover = _cursor_turn_enrich_threads()
+    deadline = time.monotonic() + 0.5
+    while leftover and time.monotonic() < deadline:
+        for thread in leftover:
+            thread.join(timeout=0.05)
+        leftover = _cursor_turn_enrich_threads()
+    assert leftover == [], leftover
+
+
+@pytest.fixture(autouse=True)
+def trace_process_signals(monkeypatch: pytest.MonkeyPatch):
+    if os.environ.get("TDP_TRACE_PROCESS_SIGNALS") != "1":
+        yield
+        return
+    self_pid = os.getpid()
+    try:
+        self_pgrp = os.getpgrp()
+    except OSError:
+        self_pgrp = None
+    print(
+        f"[tdp-signal-trace] tester pid={self_pid} pgrp={self_pgrp}",
+        file=sys.stderr,
+        flush=True,
+    )
+    real_kill = os.kill
+    real_killpg = os.killpg
+
+    def traced_kill(pid: int, sig: int) -> None:
+        print(
+            f"[tdp-signal-trace] kill pid={pid} sig={sig} from pid={self_pid}",
+            file=sys.stderr,
+            flush=True,
+        )
+        real_kill(pid, sig)
+
+    def traced_killpg(pgid: int, sig: int) -> None:
+        print(
+            f"[tdp-signal-trace] killpg pgid={pgid} sig={sig} from pid={self_pid} pgrp={self_pgrp}",
+            file=sys.stderr,
+            flush=True,
+        )
+        real_killpg(pgid, sig)
+
+    monkeypatch.setattr(os, "kill", traced_kill)
+    monkeypatch.setattr(os, "killpg", traced_killpg)
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)

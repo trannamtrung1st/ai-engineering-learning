@@ -156,7 +156,7 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
     def slow_identity(pid, run_id=None, command=None, timeout=None):
         del pid, run_id, command, timeout
         time.sleep(0.2)
-        return ProcessIdentity(pid=1, start_time="1")
+        return ProcessIdentity(pid=424242, start_time="synthetic-test")
 
     provider = _provider(tmp_path, runner)
     with patch(

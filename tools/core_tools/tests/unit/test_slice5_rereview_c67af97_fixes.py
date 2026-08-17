@@ -66,24 +66,46 @@ def _provider(tmp_path: Path, runner=None, idle: float = 0.08) -> CursorProvider
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor handshake")
 def test_first_idle_window_starts_after_agent_child_handshake(tmp_path: Path) -> None:
     started_at = tmp_path / "started"
-    agent = tmp_path / "agent"
-    agent.write_text("", encoding="utf-8")
+    handshake_at: dict[str, float] = {}
+    idle_armed_at: dict[str, float] = {}
+    original_wait = _SubprocessStdoutIterator.wait_agent_started
+
+    def wait_and_mark(self, timeout=None):
+        original_wait(self, timeout=timeout)
+        handshake_at["t"] = time.monotonic()
+
+    original_idle = CursorProvider._iter_stream_with_idle_timeout
+
+    def idle_and_mark(*args, **kwargs):
+        stream = args[0]
+        if not hasattr(stream, "read_nonempty_line") and len(args) > 1:
+            stream = args[1]
+        idle_armed_at["t"] = time.monotonic()
+        idle_armed_at["deadline"] = kwargs.get("deadline")
+        return original_idle(stream, **kwargs)
+
+    (tmp_path / "agent").write_text("", encoding="utf-8")
     script = (
         "import json, sys, time\n"
         f"open({str(started_at)!r}, 'w').write(str(time.monotonic()))\n"
-        "time.sleep(0.05)\n"
+        "time.sleep(0.15)\n"
         "print(json.dumps({'type': 'assistant', 'text': 'ok'}), flush=True)\n"
     )
     provider = CursorProvider(
-        _idle_config(0.08),
+        _idle_config(0.5),
         workspace=tmp_path,
         runner=default_process_runner,
-        binary=str(agent),
+        binary=str(tmp_path / "agent"),
         skip_probe=True,
     )
-    lines = list(provider._runner([sys.executable, "-c", script], tmp_path))
+    with patch.object(_SubprocessStdoutIterator, "wait_agent_started", wait_and_mark):
+        with patch.object(CursorProvider, "_iter_stream_with_idle_timeout", idle_and_mark):
+            lines = list(provider._runner([sys.executable, "-c", script], tmp_path))
     assert any("ok" in line for line in lines)
     assert started_at.exists()
+    assert handshake_at["t"] <= idle_armed_at["t"]
+    assert idle_armed_at["deadline"] is not None
+    assert idle_armed_at["deadline"] >= handshake_at["t"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX idle stall")

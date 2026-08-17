@@ -233,6 +233,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     except OSError:
                         pass
             raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
+        if popen_kwargs.get("start_new_session") is True and self._proc.pid:
+            setattr(self._proc, "_core_tools_session_pgid", self._proc.pid)
         if status_w is not None:
             os.close(status_w)
         if started_w is not None:
@@ -803,6 +805,8 @@ class CursorProvider:
         self._collect_context = threading.local()
         self._on_provider_event = on_provider_event
         self._shutting_down = False
+        self._enrich_threads_lock = threading.Lock()
+        self._enrich_threads: list[threading.Thread] = []
 
     def start_primary_session(
         self,
@@ -1070,10 +1074,14 @@ class CursorProvider:
             session.turn_aborted = True
         self._abort_session_turn(session, error=None)
         remaining = max(0.0, deadline - time.monotonic())
+        self._wait_turn_enrichment(timeout=remaining)
+        remaining = max(0.0, deadline - time.monotonic())
         records = self._terminate_tracked_turn_procs_for_session(
             canonical_id,
             timeout=remaining,
         )
+        remaining = max(0.0, deadline - time.monotonic())
+        self._prune_dead_tracked_pids_for_session(canonical_id, timeout=remaining)
         remaining = max(0.0, deadline - time.monotonic())
         survival = self._surviving_pids_for_session(
             canonical_id, records, timeout=remaining
@@ -1095,7 +1103,6 @@ class CursorProvider:
                 ),
                 session_id=canonical_id,
             )
-
 
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""
@@ -1419,6 +1426,8 @@ class CursorProvider:
                     f"{canonical_id}",
                     session_id=canonical_id,
                 )
+        remaining = max(0.0, deadline - time.monotonic())
+        self._wait_turn_enrichment(timeout=remaining)
 
     def _queue_turn(self, session_id: str, *, prompt: str) -> None:
         session = self._require_session(session_id)
@@ -1936,6 +1945,45 @@ class CursorProvider:
             return session_id, role
         return None
 
+    def _start_turn_enrichment(
+        self,
+        proc: subprocess.Popen[str],
+        *,
+        timeout: float,
+    ) -> None:
+        def _enrich_async() -> None:
+            try:
+                self._enrich_tracked_turn_proc(proc, timeout=timeout)
+            except Exception:
+                return
+
+        thread = threading.Thread(
+            target=_enrich_async,
+            daemon=True,
+            name="cursor-turn-enrich",
+        )
+        with self._enrich_threads_lock:
+            self._enrich_threads.append(thread)
+        thread.start()
+
+    def _wait_turn_enrichment(self, *, timeout: float | None = None) -> None:
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        with self._enrich_threads_lock:
+            threads = list(self._enrich_threads)
+            self._enrich_threads.clear()
+        still_alive: list[threading.Thread] = []
+        for thread in threads:
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            if remaining is not None and remaining <= 0 and thread.is_alive():
+                still_alive.append(thread)
+                continue
+            thread.join(timeout=remaining)
+            if thread.is_alive():
+                still_alive.append(thread)
+        if still_alive:
+            with self._enrich_threads_lock:
+                self._enrich_threads.extend(still_alive)
+
     def _register_tracked_turn_proc(
         self,
         proc: subprocess.Popen[str],
@@ -1953,10 +2001,13 @@ class CursorProvider:
                 self._tracked_turn_procs.pop(proc.pid, None)
             session_id, role = context
             owner_id = getattr(self._collect_context, "owner_id", None)
+            known_pgid = getattr(proc, "_core_tools_session_pgid", None)
+            pgid = known_pgid if isinstance(known_pgid, int) and known_pgid > 0 else None
             self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
                 session_id=session_id,
                 role=role,
                 proc=proc,
+                pgid=pgid,
                 generation=id(proc),
                 owner_id=owner_id if isinstance(owner_id, str) else None,
             )
@@ -2496,29 +2547,18 @@ class CursorProvider:
                     yield first
                     proc = active_proc[0]
                     if proc is not None:
-                        enrich_proc = proc
                         enrich_timeout = max(
                             0.05, min(0.5, self._agent_start_timeout_seconds())
                         )
-
-                        def _enrich_async() -> None:
-                            try:
-                                self._enrich_tracked_turn_proc(
-                                    enrich_proc,
-                                    timeout=enrich_timeout,
-                                )
-                            except Exception:
-                                return
-
-                        threading.Thread(
-                            target=_enrich_async,
-                            daemon=True,
-                            name="cursor-turn-enrich",
-                        ).start()
+                        self._start_turn_enrichment(proc, timeout=enrich_timeout)
                     yield from lines
 
                 yield from _observe()
             finally:
+                remaining = DEFAULT_TURN_TREE_CLEANUP_SECONDS
+                if teardown_deadline[0] is not None:
+                    remaining = max(0.0, teardown_deadline[0] - time.monotonic())
+                self._wait_turn_enrichment(timeout=remaining)
                 proc = active_proc[0]
                 try:
                     if teardown_deadline[0] is None:

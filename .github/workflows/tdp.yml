@@ -75,6 +75,33 @@ jobs:
           python -m pytest \
             --ignore=tests/unit/test_process_cleanup.py \
             --ignore-glob='tests/unit/test_slice5_rereview*_fixes.py'
+
+  linux-process-lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install core_tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "tools/core_tools[dev]"
+
+      - name: Isolated buffered-drain reproducer
+        env:
+          TDP_TRACE_PROCESS_SIGNALS: "1"
+        run: |
+          cd tools/core_tools
+          python -m pytest -p no:xdist -o addopts='' --tb=short -s \
+            tests/unit/test_slice5_rereview_b8a5a80_fixes.py::test_zero_budget_still_drains_buffered_final_line
+
+      - name: Serial process-lifecycle tests
+        run: |
+          cd tools/core_tools
           python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_process_cleanup.py \
             tests/unit/test_slice5_rereview*_fixes.py
@@ -89,10 +116,21 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: core_tools Darwin janitor tests
+      - name: Install core_tools
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e "tools/core_tools[dev]"
+
+      - name: Isolated buffered-drain reproducer
+        env:
+          TDP_TRACE_PROCESS_SIGNALS: "1"
+        run: |
+          cd tools/core_tools
+          python -m pytest -p no:xdist -o addopts='' --tb=short -s \
+            tests/unit/test_slice5_rereview_b8a5a80_fixes.py::test_zero_budget_still_drains_buffered_final_line
+
+      - name: core_tools Darwin janitor tests
+        run: |
           cd tools/core_tools
           python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_process_cleanup.py \
