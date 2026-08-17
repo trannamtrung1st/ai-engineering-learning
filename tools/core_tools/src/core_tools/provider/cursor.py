@@ -806,7 +806,7 @@ class CursorProvider:
         self._on_provider_event = on_provider_event
         self._shutting_down = False
         self._enrich_threads_lock = threading.Lock()
-        self._enrich_threads: list[threading.Thread] = []
+        self._enrich_threads: dict[str, list[threading.Thread]] = {}
 
     def start_primary_session(
         self,
@@ -1074,7 +1074,7 @@ class CursorProvider:
             session.turn_aborted = True
         self._abort_session_turn(session, error=None)
         remaining = max(0.0, deadline - time.monotonic())
-        self._wait_turn_enrichment(timeout=remaining)
+        self._wait_turn_enrichment(timeout=remaining, session_id=canonical_id)
         remaining = max(0.0, deadline - time.monotonic())
         records = self._terminate_tracked_turn_procs_for_session(
             canonical_id,
@@ -1111,6 +1111,7 @@ class CursorProvider:
         try:
             terminated: list[dict[str, Any]] = []
             self._abort_inflight_sessions()
+            self._wait_turn_enrichment(timeout=DEFAULT_TURN_TREE_CLEANUP_SECONDS)
             terminated.extend(self._terminate_tracked_turn_procs())
 
             with self._session_registry_lock:
@@ -1427,7 +1428,7 @@ class CursorProvider:
                     session_id=canonical_id,
                 )
         remaining = max(0.0, deadline - time.monotonic())
-        self._wait_turn_enrichment(timeout=remaining)
+        self._wait_turn_enrichment(timeout=remaining, session_id=canonical_id)
 
     def _queue_turn(self, session_id: str, *, prompt: str) -> None:
         session = self._require_session(session_id)
@@ -1957,20 +1958,38 @@ class CursorProvider:
             except Exception:
                 return
 
+        context = self._get_collect_context()
+        session_key = context[0] if context is not None else ""
         thread = threading.Thread(
             target=_enrich_async,
             daemon=True,
             name="cursor-turn-enrich",
         )
         with self._enrich_threads_lock:
-            self._enrich_threads.append(thread)
-        thread.start()
+            self._enrich_threads.setdefault(session_key, []).append(thread)
+            thread.start()
 
-    def _wait_turn_enrichment(self, *, timeout: float | None = None) -> None:
+    def _wait_turn_enrichment(
+        self,
+        *,
+        timeout: float | None = None,
+        session_id: str | None = None,
+    ) -> None:
         deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        tracked_ids = None if session_id is None else self._tracked_session_ids(session_id)
+        popped_keys: list[str] = []
+        threads: list[threading.Thread] = []
         with self._enrich_threads_lock:
-            threads = list(self._enrich_threads)
-            self._enrich_threads.clear()
+            if tracked_ids is None:
+                for key, group in self._enrich_threads.items():
+                    popped_keys.append(key)
+                    threads.extend(group)
+                self._enrich_threads.clear()
+            else:
+                for key in list(self._enrich_threads):
+                    if key in tracked_ids:
+                        popped_keys.append(key)
+                        threads.extend(self._enrich_threads.pop(key))
         still_alive: list[threading.Thread] = []
         for thread in threads:
             remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
@@ -1981,8 +2000,9 @@ class CursorProvider:
             if thread.is_alive():
                 still_alive.append(thread)
         if still_alive:
+            restore_key = popped_keys[0] if popped_keys else (session_id or "")
             with self._enrich_threads_lock:
-                self._enrich_threads.extend(still_alive)
+                self._enrich_threads.setdefault(restore_key, []).extend(still_alive)
 
     def _register_tracked_turn_proc(
         self,
@@ -2555,16 +2575,19 @@ class CursorProvider:
 
                 yield from _observe()
             finally:
-                remaining = DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                if teardown_deadline[0] is not None:
-                    remaining = max(0.0, teardown_deadline[0] - time.monotonic())
-                self._wait_turn_enrichment(timeout=remaining)
+                if teardown_deadline[0] is None:
+                    teardown_deadline[0] = (
+                        time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
+                    )
+                context = self._get_collect_context()
+                wait_session_id = context[0] if context is not None else None
+                remaining = max(0.0, teardown_deadline[0] - time.monotonic())
+                self._wait_turn_enrichment(
+                    timeout=remaining,
+                    session_id=wait_session_id,
+                )
                 proc = active_proc[0]
                 try:
-                    if teardown_deadline[0] is None:
-                        teardown_deadline[0] = (
-                            time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                        )
                     if proc is not None:
                         tracked = self._tracked_turn_procs.get(proc.pid)
                         returncode = proc.poll()

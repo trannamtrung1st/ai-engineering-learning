@@ -85,15 +85,17 @@ def test_zero_budget_still_drains_buffered_final_line(tmp_path: Path) -> None:
     finally:
         iterator = iterator_holder.get("it")
         proc = getattr(iterator, "_proc", None) if iterator is not None else None
-        if proc is not None and proc.poll() is None:
-            try:
-                proc.kill()
-            except OSError:
-                pass
-            try:
-                proc.wait(timeout=2)
-            except Exception:
-                pass
+        if iterator is not None:
+            iterator.close()
+        if proc is not None:
+            raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
+            raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+            if raw_poll() is None:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+            raw_wait(timeout=2)
     texts = [str(event.get("text") or "") for event in events]
     assert any("tail" in text for text in texts)
 

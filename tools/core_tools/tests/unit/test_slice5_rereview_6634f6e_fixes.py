@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import subprocess
@@ -321,18 +322,27 @@ def test_zero_cleanup_budget_does_not_signal_group() -> None:
 
 def test_wait_agent_started_select_error_is_startup_failure() -> None:
     iterator = _SubprocessStdoutIterator.__new__(_SubprocessStdoutIterator)
-    iterator._started_read_fd = 3
+    started_r, started_w = os.pipe()
+    iterator._started_read_fd = started_r
     iterator._agent_started = False
     iterator._proc = MagicMock()
     iterator._proc.poll.return_value = None
     iterator._proc.pid = os.getpid()
-    with patch(
-        "core_tools.provider.cursor.select.select",
-        side_effect=OSError("bad fd"),
-    ), patch(
-        "core_tools.provider.cursor.inspect_pid_liveness",
-        return_value=PidInspectState.LIVE,
-    ):
-        with pytest.raises(ProviderTurnStartupError):
-            iterator.wait_agent_started(timeout=0.2)
-    iterator._started_read_fd = None
+    try:
+        with patch(
+            "core_tools.provider.cursor.select.select",
+            side_effect=OSError("bad fd"),
+        ), patch(
+            "core_tools.provider.cursor.inspect_pid_liveness",
+            return_value=PidInspectState.LIVE,
+        ):
+            with pytest.raises(ProviderTurnStartupError):
+                iterator.wait_agent_started(timeout=0.2)
+        with pytest.raises(OSError):
+            fcntl.fcntl(started_r, fcntl.F_GETFD)
+    finally:
+        os.close(started_w)
+        try:
+            os.close(started_r)
+        except OSError:
+            pass
