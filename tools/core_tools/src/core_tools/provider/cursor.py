@@ -47,6 +47,7 @@ from core_tools.provider.process_cleanup import (
     ProcessGroupState,
     inspect_pid_liveness,
     is_pid_alive,
+    list_process_group_pids,
     read_process_group_id,
     process_group_state,
     terminate_process_tree,
@@ -984,8 +985,9 @@ class CursorProvider:
             timeout=remaining,
         )
         remaining = max(0.0, deadline - time.monotonic())
+        probe = max(remaining, 0.2)
         surviving_pids = self._surviving_pids_for_session(
-            canonical_id, records, timeout=remaining
+            canonical_id, records, timeout=probe
         )
         if surviving_pids:
             raise ProviderSessionTerminationError(
@@ -1130,7 +1132,12 @@ class CursorProvider:
                     {**record, "reason": "termination_failed", "tree_status": "unresolved"}
                 )
                 remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
-                if not self._tracked_tree_is_live(entry, timeout=remaining):
+                group_state = ProcessGroupState.UNVERIFIABLE
+                if entry.pgid is not None:
+                    group_state = process_group_state(entry.pgid, timeout=remaining)
+                if group_state is ProcessGroupState.GONE and not self._tracked_tree_is_live(
+                    entry, timeout=remaining
+                ):
                     self._unregister_tracked_turn_proc_by_pid(pid)
         return terminated
 
@@ -2118,15 +2125,30 @@ class CursorProvider:
         tracked_ids = self._tracked_session_ids(session_id)
         surviving: set[int] = set()
         remaining = _remaining_fn(timeout)
+
+        def _add_live_group_members(pgid: int | None) -> None:
+            if pgid is None:
+                return
+            budget = remaining()
+            if budget is not None:
+                budget = max(budget, 0.2)
+            members = list_process_group_pids(pgid, timeout=budget)
+            if members is None:
+                surviving.add(pgid)
+                return
+            for member_pid in members:
+                if is_pid_alive(member_pid, timeout=budget):
+                    surviving.add(member_pid)
+
         for record in records:
             if record.get("reason") != "termination_failed":
                 continue
             identities = process_identities_from_termination_record(record)
-            if not identities:
-                continue
             for identity in identities:
                 if process_identity_is_live(identity, timeout=remaining()):
                     surviving.add(identity.pid)
+            pgid = record.get("pgid")
+            _add_live_group_members(int(pgid) if isinstance(pgid, int) else None)
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
                 if entry.session_id not in tracked_ids:
@@ -2139,6 +2161,7 @@ class CursorProvider:
                     entry.identity, timeout=remaining()
                 ):
                     surviving.add(entry.identity.pid)
+                _add_live_group_members(entry.pgid)
         return tuple(sorted(surviving))
 
     def _remove_session(self, canonical_id: str) -> None:
@@ -2308,9 +2331,7 @@ class CursorProvider:
                                 0.0, teardown_deadline[0] - time.monotonic()
                             ),
                         )
-                        if tree_clean or (
-                            tracked is not None and tracked.group_observed_gone
-                        ):
+                        if tree_clean:
                             self._unregister_tracked_turn_proc(proc)
                 finally:
                     if iterator is not None:

@@ -285,9 +285,10 @@ def test_cursor_unregisters_only_after_status_fd_closed(tmp_path: Path) -> None:
         ):
             provider._terminate_tracked_turn_procs()
     os.close(status_w)
-    assert order == ["unregister"]
-    assert proc.pid not in provider._tracked_turn_procs
+    assert owner._fd is None
     assert _fd_closed(status_r) is True
+    assert proc.pid in provider._tracked_turn_procs
+    assert order == []
 
 
 def test_zombie_ps_timeout_is_unverifiable(monkeypatch) -> None:
