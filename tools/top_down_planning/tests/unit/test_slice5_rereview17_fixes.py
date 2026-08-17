@@ -8,7 +8,12 @@ import pytest
 
 from core_tools.provider.cursor import CursorProvider, _TrackedTurnProc
 from core_tools.provider.process_cleanup import ProcessGroupState
-from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
+from core_tools.provider.process_identity import (
+    GroupLineageState,
+    IdentityInspectState,
+    ProcessIdentity,
+    TerminateIdentityResult,
+)
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.provider_teardown import (
     ProviderTeardownError,
@@ -52,18 +57,26 @@ def test_teardown_retains_session_when_group_still_live_after_known_identities_d
                 return_value=ProcessGroupState.LIVE,
             ):
                 with patch(
-                    "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-                    return_value=False,
+                    "core_tools.provider.cursor.inspect_process_identity",
+                    return_value=IdentityInspectState.GONE,
                 ):
-                    with pytest.raises(ProviderTeardownError, match="active sessions"):
-                        teardown_provider_sessions(
-                            provider,
-                            run_id="run-rr17",
-                            phase=PLANNING,
-                            append_event=lambda *_args, **_kwargs: None,
-                            emit_console=lambda _event: None,
-                            audit_cancel=True,
-                        )
+                    with patch(
+                        "core_tools.provider.cursor.current_process_group_lineage",
+                        return_value=GroupLineageState.OWNED,
+                    ):
+                        with patch(
+                            "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
+                            return_value=False,
+                        ):
+                            with pytest.raises(ProviderTeardownError, match="active sessions"):
+                                teardown_provider_sessions(
+                                    provider,
+                                    run_id="run-rr17",
+                                    phase=PLANNING,
+                                    append_event=lambda *_args, **_kwargs: None,
+                                    emit_console=lambda _event: None,
+                                    audit_cancel=True,
+                                )
 
     assert session_id in {s["session_id"] for s in provider.list_active_sessions()}
     assert 4242 in provider._tracked_turn_procs

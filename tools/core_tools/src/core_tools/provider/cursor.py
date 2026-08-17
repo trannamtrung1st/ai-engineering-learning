@@ -2040,10 +2040,6 @@ class CursorProvider:
                     for state in states
                 ):
                     return True
-                if any(
-                    state is IdentityInspectState.IDENTITY_MISMATCH for state in states
-                ):
-                    return False
                 expected_run_id = (
                     entry.identity.run_id if entry.identity is not None else None
                 )

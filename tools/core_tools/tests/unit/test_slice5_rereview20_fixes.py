@@ -111,12 +111,31 @@ def test_wait_peers_gone_does_not_report_clean_when_scan_is_unverifiable() -> No
         assert _wait_peers_gone(deadline, budget=1.0) is DrainResult.UNVERIFIABLE
 
 
+def test_signal_group_skips_when_caller_is_not_session_leader() -> None:
+    with patch("core_tools.provider.session_janitor.os.killpg") as killpg:
+        with patch("core_tools.provider.session_janitor.os.getpid", return_value=50):
+            with patch("core_tools.provider.session_janitor.os.getpgrp", return_value=99):
+                _signal_group(signal.SIGTERM)
+    killpg.assert_not_called()
+
+
 def test_signal_group_uses_only_killpg_not_raw_pids() -> None:
+    def fake_pgid(pid: int) -> int:
+        return 1 if pid == 1 else 99
+
     with patch("core_tools.provider.session_janitor.os.killpg") as killpg:
         with patch("core_tools.provider.session_janitor.os.kill") as kill:
             with patch(
                 "core_tools.provider.session_janitor._peer_pids",
                 return_value=[4242],
+            ), patch(
+                "core_tools.provider.session_janitor.os.getpid", return_value=99
+            ), patch(
+                "core_tools.provider.session_janitor.os.getpgrp", return_value=99
+            ), patch(
+                "core_tools.provider.session_janitor.os.getppid", return_value=1
+            ), patch(
+                "core_tools.provider.session_janitor.os.getpgid", side_effect=fake_pgid
             ):
                 _signal_group(signal.SIGTERM)
                 _signal_group(signal.SIGKILL)

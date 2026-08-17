@@ -697,7 +697,15 @@ def _leader_still_owns_group(
 
 def _signal_group(sig: int) -> None:
     try:
+        me = os.getpid()
         pgid = os.getpgrp()
+        if me != pgid:
+            return
+        try:
+            if os.getpgid(me) != pgid:
+                return
+        except OSError:
+            return
         try:
             if os.getpgid(os.getppid()) == pgid:
                 return
@@ -1534,6 +1542,13 @@ def main(
         deadline=active,
         leader_pid=os.getpid(),
     )
+    if handed is DrainResult.CLEAN:
+        handed = drain_result_if_proxies_live(
+            handed,
+            proxies_done=(
+                not stdout_thread.is_alive() and not stderr_thread.is_alive()
+            ),
+        )
     if handed is DrainResult.CLEAN:
         _write_status(
             status_fd,

@@ -15,7 +15,11 @@ import pytest
 from core_tools.provider.cursor import CursorProvider, default_process_runner
 from core_tools.provider.errors import ProviderTurnStartupError
 from core_tools.provider.process_cleanup import ProcessGroupState, posix_spawn_session_leader
-from core_tools.provider.process_identity import IdentityInspectState, ProcessIdentity
+from core_tools.provider.process_identity import (
+    GroupLineageState,
+    IdentityInspectState,
+    ProcessIdentity,
+)
 from tests.conftest import tracked_turn_proc
 
 
@@ -177,6 +181,9 @@ def test_leader_mismatch_and_gone_member_with_live_pgid_is_not_owned(tmp_path: P
     ), patch(
         "core_tools.provider.cursor.inspect_process_identity",
         side_effect=fake_inspect,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.FOREIGN,
     ):
         assert provider._tracked_tree_is_live(entry) is False
 

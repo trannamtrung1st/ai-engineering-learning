@@ -473,15 +473,19 @@ def _tdp_env_from_linux(pid: int) -> dict[str, str]:
     return env
 
 
-def _tdp_env_from_ps(pid: int) -> dict[str, str]:
+def _tdp_env_from_ps(pid: int, *, timeout: float | None = None) -> dict[str, str]:
+    budget = 0.2 if timeout is None else max(0.0, timeout)
+    if budget <= 0:
+        return {}
     try:
         result = subprocess.run(
             ["ps", "eww", "-p", str(pid)],
             capture_output=True,
             text=True,
             check=False,
+            timeout=budget,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return {}
     if result.returncode != 0:
         return {}
@@ -498,27 +502,25 @@ def _tdp_env_from_ps(pid: int) -> dict[str, str]:
     return env
 
 
-def _tdp_env_for_pid(pid: int) -> dict[str, str]:
+def _tdp_env_for_pid(pid: int, *, timeout: float | None = None) -> dict[str, str]:
     if pid <= 0:
         return {}
     if os.path.isdir("/proc"):
         return _tdp_env_from_linux(pid)
-    return _tdp_env_from_ps(pid)
+    return _tdp_env_from_ps(pid, timeout=timeout)
 
 
 def read_process_run_id(pid: int, *, timeout: float | None = None) -> str | None:
     """Return ``TDP_RUN_ID`` from *pid*'s environment, or ``None`` if unknown."""
 
-    del timeout
-    value = _tdp_env_for_pid(pid).get(_RUN_ID_ENV_VAR)
+    value = _tdp_env_for_pid(pid, timeout=timeout).get(_RUN_ID_ENV_VAR)
     return value or None
 
 
 def read_process_owner_id(pid: int, *, timeout: float | None = None) -> str | None:
     """Return ``TDP_PROVIDER_OWNER_ID`` from *pid*'s environment, if present."""
 
-    del timeout
-    value = _tdp_env_for_pid(pid).get(PROVIDER_OWNER_ENV_VAR)
+    value = _tdp_env_for_pid(pid, timeout=timeout).get(PROVIDER_OWNER_ENV_VAR)
     return value or None
 
 
