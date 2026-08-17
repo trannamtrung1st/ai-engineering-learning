@@ -25,7 +25,10 @@ def test_terminate_session_removes_stale_tracked_pid_when_process_already_dead(
     stale_pid = 9090
     provider._tracked_turn_procs[stale_pid] = tracked_turn_proc(session_id, "planner", stale_pid)
 
-    with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
+    with patch(
+        "core_tools.provider.cursor.process_identity_is_live",
+        return_value=False,
+    ), patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
         provider.terminate_session(session_id)
 
     assert stale_pid not in provider._tracked_turn_procs

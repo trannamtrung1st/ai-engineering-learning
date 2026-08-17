@@ -2152,8 +2152,9 @@ class CursorProvider:
             ):
                 return False
             return True
-        # No captured PGID: descendant ownership cannot be verified.
-        return True
+        # No captured PGID: a remaining process handle cannot prove descendants
+        # are gone. A synthetic/stale registry row with no handle is not live.
+        return entry.proc is not None
 
     def _historical_identities_still_present(
         self,
@@ -2374,6 +2375,10 @@ class CursorProvider:
                 expected_owner_id = entry.owner_id
                 if expected_owner_id is None and entry.identity is not None:
                     expected_owner_id = entry.identity.owner_id
+                if entry.pgid is None:
+                    if entry.proc is not None:
+                        unresolved = True
+                    continue
                 _consider_group(
                     entry.pgid,
                     expected_run_id=expected_run_id,

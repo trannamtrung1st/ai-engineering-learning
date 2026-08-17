@@ -297,6 +297,30 @@ def test_terminate_session_fails_closed_when_dead_leader_has_no_captured_pgid(
     assert 4242 in provider._tracked_turn_procs
 
 
+def test_survival_scan_is_unresolved_when_dead_leader_has_handle_but_no_pgid(
+    tmp_path: Path,
+) -> None:
+    provider = _provider(tmp_path)
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    leader = ProcessIdentity(pid=4242, start_time="100")
+    proc = MagicMock()
+    proc.pid = 4242
+    proc.poll.return_value = 1
+    provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
+    entry = provider._tracked_turn_procs[4242]
+    entry.proc = proc
+    entry.identity = leader
+    entry.pgid = None
+    entry.member_identities = None
+    with patch(
+        "core_tools.provider.cursor.process_identity_is_live",
+        return_value=False,
+    ):
+        survival = provider._surviving_pids_for_session(session_id, [])
+    assert survival.pids == ()
+    assert survival.unresolved is True
+
+
 def test_terminate_session_fails_closed_when_group_member_survives(
     tmp_path: Path,
 ) -> None:
