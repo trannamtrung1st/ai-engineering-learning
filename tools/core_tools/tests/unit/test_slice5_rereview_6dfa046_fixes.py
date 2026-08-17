@@ -25,7 +25,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.process_identity import ProcessIdentity
-from tests.conftest import tracked_turn_proc
+from tests.conftest import tracked_turn_proc, wait_published_pid
 
 
 def _idle_config(idle: float) -> dict:
@@ -320,11 +320,7 @@ def test_late_janitor_child_is_reaped_or_fail_closed(tmp_path: Path) -> None:
     child_pid = None
     try:
         thread.start()
-        for _ in range(40):
-            if child_pid_file.exists():
-                child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
-                break
-            time.sleep(0.05)
+        child_pid = wait_published_pid(child_pid_file)
         assert child_pid is not None
         os.kill(child_pid, 0)
         released = False

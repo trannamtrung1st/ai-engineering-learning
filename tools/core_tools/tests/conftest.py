@@ -79,12 +79,25 @@ def spawn_sigterm_ignoring_leader_with_child(
         start_new_session=True,
         text=True,
     )
-    for _ in range(40):
-        if child_pid_file.exists():
-            return proc, int(child_pid_file.read_text(encoding="utf-8").strip())
+    child_pid = wait_published_pid(child_pid_file)
+    if child_pid is None:
+        reap_process_group(proc)
+        raise AssertionError("child PID file was not written")
+    return proc, child_pid
+
+
+def wait_published_pid(path: Path, *, attempts: int = 40) -> int | None:
+    """Return a PID once *path* contains a complete integer, else ``None``."""
+
+    for _ in range(attempts):
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            text = ""
+        if text.isdigit():
+            return int(text)
         time.sleep(0.05)
-    reap_process_group(proc)
-    raise AssertionError("child PID file was not written")
+    return None
 
 
 def reap_process_group(
@@ -172,6 +185,8 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
             "forkserver",
             "semaphore_tracker",
             "execnet",
+            "multiprocessing.spawn",
+            "spawn_main",
         )
     )
 

@@ -75,7 +75,7 @@ jobs:
           python -m pytest \
             --ignore=tests/unit/test_process_cleanup.py \
             --ignore-glob='tests/unit/test_slice5_rereview*_fixes.py'
-          python -m pytest -n 0 --tb=short \
+          python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_process_cleanup.py \
             tests/unit/test_slice5_rereview*_fixes.py
 
@@ -94,6 +94,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "tools/core_tools[dev]"
           cd tools/core_tools
-          python -m pytest -n 0 --tb=short \
+          python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_process_cleanup.py \
             tests/unit/test_slice5_rereview*_fixes.py

@@ -109,6 +109,8 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
             "forkserver",
             "semaphore_tracker",
             "execnet",
+            "multiprocessing.spawn",
+            "spawn_main",
         )
     )
 

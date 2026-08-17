@@ -22,8 +22,11 @@ from core_tools.provider.process_cleanup import (
     process_group_state,
     terminate_process_tree,
 )
+from tests.conftest import wait_published_pid
 from core_tools.provider.process_identity import IdentityInspectState, ProcessIdentity
 from core_tools.provider.session_janitor import janitor_command
+
+
 def _provider(tmp_path: Path) -> CursorProvider:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
@@ -64,13 +67,7 @@ def test_janitor_cleans_descendants_after_agent_exits(tmp_path: Path) -> None:
     )
     child_pid = None
     try:
-        for _ in range(40):
-            if child_pid_file.exists():
-                child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
-                break
-            import time
-
-            time.sleep(0.05)
+        child_pid = wait_published_pid(child_pid_file)
         assert child_pid is not None
         os.kill(child_pid, 0)
         cleaned = terminate_process_tree(proc)
@@ -114,15 +111,10 @@ def test_janitor_cleans_descendants_after_unexpected_agent_exit(tmp_path: Path) 
     )
     child_pid = None
     try:
-        import time
-
-        for _ in range(40):
-            if child_pid_file.exists() and agent_pid_file.exists():
-                child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
-                break
-            time.sleep(0.05)
+        child_pid = wait_published_pid(child_pid_file)
         assert child_pid is not None
-        agent_pid = int(agent_pid_file.read_text(encoding="utf-8").strip())
+        agent_pid = wait_published_pid(agent_pid_file)
+        assert agent_pid is not None
         os.kill(agent_pid, signal.SIGKILL)
         cleaned = terminate_process_tree(proc)
         assert cleaned is True

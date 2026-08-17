@@ -21,7 +21,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.stub import StubProvider
-from tests.conftest import _is_pytest_infrastructure, tracked_turn_proc
+from tests.conftest import _is_pytest_infrastructure, tracked_turn_proc, wait_published_pid
 
 
 def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:
@@ -30,7 +30,18 @@ def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:
     )
     assert _is_pytest_infrastructure("python -m multiprocessing.forkserver")
     assert _is_pytest_infrastructure("/usr/bin/python execnet gateway")
+    assert _is_pytest_infrastructure(
+        "python -c from multiprocessing.spawn import spawn_main; spawn_main()"
+    )
     assert not _is_pytest_infrastructure("python -c import time; time.sleep(60)")
+
+
+def test_wait_published_pid_ignores_empty_file_until_integer(tmp_path: Path) -> None:
+    path = tmp_path / "child.pid"
+    path.write_text("", encoding="utf-8")
+    assert wait_published_pid(path, attempts=1) is None
+    path.write_text("4242\n", encoding="utf-8")
+    assert wait_published_pid(path, attempts=1) == 4242
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderLifecycleTimeoutError, ProviderSessionTerminationError
 from core_tools.provider.process_cleanup import ProcessGroupState
@@ -261,6 +263,38 @@ def test_terminate_session_does_not_release_after_abort_turn_timeout(
             released = False
     assert released is False
     assert session_id in provider._sessions
+
+
+def test_terminate_session_fails_closed_when_dead_leader_has_no_captured_pgid(
+    tmp_path: Path,
+) -> None:
+    provider = _provider(tmp_path)
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    leader = ProcessIdentity(pid=4242, start_time="100")
+    proc = MagicMock()
+    proc.pid = 4242
+    proc.poll.return_value = 1
+    provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
+    entry = provider._tracked_turn_procs[4242]
+    entry.proc = proc
+    entry.identity = leader
+    entry.pgid = None
+    entry.member_identities = None
+    with patch(
+        "core_tools.provider.cursor.process_identity_is_live",
+        return_value=False,
+    ), patch(
+        "core_tools.provider.cursor.terminate_verified_process_identity",
+        return_value=TerminateIdentityResult.ALREADY_GONE,
+    ), patch(
+        "core_tools.provider.cursor.CursorProvider.abort_turn",
+    ), patch(
+        "core_tools.provider.cursor.CursorProvider.wait_turn_settled",
+    ):
+        with pytest.raises(ProviderSessionTerminationError):
+            provider.terminate_session(session_id)
+    assert session_id in provider._sessions
+    assert 4242 in provider._tracked_turn_procs
 
 
 def test_terminate_session_fails_closed_when_group_member_survives(

@@ -2152,10 +2152,8 @@ class CursorProvider:
             ):
                 return False
             return True
-        pid = entry.proc.pid if entry.proc is not None else (
-            entry.identity.pid if entry.identity is not None else 0
-        )
-        return is_pid_alive(pid, timeout=remaining())
+        # No captured PGID: descendant ownership cannot be verified.
+        return True
 
     def _historical_identities_still_present(
         self,

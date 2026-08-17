@@ -32,7 +32,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.process_identity import ProcessIdentity
-from tests.conftest import tracked_turn_proc
+from tests.conftest import tracked_turn_proc, wait_published_pid
 
 
 def _idle_config(idle: float) -> dict:
@@ -285,14 +285,14 @@ def test_unexpected_janitor_exit_after_late_child_reaps_or_fail_closes(
     child_pid = None
     try:
         thread.start()
-        for _ in range(40):
-            if child_pid_file.exists():
-                child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
-                break
-            time.sleep(0.05)
+        child_pid = wait_published_pid(child_pid_file)
         assert child_pid is not None
         tracked = next(iter(provider._tracked_turn_procs.values()), None)
         assert tracked is not None and tracked.proc is not None
+        for _ in range(40):
+            if tracked.pgid is not None:
+                break
+            time.sleep(0.05)
         os.kill(tracked.proc.pid, signal.SIGKILL)
         released = False
         try:
