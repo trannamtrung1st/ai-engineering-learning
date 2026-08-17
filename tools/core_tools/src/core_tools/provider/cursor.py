@@ -1165,12 +1165,26 @@ class CursorProvider:
                 if not self._tracked_tree_is_live(entry, timeout=remaining):
                     self._unregister_tracked_turn_proc_by_pid(pid)
             elif result == TerminateIdentityResult.FAILED:
-                terminated.append(
-                    {**record, "reason": "termination_failed", "tree_status": "unresolved"}
-                )
                 remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
                 if self._failed_tracking_is_stale(entry, timeout=remaining):
+                    terminated.append(
+                        {
+                            **record,
+                            "reason": "stale_reconciled",
+                            "tree_status": "stale_reconciled",
+                            "group_observed_gone": True,
+                        }
+                    )
                     self._unregister_tracked_turn_proc_by_pid(pid)
+                else:
+                    terminated.append(
+                        {
+                            **record,
+                            "reason": "termination_failed",
+                            "tree_status": "unresolved",
+                            "group_observed_gone": bool(entry.group_observed_gone),
+                        }
+                    )
         return terminated
 
     @staticmethod
@@ -2135,13 +2149,18 @@ class CursorProvider:
         )
         return is_pid_alive(pid, timeout=remaining())
 
-    def _historical_identities_still_live(
+    def _historical_identities_still_present(
         self,
         entry: _TrackedTurnProc,
         *,
         timeout: float | None = None,
     ) -> bool:
         remaining = _remaining_fn(timeout)
+        present = {
+            IdentityInspectState.LIVE_MATCH,
+            IdentityInspectState.ZOMBIE,
+            IdentityInspectState.UNVERIFIABLE,
+        }
         if entry.proc is not None:
             raw_poll = entry.proc.__dict__.get("_core_tools_raw_poll", entry.proc.poll)
             if callable(raw_poll):
@@ -2153,13 +2172,16 @@ class CursorProvider:
                         return True
             elif entry.proc.poll() is None:
                 return True
-        if entry.identity is not None and process_identity_is_live(
-            entry.identity, timeout=remaining()
-        ):
-            return True
+        if entry.identity is not None:
+            leftover = remaining()
+            if inspect_process_identity(entry.identity, timeout=leftover) in present:
+                return True
+            if process_identity_is_live(entry.identity, timeout=leftover):
+                return True
         if entry.member_identities:
             return any(
-                process_identity_is_live(identity, timeout=remaining())
+                inspect_process_identity(identity, timeout=remaining()) in present
+                or process_identity_is_live(identity, timeout=remaining())
                 for identity in entry.member_identities
             )
         return False
@@ -2173,7 +2195,7 @@ class CursorProvider:
         """True when a FAILED tree may be unregistered (GONE group or FOREIGN)."""
 
         remaining = _remaining_fn(timeout)
-        if self._historical_identities_still_live(entry, timeout=remaining()):
+        if self._historical_identities_still_present(entry, timeout=remaining()):
             return False
         if entry.pgid is None:
             return False
@@ -2297,6 +2319,8 @@ class CursorProvider:
         for record in records:
             if record.get("reason") != "termination_failed":
                 continue
+            if record.get("tree_status") == "stale_reconciled":
+                continue
             identities = process_identities_from_termination_record(record)
             for identity in identities:
                 leftover = remaining()
@@ -2314,7 +2338,7 @@ class CursorProvider:
                 expected_owner_id=record.get("provider_owner_id")
                 if isinstance(record.get("provider_owner_id"), str)
                 else None,
-                observed_gone=False,
+                observed_gone=bool(record.get("group_observed_gone")),
             )
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():

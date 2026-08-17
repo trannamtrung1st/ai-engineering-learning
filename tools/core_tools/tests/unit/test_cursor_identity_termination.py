@@ -147,5 +147,6 @@ def test_cursor_failed_termination_record_carries_original_identity(tmp_path: Pa
             "process_identity": "4242:100",
             "run_id": None,
             "reason": "termination_failed",
+            "group_observed_gone": False,
         }
     ]

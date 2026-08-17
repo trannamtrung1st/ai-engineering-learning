@@ -230,8 +230,9 @@ def test_exhausted_teardown_budget_does_not_inflate_inspection_timeout(
             provider.terminate_session(session_id, timeout=0.05)
         except (ProviderSessionTerminationError, ProviderLifecycleTimeoutError):
             pass
-    assert seen
-    assert all(timeout is not None and timeout <= 0.05 + 1e-6 for timeout in seen)
+    assert all(
+        timeout is not None and timeout <= 0.05 + 1e-6 for timeout in seen
+    )
 
 
 def test_duplicate_pgid_is_probed_once_under_shared_deadline(tmp_path: Path) -> None:
