@@ -39,13 +39,6 @@ def test_registration_shares_idle_detection_deadline(tmp_path: Path) -> None:
         del argv
         return _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
 
-    def slow_identity(pid, run_id=None, command=None, timeout=None):
-        del pid, run_id, command
-        time.sleep(0.07)
-        if timeout is not None and timeout < 0.05:
-            return None
-        return ProcessIdentity(pid=424242, start_time="synthetic-test")
-
     agent = tmp_path / "agent"
     agent.write_text("", encoding="utf-8")
     provider = CursorProvider(
@@ -55,34 +48,44 @@ def test_registration_shares_idle_detection_deadline(tmp_path: Path) -> None:
         binary=str(agent),
         skip_probe=True,
     )
-    stalled_at: dict[str, float] = {}
-
-    def mark_stall(*args, **kwargs):
-        stalled_at.setdefault("t", time.monotonic())
-        return True
-
-    handshake_done = {}
+    handshake_at: dict[str, float] = {}
+    idle_call: dict[str, object] = {}
     original_wait = _SubprocessStdoutIterator.wait_agent_started
+    original_idle = CursorProvider._iter_stream_with_idle_timeout
 
-    def wait_then_idle(self, timeout=None):
+    def wait_then_mark(self, timeout=None):
         original_wait(self, timeout=timeout)
-        handshake_done["t"] = time.monotonic()
+        handshake_at["t"] = time.monotonic()
 
-    with patch(
-        "core_tools.provider.cursor.read_process_identity",
-        side_effect=slow_identity,
-    ), patch(
-        "core_tools.provider.cursor.terminate_process_tree",
-        side_effect=mark_stall,
-    ), patch.object(
+    def capture_idle(self, stream, **kwargs):
+        del self
+        idle_call["deadline"] = kwargs.get("deadline")
+        idle_call["idle_timeout"] = kwargs.get("idle_timeout")
+        idle_call["armed_at"] = time.monotonic()
+        return original_idle(stream, **kwargs)
+
+    with patch.object(
         _SubprocessStdoutIterator,
         "wait_agent_started",
-        wait_then_idle,
+        wait_then_mark,
+    ), patch.object(
+        CursorProvider,
+        "_iter_stream_with_idle_timeout",
+        capture_idle,
+    ), patch(
+        "core_tools.provider.cursor.terminate_process_tree",
+        return_value=True,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
         with pytest.raises(ProviderTurnStalledError):
             list(provider.stream_events(session_id))
-        assert stalled_at["t"] - handshake_done["t"] < idle + 0.08
+    deadline = idle_call["deadline"]
+    armed_at = idle_call["armed_at"]
+    assert isinstance(deadline, float)
+    assert isinstance(armed_at, float)
+    assert idle_call["idle_timeout"] == idle
+    assert deadline >= handshake_at["t"]
+    assert deadline - armed_at == pytest.approx(idle, abs=0.02)
     assert provider._tracked_turn_procs == {}
 
 

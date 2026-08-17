@@ -153,12 +153,10 @@ def test_supported_stream_json_record_sizes_are_accepted(
 def test_record_over_max_stream_bytes_is_rejected_even_with_newline(
     tmp_path: Path,
 ) -> None:
-    payload = "x" * (MAX_STREAM_JSON_RECORD_BYTES + 8)
-    line = json.dumps({"type": "assistant", "text": payload})
-    assert len(line) > MAX_STREAM_JSON_RECORD_BYTES
     script = (
-        "import sys\n"
-        f"sys.stdout.write({line!r} + '\\n')\n"
+        "import json, sys\n"
+        f"payload = 'x' * {MAX_STREAM_JSON_RECORD_BYTES + 8}\n"
+        "sys.stdout.write(json.dumps({'type': 'assistant', 'text': payload}) + '\\n')\n"
         "sys.stdout.flush()\n"
     )
     iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)

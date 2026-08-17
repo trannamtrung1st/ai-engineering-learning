@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.process_cleanup import ProcessGroupState
@@ -156,15 +157,23 @@ def test_lineage_obeys_one_aggregate_deadline() -> None:
     members = [
         ProcessIdentity(pid=pid, start_time=str(pid)) for pid in range(10, 15)
     ]
+    clock = {"t": 100.0}
+    budgets: list[float | None] = []
+
+    def fake_monotonic() -> float:
+        return clock["t"]
 
     def slow_env(pid: int, *, timeout: float | None = None):
         del pid
+        budgets.append(timeout)
         budget = 0.2 if timeout is None else max(0.0, timeout)
-        time.sleep(min(0.05, budget))
+        clock["t"] += min(0.05, budget)
         return {}
 
-    started = time.monotonic()
     with patch(
+        "core_tools.provider.process_identity.time.monotonic",
+        fake_monotonic,
+    ), patch(
         "core_tools.provider.process_identity.process_group_state",
         return_value=ProcessGroupState.LIVE,
     ), patch(
@@ -177,7 +186,14 @@ def test_lineage_obeys_one_aggregate_deadline() -> None:
         current_process_group_lineage(
             99, expected_run_id="run-a", expected_owner_id="owner-a", timeout=0.08
         )
-    assert time.monotonic() - started < 0.16
+    assert budgets
+    assert budgets[0] == pytest.approx(0.08, abs=0.001)
+    assert budgets[-1] is not None
+    assert budgets[-1] < budgets[0]
+    assert all(
+        later is not None and earlier is not None and later <= earlier
+        for earlier, later in zip(budgets, budgets[1:])
+    )
 
 
 def test_termination_record_serializes_provider_owner_id(tmp_path: Path) -> None:

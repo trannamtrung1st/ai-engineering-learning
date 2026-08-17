@@ -362,29 +362,33 @@ def test_term_survivors_write_status_before_parent_fallback(tmp_path: Path) -> N
     assert proc.poll() is not None
 
 
+def _assert_fd_counts_do_not_grow(counts: list[int], *, baseline: int) -> None:
+    assert len(counts) >= 5
+    assert counts[-1] <= counts[0]
+    assert counts[-1] <= baseline + 4
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
 def test_abandoned_provider_stream_closes_status_fd(tmp_path: Path) -> None:
     baseline = _fd_count()
     counts: list[int] = []
-    for _ in range(2):
+    live_script = "import time; print('x', flush=True); time.sleep(8)"
+    for _ in range(5):
         holder: list[subprocess.Popen[str] | None] = [None]
         stream = default_process_runner(
-            [
-                sys.executable,
-                "-c",
-                "print('x', flush=True)",
-            ],
+            [sys.executable, "-c", live_script],
             tmp_path,
             active_proc=holder,
         )
         assert next(stream) == "x"
         assert isinstance(stream, _SubprocessStdoutIterator)
-        stream.close()
         proc = holder[0]
-        if proc is not None:
-            terminate_process_tree(proc, timeout=0.5)
+        assert proc is not None
+        assert proc.poll() is None
+        stream.close()
+        terminate_process_tree(proc, timeout=0.5)
         counts.append(_fd_count())
-    assert max(counts) <= baseline + 4
+    _assert_fd_counts_do_not_grow(counts, baseline=baseline)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -402,33 +406,36 @@ def test_repeated_wrapped_cancellation_does_not_grow_fds(tmp_path: Path) -> None
     provider._set_collect_context(session_id, "planner")
     baseline = _fd_count()
     counts: list[int] = []
-    script = "print('ready', flush=True)"
-    for _ in range(2):
-        gen = provider._runner([sys.executable, "-c", script], tmp_path)
-        assert next(gen) == "ready"
-        gen.close()
-        counts.append(_fd_count())
-    assert max(counts) <= baseline + 6
+    script = "import time; print('ready', flush=True); time.sleep(8)"
+    with patch("core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS", 0.5):
+        for _ in range(5):
+            gen = provider._runner([sys.executable, "-c", script], tmp_path)
+            assert next(gen) == "ready"
+            gen.close()
+            counts.append(_fd_count())
+    _assert_fd_counts_do_not_grow(counts, baseline=baseline)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
 def test_abandoned_provider_stream_closes_status_fd_without_reading(tmp_path: Path) -> None:
     baseline = _fd_count()
     counts: list[int] = []
-    for _ in range(2):
+    live_script = "import time; print('x', flush=True); time.sleep(8)"
+    for _ in range(5):
         holder: list[subprocess.Popen[str] | None] = [None]
         stream = default_process_runner(
-            [sys.executable, "-c", "print('x', flush=True)"],
+            [sys.executable, "-c", live_script],
             tmp_path,
             active_proc=holder,
         )
         assert isinstance(stream, _SubprocessStdoutIterator)
-        stream.close()
         proc = holder[0]
-        if proc is not None:
-            terminate_process_tree(proc, timeout=0.5)
+        assert proc is not None
+        assert proc.poll() is None
+        stream.close()
+        terminate_process_tree(proc, timeout=0.5)
         counts.append(_fd_count())
-    assert max(counts) <= baseline + 4
+    _assert_fd_counts_do_not_grow(counts, baseline=baseline)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
