@@ -363,6 +363,13 @@ def complete_bound_secondary_clean(
     }
     owner = getattr(proc, "_core_tools_janitor_status_owner", None)
     if isinstance(owner, JanitorStatusOwner):
+        current = owner._status
+        if not (
+            isinstance(current, dict)
+            and current.get("drain") == DrainResult.CLEAN.value
+        ):
+            owner.finalize_status_ownership()
+            return False
         owner.mark_safe_fallback(cleaned)
     else:
         marker = getattr(owner, "mark_safe_fallback", None)
@@ -695,22 +702,70 @@ def _leader_still_owns_group(
     return True
 
 
+def _record_group_signal(
+    *,
+    target_pgid: int,
+    sig: int,
+    reason: str,
+    authorized: bool,
+) -> None:
+    record = {
+        "sender_pid": os.getpid(),
+        "sender_pgid": os.getpgrp(),
+        "target_pgid": target_pgid,
+        "signal": int(sig),
+        "reason": reason,
+        "authorized": authorized,
+        "run_id": os.environ.get("TDP_RUN_ID"),
+        "provider_owner_id": os.environ.get("TDP_PROVIDER_OWNER_ID"),
+    }
+    try:
+        record["sender_sid"] = os.getsid(os.getpid())
+    except OSError:
+        record["sender_sid"] = None
+    log_path = os.environ.get("TDP_GROUP_SIGNAL_LOG")
+    if log_path:
+        try:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+        except OSError:
+            pass
+
+
 def _signal_group(sig: int) -> None:
     try:
         me = os.getpid()
         pgid = os.getpgrp()
         if me != pgid:
+            _record_group_signal(
+                target_pgid=pgid, sig=sig, reason="not_session_leader", authorized=False
+            )
             return
         try:
             if os.getpgid(me) != pgid:
+                _record_group_signal(
+                    target_pgid=pgid,
+                    sig=sig,
+                    reason="pgid_mismatch",
+                    authorized=False,
+                )
                 return
         except OSError:
             return
         try:
             if os.getpgid(os.getppid()) == pgid:
+                _record_group_signal(
+                    target_pgid=pgid,
+                    sig=sig,
+                    reason="parent_process_group",
+                    authorized=False,
+                )
                 return
         except OSError:
             pass
+        _record_group_signal(
+            target_pgid=pgid, sig=sig, reason="session_leader_group", authorized=True
+        )
         os.killpg(pgid, sig)
     except OSError:
         pass
@@ -1071,12 +1126,24 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) 
         return
     if proc.poll() is None:
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
+            pgid = os.getpgid(proc.pid)
         except OSError:
+            pgid = None
+        if pgid == proc.pid:
+            parent_pgid = None
             try:
-                proc.kill()
+                parent_pgid = os.getpgid(os.getppid())
             except OSError:
                 pass
+            if parent_pgid != pgid:
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except OSError:
+                    pass
+        try:
+            proc.kill()
+        except OSError:
+            pass
     leftover = max(0.0, timeout)
     deadline = time.monotonic() + leftover
     waitpid = getattr(os, "waitpid", None)

@@ -505,6 +505,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             remaining = (
                 None if idle_deadline is None else max(0.0, idle_deadline - time.monotonic())
             )
+            before = len(self._stdout_buf)
             got = self._fill_stdout_buffer(remaining)
             if got:
                 if self._proc.poll() is not None and not self._stdout_eof:
@@ -513,7 +514,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     if self._stdout_buf and b"\n" not in self._stdout_buf:
                         self._stdout_buf.extend(b"\n")
                     return True
-                if idle_deadline is not None and idle_window is not None:
+                if (
+                    idle_deadline is not None
+                    and idle_window is not None
+                    and len(self._stdout_buf) > before
+                ):
                     idle_deadline = time.monotonic() + idle_window
                 continue
             if idle_deadline is None:
@@ -1124,6 +1129,9 @@ class CursorProvider:
                 terminated.append(
                     {**record, "reason": "termination_failed", "tree_status": "unresolved"}
                 )
+                remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+                if not self._tracked_tree_is_live(entry, timeout=remaining):
+                    self._unregister_tracked_turn_proc_by_pid(pid)
         return terminated
 
     @staticmethod
@@ -2004,8 +2012,17 @@ class CursorProvider:
         timeout: float | None = None,
     ) -> bool:
         remaining = _remaining_fn(timeout)
-        if entry.proc is not None and entry.proc.poll() is None:
-            return True
+        if entry.proc is not None:
+            raw_poll = getattr(entry.proc, "_core_tools_raw_poll", entry.proc.poll)
+            if callable(raw_poll):
+                try:
+                    if raw_poll() is None:
+                        return True
+                except Exception:
+                    if entry.proc.poll() is None:
+                        return True
+            elif entry.proc.poll() is None:
+                return True
         if entry.identity is not None and process_identity_is_live(
             entry.identity, timeout=remaining()
         ):
@@ -2030,6 +2047,7 @@ class CursorProvider:
                 anchors.append(entry.identity)
             if entry.member_identities:
                 anchors.extend(entry.member_identities)
+            states: list[IdentityInspectState] = []
             if anchors:
                 states = [
                     inspect_process_identity(identity, timeout=remaining())
@@ -2063,7 +2081,13 @@ class CursorProvider:
                 return True
             if expected_owner_id or expected_run_id:
                 return True
-            return False
+            if not states:
+                return False
+            if all(
+                state is IdentityInspectState.IDENTITY_MISMATCH for state in states
+            ):
+                return False
+            return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )

@@ -996,12 +996,24 @@ def _terminate_bound_process(
         )
 
     drain_budget = None if deadline is None else _remaining_seconds(deadline, default=0.0)
-    if drain_owned_process_group(
+    drained = drain_owned_process_group(
         pgid=resolved_pgid,
         leader_identity=resolved_identity,
         known_identities=members,
         timeout=drain_budget,
-    ):
+    )
+    if isinstance(status, dict):
+        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        if isinstance(owner, JanitorStatusOwner):
+            owner.finalize_status_ownership()
+        raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+        if callable(raw_wait):
+            try:
+                raw_wait(timeout=0)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        return TerminateIdentityResult.FAILED
+    if drained:
         from core_tools.provider.session_janitor import complete_bound_secondary_clean
 
         cleaned = {

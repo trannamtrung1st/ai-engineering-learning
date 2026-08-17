@@ -164,9 +164,8 @@ def test_secondary_drain_closes_status_fd() -> None:
     owner, status_r, status_w = _bind(proc)
     result = _secondary_success(proc)
     os.close(status_w)
-    assert result is TerminateIdentityResult.TERMINATED
-    assert owner.reap_allowed is True
-    assert proc.reaped is True
+    assert result is TerminateIdentityResult.FAILED
+    assert owner.reap_allowed is False
     assert owner._fd is None
     assert _fd_closed(status_r) is True
 
@@ -178,7 +177,7 @@ def test_secondary_drain_double_close_is_safe() -> None:
     os.close(status_w)
     owner.close()
     owner.close()
-    assert result is TerminateIdentityResult.TERMINATED
+    assert result is TerminateIdentityResult.FAILED
     assert _fd_closed(status_r) is True
 
 
@@ -202,7 +201,7 @@ def test_secondary_drain_settles_active_reader_then_closes_fd() -> None:
     os.close(status_w)
     thread.join(timeout=1.0)
     assert thread.is_alive() is False
-    assert result is TerminateIdentityResult.TERMINATED
+    assert result is TerminateIdentityResult.FAILED
     assert finished.is_set() is True
     assert owner._fd is None
     assert _fd_closed(status_r) is True
@@ -216,7 +215,7 @@ def test_repeated_secondary_drain_does_not_grow_fds() -> None:
         owner, _status_r, status_w = _bind(proc)
         result = _secondary_success(proc)
         os.close(status_w)
-        assert result is TerminateIdentityResult.TERMINATED
+        assert result is TerminateIdentityResult.FAILED
         assert owner._fd is None
         counts.append(_fd_count())
     assert max(counts) <= baseline + 4
@@ -243,9 +242,8 @@ def test_terminate_process_tree_secondary_clean_closes_status_fd() -> None:
             ):
                 cleaned = terminate_process_tree(proc, pgid=proc.pid)
     os.close(status_w)
-    assert cleaned is True
-    assert owner.reap_allowed is True
-    assert proc.reaped is True
+    assert cleaned is False
+    assert owner.reap_allowed is False
     assert owner._fd is None
     assert _fd_closed(status_r) is True
 

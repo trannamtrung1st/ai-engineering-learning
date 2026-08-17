@@ -208,12 +208,11 @@ def test_secondary_drain_finalizes_owner_and_reaps() -> None:
                 return_value=True,
             ):
                 result = _terminate_bound_process(None, proc, pgid=proc.pid)
-    assert result is TerminateIdentityResult.TERMINATED
-    assert owner.reap_allowed is True
-    assert proc.reaped is True
-    assert proc.wait_calls >= 1
+    assert result is TerminateIdentityResult.FAILED
+    assert owner.reap_allowed is False
+    assert owner._fd is None
     assert owner._status is not None
-    assert owner._status["drain"] == DrainResult.CLEAN.value
+    assert owner._status["drain"] != DrainResult.CLEAN.value
 
 
 def test_linux_proc_scan_honors_timeout() -> None:

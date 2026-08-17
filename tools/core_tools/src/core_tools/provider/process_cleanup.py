@@ -484,6 +484,41 @@ def terminate_process_tree(
     status = _terminate_via_bound_popen(proc, pgid=resolved_pgid, timeout=remaining())
     if isinstance(status, dict) and status.get("drain") == "clean":
         return True
+    if isinstance(status, dict):
+        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        already_finalized = bool(getattr(owner, "_closed", False))
+        drain_owned_process_group(
+            pgid=resolved_pgid if resolved_pgid is not None else proc.pid,
+            leader_identity=identity,
+            known_identities=members,
+            timeout=remaining(),
+        )
+        finalize = getattr(owner, "finalize_status_ownership", None)
+        if callable(finalize):
+            finalize()
+        raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+        if callable(raw_wait):
+            try:
+                raw_wait(timeout=0)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        if not already_finalized:
+            return False
+        raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
+        exited = False
+        if callable(raw_poll):
+            try:
+                exited = raw_poll() is not None
+            except Exception:
+                exited = proc.poll() is not None
+        else:
+            exited = proc.poll() is not None
+        group_pgid = resolved_pgid if resolved_pgid is not None else proc.pid
+        if exited and process_group_state(
+            group_pgid, timeout=remaining()
+        ) is ProcessGroupState.GONE:
+            return True
+        return False
 
     if resolved_pgid is None:
         resolved_pgid = proc.pid
