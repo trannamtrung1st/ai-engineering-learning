@@ -1152,6 +1152,11 @@ class CursorProvider:
             record["start_time"] = entry.identity.start_time
             record["process_identity"] = process_identity_token(entry.identity)
             record["run_id"] = entry.identity.run_id
+        owner_id = entry.owner_id
+        if owner_id is None and entry.identity is not None:
+            owner_id = entry.identity.owner_id
+        if owner_id:
+            record["provider_owner_id"] = owner_id
         return record
 
     def _terminate_tracked_turn_procs_for_session(
@@ -2040,22 +2045,25 @@ class CursorProvider:
                     for state in states
                 ):
                     return True
-                expected_run_id = (
-                    entry.identity.run_id if entry.identity is not None else None
-                )
-                expected_owner_id = entry.owner_id
-                if expected_owner_id is None and entry.identity is not None:
-                    expected_owner_id = entry.identity.owner_id
-                lineage = current_process_group_lineage(
-                    entry.pgid,
-                    expected_run_id=expected_run_id,
-                    expected_owner_id=expected_owner_id,
-                    timeout=remaining(),
-                )
-                if lineage is GroupLineageState.FOREIGN:
-                    return False
+            expected_run_id = (
+                entry.identity.run_id if entry.identity is not None else None
+            )
+            expected_owner_id = entry.owner_id
+            if expected_owner_id is None and entry.identity is not None:
+                expected_owner_id = entry.identity.owner_id
+            lineage = current_process_group_lineage(
+                entry.pgid,
+                expected_run_id=expected_run_id,
+                expected_owner_id=expected_owner_id,
+                timeout=remaining(),
+            )
+            if lineage is GroupLineageState.FOREIGN:
+                return False
+            if lineage is GroupLineageState.OWNED:
                 return True
-            return True
+            if expected_owner_id or expected_run_id:
+                return True
+            return False
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )

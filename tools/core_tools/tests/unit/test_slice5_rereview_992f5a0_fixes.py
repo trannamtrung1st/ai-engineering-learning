@@ -193,23 +193,38 @@ def test_terminate_process_tree_does_not_reap_unrelated_host_child() -> None:
 
 
 def test_live_pgid_without_observed_gone_is_fail_closed(tmp_path: Path) -> None:
+    from core_tools.provider.process_identity import (
+        GroupLineageState,
+        IdentityInspectState,
+    )
+
     provider = _provider(tmp_path)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    leader = ProcessIdentity(pid=4242, start_time="100")
+    leader = ProcessIdentity(
+        pid=4242, start_time="100", run_id="run-a", owner_id="owner-a"
+    )
     provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
-    provider._tracked_turn_procs[4242].identity = leader
-    provider._tracked_turn_procs[4242].pgid = 4242
-    provider._tracked_turn_procs[4242].member_identities = (leader,)
-    provider._tracked_turn_procs[4242].proc = None
-    provider._tracked_turn_procs[4242].group_observed_gone = False
+    entry = provider._tracked_turn_procs[4242]
+    entry.identity = leader
+    entry.owner_id = "owner-a"
+    entry.pgid = 4242
+    entry.member_identities = (leader,)
+    entry.proc = None
+    entry.group_observed_gone = False
     with patch(
         "core_tools.provider.cursor.process_identity_is_live",
         return_value=False,
     ), patch(
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
+    ), patch(
+        "core_tools.provider.cursor.inspect_process_identity",
+        return_value=IdentityInspectState.GONE,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.UNRESOLVED,
     ):
-        assert provider._tracked_tree_is_live(provider._tracked_turn_procs[4242]) is True
+        assert provider._tracked_tree_is_live(entry) is True
 
 
 def test_reused_pgid_after_observed_gone_is_released(tmp_path: Path) -> None:
@@ -270,6 +285,8 @@ def test_fallback_empty_group_after_leader_exit_is_clean_without_killpg() -> Non
         "core_tools.provider.process_identity.is_pid_alive",
         return_value=False,
     ):
-        status = _fallback_kill_bound_janitor_group(ExitedProc(), pgid=4242, timeout=0.1)
+        status = _fallback_kill_bound_janitor_group(
+            ExitedProc(), pgid=4242, timeout=0.1, output_handed_off=True
+        )
     assert killpg.call_count == 0
     assert status["drain"] == DrainResult.CLEAN.value

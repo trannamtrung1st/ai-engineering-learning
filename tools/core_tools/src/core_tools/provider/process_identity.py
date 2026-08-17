@@ -191,11 +191,14 @@ def process_identity_from_termination_record(
     start_time = record.get("start_time")
     run_id = record.get("run_id")
     run_id_value = run_id if isinstance(run_id, str) else None
+    owner = record.get("provider_owner_id")
+    owner_value = owner if isinstance(owner, str) else None
     if isinstance(pid, int) and isinstance(start_time, str) and start_time:
         return ProcessIdentity(
             pid=pid,
             start_time=start_time,
             run_id=run_id_value,
+            owner_id=owner_value,
         )
     token = record.get("process_identity")
     if isinstance(token, str):
@@ -505,6 +508,8 @@ def _tdp_env_from_ps(pid: int, *, timeout: float | None = None) -> dict[str, str
 def _tdp_env_for_pid(pid: int, *, timeout: float | None = None) -> dict[str, str]:
     if pid <= 0:
         return {}
+    if timeout is not None and timeout <= 0:
+        return {}
     if os.path.isdir("/proc"):
         return _tdp_env_from_linux(pid)
     return _tdp_env_from_ps(pid, timeout=timeout)
@@ -533,18 +538,26 @@ def current_process_group_lineage(
 ) -> GroupLineageState:
     """Classify current PGID members against owner/run lineage tokens."""
 
-    current = _current_group_identities(pgid, run_id=None, timeout=timeout)
+    remaining = _remaining_fn(timeout)
+    current = _current_group_identities(pgid, run_id=None, timeout=remaining())
     if not current:
         return GroupLineageState.UNRESOLVED
     owners: list[str | None] = []
     run_ids: list[str | None] = []
     for identity in current:
-        owners.append(
-            identity.owner_id or read_process_owner_id(identity.pid, timeout=timeout)
-        )
-        run_ids.append(
-            identity.run_id or read_process_run_id(identity.pid, timeout=timeout)
-        )
+        leftover = remaining()
+        if leftover is not None and leftover <= 0:
+            return GroupLineageState.UNRESOLVED
+        owner = identity.owner_id
+        run_id = identity.run_id
+        if owner is None or run_id is None:
+            env = _tdp_env_for_pid(identity.pid, timeout=leftover)
+            if owner is None:
+                owner = env.get(PROVIDER_OWNER_ENV_VAR) or None
+            if run_id is None:
+                run_id = env.get(_RUN_ID_ENV_VAR) or None
+        owners.append(owner)
+        run_ids.append(run_id)
     if expected_owner_id:
         if any(owner == expected_owner_id for owner in owners):
             return GroupLineageState.OWNED
@@ -806,11 +819,18 @@ def _fallback_status(drain: DrainResult) -> dict[str, Any]:
     return payload
 
 
+def _fallback_clean_if_output_handed_off(*, output_handed_off: bool) -> dict[str, Any]:
+    if output_handed_off:
+        return _fallback_status(DrainResult.CLEAN)
+    return _fallback_status(DrainResult.UNVERIFIABLE)
+
+
 def _fallback_kill_bound_janitor_group(
     proc: subprocess.Popen[Any],
     *,
     pgid: int | None = None,
     timeout: float = 0.5,
+    output_handed_off: bool = False,
 ) -> dict[str, Any]:
     """SIGKILL the owned group while the bound leader is still unreaped."""
 
@@ -840,7 +860,9 @@ def _fallback_kill_bound_janitor_group(
             return _fallback_status(DrainResult.UNVERIFIABLE)
         if is_pid_alive(proc.pid, timeout=remaining()):
             return _fallback_status(DrainResult.UNVERIFIABLE)
-        return _fallback_status(DrainResult.CLEAN)
+        return _fallback_clean_if_output_handed_off(
+            output_handed_off=output_handed_off
+        )
     try:
         os.killpg(int(resolved), signal.SIGKILL)
     except OSError as exc:
@@ -853,14 +875,16 @@ def _fallback_kill_bound_janitor_group(
             return _fallback_status(DrainResult.SURVIVORS)
         if is_pid_alive(proc.pid, timeout=remaining()):
             return _fallback_status(DrainResult.UNVERIFIABLE)
-        return _fallback_status(DrainResult.CLEAN)
+        return _fallback_clean_if_output_handed_off(
+            output_handed_off=output_handed_off
+        )
     wait_process_group_gone(int(resolved), timeout=remaining())
     members = list_process_group_pids(int(resolved), timeout=remaining())
     if members is None:
         return _fallback_status(DrainResult.UNVERIFIABLE)
     if any(pid != proc.pid for pid in members):
         return _fallback_status(DrainResult.SURVIVORS)
-    return _fallback_status(DrainResult.CLEAN)
+    return _fallback_clean_if_output_handed_off(output_handed_off=output_handed_off)
 
 
 def _terminate_via_bound_popen(

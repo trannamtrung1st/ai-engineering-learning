@@ -181,7 +181,9 @@ def test_killpg_esrch_with_empty_group_is_clean() -> None:
                 "core_tools.provider.process_identity.is_pid_alive",
                 return_value=False,
             ):
-                payload = _fallback_kill_bound_janitor_group(proc, pgid=proc.pid)
+                payload = _fallback_kill_bound_janitor_group(
+                    proc, pgid=proc.pid, output_handed_off=True
+                )
     assert payload["drain"] == DrainResult.CLEAN.value
 
 

@@ -219,7 +219,7 @@ def test_leader_mismatch_with_live_late_member_stays_owned(tmp_path: Path) -> No
         assert provider._tracked_tree_is_live(entry) is True
 
 
-def test_live_pgid_without_identity_anchors_stays_unresolved(tmp_path: Path) -> None:
+def test_live_pgid_without_identity_anchors_is_not_owned(tmp_path: Path) -> None:
     provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
@@ -235,8 +235,11 @@ def test_live_pgid_without_identity_anchors_stays_unresolved(tmp_path: Path) -> 
     ), patch(
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.UNRESOLVED,
     ):
-        assert provider._tracked_tree_is_live(entry) is True
+        assert provider._tracked_tree_is_live(entry) is False
 
 
 def test_wrap_runner_passes_configured_agent_start_timeout(tmp_path: Path) -> None:

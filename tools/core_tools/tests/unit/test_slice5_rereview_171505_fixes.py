@@ -93,12 +93,20 @@ def test_wait_agent_started_timeout_does_not_become_idle_stall(tmp_path: Path) -
 
 
 def test_late_child_pgid_stays_owned_after_janitor_and_identities_die(tmp_path: Path) -> None:
+    from core_tools.provider.process_identity import (
+        GroupLineageState,
+        IdentityInspectState,
+    )
+
     provider = _provider(tmp_path, idle=0.0)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    leader = ProcessIdentity(pid=4242, start_time="100")
+    leader = ProcessIdentity(
+        pid=4242, start_time="100", run_id="run-a", owner_id="owner-a"
+    )
     provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
     entry = provider._tracked_turn_procs[4242]
     entry.identity = leader
+    entry.owner_id = "owner-a"
     entry.pgid = 4242
     entry.member_identities = (leader,)
     entry.proc = None
@@ -109,6 +117,12 @@ def test_late_child_pgid_stays_owned_after_janitor_and_identities_die(tmp_path: 
     ), patch(
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
+    ), patch(
+        "core_tools.provider.cursor.inspect_process_identity",
+        return_value=IdentityInspectState.GONE,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.OWNED,
     ):
         assert provider._tracked_tree_is_live(entry) is True
 
