@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -155,25 +154,32 @@ def test_historical_presence_darwin_liveness_probe_uses_one_budget(
     provider = _provider(tmp_path)
     _session_id, entry = _tracked(provider)
     timeouts: list[float | None] = []
+    clock = {"t": 0.0}
+
+    def fake_monotonic() -> float:
+        return clock["t"]
 
     def slow_liveness(pid, timeout=None):
         del pid
         timeouts.append(timeout)
-        budget = 0.05 if timeout is None else max(0.0, timeout)
-        time.sleep(min(0.03, budget))
+        clock["t"] += 0.03
         return PidInspectState.GONE
 
     with patch("core_tools.provider.process_identity.sys.platform", "darwin"), patch(
         "core_tools.provider.process_cleanup.sys.platform",
         "darwin",
     ), patch(
+        "core_tools.provider.process_identity.time.monotonic",
+        fake_monotonic,
+    ), patch(
+        "core_tools.provider.cursor.time.monotonic",
+        fake_monotonic,
+    ), patch(
         "core_tools.provider.process_identity.inspect_pid_liveness",
         side_effect=slow_liveness,
     ):
-        started = time.monotonic()
         provider._historical_identities_still_present(entry, timeout=0.05)
-        elapsed = time.monotonic() - started
     assert timeouts
     assert all(t is not None and t <= 0.05 + 1e-6 for t in timeouts)
     assert len(timeouts) == 1
-    assert elapsed < 0.15
+    assert clock["t"] == 0.03

@@ -1188,8 +1188,18 @@ def _killpg_owned_session(
             break
         _reap_identity(leader)
         wait_budget = 0.5 if leftover is None else min(0.5, leftover)
-        wait_process_group_gone(pgid, timeout=wait_budget)
-    state = process_group_state(pgid, timeout=remaining())
+        state = wait_process_group_gone(pgid, timeout=wait_budget)
+        if state is ProcessGroupState.ZOMBIE_ONLY:
+            _reap_identity(leader)
+            state = process_group_state(pgid, timeout=remaining())
+        if state is ProcessGroupState.GONE:
+            return TerminateIdentityResult.TERMINATED
+    leftover = remaining()
+    _reap_identity(leader)
+    state = process_group_state(pgid, timeout=leftover)
+    if state is ProcessGroupState.ZOMBIE_ONLY:
+        _reap_identity(leader)
+        state = process_group_state(pgid, timeout=remaining())
     if state is ProcessGroupState.GONE:
         return TerminateIdentityResult.TERMINATED
     return TerminateIdentityResult.FAILED
