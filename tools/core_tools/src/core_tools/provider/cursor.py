@@ -1072,11 +1072,19 @@ class CursorProvider:
         survival = self._surviving_pids_for_session(
             canonical_id, records, timeout=remaining
         )
-        if survival.pids or survival.unresolved:
+        if survival.pids:
             raise ProviderLifecycleTimeoutError(
                 (
                     f"abort_turn exceeded {timeout:g}s with surviving agent "
                     f"processes {list(survival.pids)}"
+                ),
+                session_id=canonical_id,
+            )
+        if survival.unresolved:
+            raise ProviderLifecycleTimeoutError(
+                (
+                    f"abort_turn exceeded {timeout:g}s: "
+                    "unresolved provider process ownership"
                 ),
                 session_id=canonical_id,
             )
@@ -2162,7 +2170,7 @@ class CursorProvider:
         *,
         timeout: float | None = None,
     ) -> bool:
-        """True when a FAILED tree may be unregistered (GONE or FOREIGN)."""
+        """True when a FAILED tree may be unregistered (GONE group or FOREIGN)."""
 
         remaining = _remaining_fn(timeout)
         if self._historical_identities_still_live(entry, timeout=remaining()):
@@ -2195,9 +2203,6 @@ class CursorProvider:
             expected_owner_id=expected_owner_id,
             timeout=leftover,
         )
-        if lineage is GroupLineageState.GONE:
-            entry.group_observed_gone = True
-            return True
         return lineage is GroupLineageState.FOREIGN
 
     def _prune_dead_tracked_pids_for_session(

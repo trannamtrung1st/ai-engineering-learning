@@ -38,6 +38,9 @@ def test_same_run_different_provider_owner_is_foreign() -> None:
         owner_id="owner-b",
     )
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=[foreign],
     ):
@@ -59,6 +62,9 @@ def test_same_provider_owner_is_owned() -> None:
         owner_id="owner-a",
     )
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=[owned],
     ):

@@ -125,6 +125,9 @@ def test_gone_identities_stay_unresolved_without_current_member_proof(
 def test_lineage_foreign_when_live_members_have_other_run_id() -> None:
     foreign = ProcessIdentity(pid=9999, start_time="9", run_id="other-run")
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=[foreign],
     ):
@@ -137,6 +140,9 @@ def test_lineage_foreign_when_live_members_have_other_run_id() -> None:
 def test_lineage_owned_when_live_member_shares_run_id() -> None:
     owned = ProcessIdentity(pid=5151, start_time="200", run_id="run-owned")
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=[owned],
     ):
@@ -148,6 +154,9 @@ def test_lineage_owned_when_live_member_shares_run_id() -> None:
 
 def test_lineage_unresolved_when_group_members_cannot_be_listed() -> None:
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=None,
     ):
@@ -157,10 +166,10 @@ def test_lineage_unresolved_when_group_members_cannot_be_listed() -> None:
         )
 
 
-def test_lineage_gone_when_group_has_no_members() -> None:
+def test_lineage_gone_when_process_group_state_is_gone() -> None:
     with patch(
-        "core_tools.provider.process_identity._current_group_identities",
-        return_value=[],
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.GONE,
     ):
         assert (
             current_process_group_lineage(4242, expected_run_id="run-owned")

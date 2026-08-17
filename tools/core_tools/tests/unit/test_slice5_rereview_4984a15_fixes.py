@@ -136,6 +136,9 @@ def test_lineage_reads_each_member_environment_once() -> None:
         return {"TDP_PROVIDER_OWNER_ID": "owner-a", "TDP_RUN_ID": "run-a"}
 
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=members,
     ), patch(
@@ -162,6 +165,9 @@ def test_lineage_obeys_one_aggregate_deadline() -> None:
 
     started = time.monotonic()
     with patch(
+        "core_tools.provider.process_identity.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=members,
     ), patch(

@@ -540,11 +540,18 @@ def current_process_group_lineage(
     """Classify current PGID members against owner/run lineage tokens."""
 
     remaining = _remaining_fn(timeout)
-    current = _current_group_identities(pgid, run_id=None, timeout=remaining())
-    if current is None:
+    leftover = remaining()
+    if leftover is not None and leftover <= 0:
         return GroupLineageState.UNRESOLVED
-    if not current:
+    group_state = process_group_state(pgid, timeout=leftover)
+    if group_state is ProcessGroupState.GONE:
         return GroupLineageState.GONE
+    if group_state is ProcessGroupState.UNVERIFIABLE:
+        return GroupLineageState.UNRESOLVED
+    leftover = remaining()
+    current = _current_group_identities(pgid, run_id=None, timeout=leftover)
+    if current is None or not current:
+        return GroupLineageState.UNRESOLVED
     owners: list[str | None] = []
     run_ids: list[str | None] = []
     for identity in current:
