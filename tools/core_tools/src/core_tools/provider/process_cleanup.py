@@ -294,7 +294,14 @@ def process_group_state(
     members = list_process_group_pids(pgid, timeout=timeout)
     if members is None:
         return ProcessGroupState.UNVERIFIABLE
-    if members:
+    saw_live = False
+    for pid in members:
+        state = inspect_pid_liveness(pid, timeout=timeout)
+        if state is PidInspectState.LIVE:
+            saw_live = True
+        elif state is PidInspectState.UNVERIFIABLE:
+            return ProcessGroupState.UNVERIFIABLE
+    if saw_live:
         return ProcessGroupState.LIVE
     return ProcessGroupState.GONE
 

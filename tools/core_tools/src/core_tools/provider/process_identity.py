@@ -435,32 +435,17 @@ def _signal_identity(
         return False
     if _pidfd_supported():
         return _signal_identity_via_pidfd(identity, sig, timeout=remaining())
-    return _signal_identity_via_kill(identity, sig, timeout=remaining())
+    return False
 
 
-def _signal_identity_via_kill(
-    identity: ProcessIdentity,
-    sig: int,
-    *,
-    timeout: float | None = None,
+def _lineage_allows_session_adopt(
+    leader: ProcessIdentity,
+    member: ProcessIdentity,
 ) -> bool:
-    """Send *sig* to the verified PID instance. Never uses ``killpg``."""
-
-    remaining = _remaining_fn(timeout)
-    state = inspect_process_identity(identity, timeout=remaining())
-    if _identity_needs_no_signal(state):
-        return True
-    if state is not IdentityInspectState.LIVE_MATCH:
-        return False
-    current_start = read_process_start_time(identity.pid, timeout=remaining())
-    if current_start != identity.start_time:
-        return False
-    try:
-        os.kill(identity.pid, sig)
-    except OSError as exc:
-        if getattr(exc, "errno", None) == errno.ESRCH:
-            return True
-        return False
+    if leader.owner_id:
+        return member.owner_id == leader.owner_id
+    if leader.run_id and member.run_id:
+        return member.run_id == leader.run_id
     return True
 
 
@@ -696,20 +681,70 @@ def _select_owned_targets(
         is IdentityInspectState.ZOMBIE
     ]
     if not live_current:
-        return list(zombie_current)
+        return [
+            identity
+            for identity in zombie_current
+            if _identity_token(identity) in known_tokens
+        ]
 
     if not _group_still_ours(pgid, leader_identity, known_tokens, timeout=remaining()):
         return None
+
+    can_adopt = False
+    if leader_identity is not None:
+        can_adopt = is_owned_session_leader(
+            leader_identity, pgid=pgid, timeout=remaining()
+        )
 
     targets: list[ProcessIdentity] = []
     for identity in live_current:
         token = _identity_token(identity)
         if token in known_tokens:
             targets.append(identity)
+            continue
+        if (
+            can_adopt
+            and leader_identity is not None
+            and _lineage_allows_session_adopt(leader_identity, identity)
+        ):
+            known_tokens.add(token)
+            targets.append(identity)
     for identity in zombie_current:
         if _identity_token(identity) in known_tokens:
             targets.append(identity)
     return targets
+
+
+def _reap_owned_identities(identities: list[ProcessIdentity]) -> None:
+    for identity in identities:
+        _reap_identity(identity)
+
+
+def _signal_owned_targets(
+    targets: list[ProcessIdentity],
+    *,
+    pgid: int,
+    leader_identity: ProcessIdentity | None,
+    sig: int,
+    timeout: float | None = None,
+) -> bool:
+    remaining = _remaining_fn(timeout)
+    if leader_identity is not None:
+        if not is_owned_session_leader(
+            leader_identity, pgid=pgid, timeout=remaining()
+        ):
+            return False
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            return False
+        _reap_owned_identities(targets)
+        return True
+    for identity in targets:
+        if not _signal_identity(identity, sig, timeout=remaining()):
+            return False
+        _reap_identity(identity)
+    return True
 
 
 def capture_process_group_identities(
@@ -811,7 +846,8 @@ def drain_owned_process_group(
             return False
         if not targets:
             for identity in current:
-                _reap_identity(identity)
+                if _identity_token(identity) in known_tokens:
+                    _reap_identity(identity)
             state = process_group_state(resolved_pgid, timeout=wait_budget())
             if state is ProcessGroupState.GONE:
                 return True
@@ -819,13 +855,20 @@ def drain_owned_process_group(
                 return False
             continue
 
-        for identity in targets:
-            if not _signal_identity(identity, signal.SIGTERM, timeout=wait_budget()):
-                return False
-            try:
-                os.waitpid(identity.pid, os.WNOHANG)
-            except (ChildProcessError, OSError):
-                pass
+        session_owned = (
+            leader_identity is not None
+            and is_owned_session_leader(
+                leader_identity, pgid=resolved_pgid, timeout=wait_budget()
+            )
+        )
+        if not _signal_owned_targets(
+            targets,
+            pgid=resolved_pgid,
+            leader_identity=leader_identity if session_owned else None,
+            sig=signal.SIGTERM,
+            timeout=wait_budget(),
+        ):
+            return False
 
         if _wait_identities_dead(targets, timeout=wait_budget()):
             if process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE:
@@ -842,13 +885,14 @@ def drain_owned_process_group(
             for identity in targets
             if _identity_still_alive(identity, timeout=wait_budget())
         ]
-        for identity in survivors:
-            if not _signal_identity(identity, signal.SIGKILL, timeout=wait_budget()):
-                return False
-            try:
-                os.waitpid(identity.pid, os.WNOHANG)
-            except (ChildProcessError, OSError):
-                pass
+        if survivors and not _signal_owned_targets(
+            survivors,
+            pgid=resolved_pgid,
+            leader_identity=leader_identity if session_owned else None,
+            sig=signal.SIGKILL,
+            timeout=wait_budget(),
+        ):
+            return False
 
         if _wait_identities_dead(survivors, timeout=wait_budget()):
             if process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE:
@@ -1101,6 +1145,53 @@ def _terminate_bound_process(
     return TerminateIdentityResult.FAILED
 
 
+def _killpg_owned_session(
+    leader: ProcessIdentity,
+    *,
+    timeout: float | None = None,
+) -> TerminateIdentityResult:
+    remaining = _remaining_fn(timeout)
+    pgid = leader.pid
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        leftover = remaining()
+        if leftover is not None and leftover <= 0:
+            break
+        if not is_owned_session_leader(leader, pgid=pgid, timeout=leftover):
+            break
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            break
+        _reap_identity(leader)
+        wait_budget = 0.5 if leftover is None else min(0.5, leftover)
+        wait_process_group_gone(pgid, timeout=wait_budget)
+    state = process_group_state(pgid, timeout=remaining())
+    if state is ProcessGroupState.GONE:
+        return TerminateIdentityResult.TERMINATED
+    return TerminateIdentityResult.FAILED
+
+
+def _terminate_unbound_without_pidfd(
+    identity: ProcessIdentity,
+    *,
+    timeout: float | None = None,
+) -> TerminateIdentityResult:
+    remaining = _remaining_fn(timeout)
+    if is_owned_session_leader(identity, timeout=remaining()):
+        return _killpg_owned_session(identity, timeout=remaining())
+    pgid = read_process_group_id(identity.pid, timeout=remaining())
+    if pgid is None or pgid == identity.pid:
+        return TerminateIdentityResult.FAILED
+    leader = read_process_identity(pgid, timeout=remaining())
+    if leader is None:
+        return TerminateIdentityResult.FAILED
+    if not is_owned_session_leader(leader, pgid=pgid, timeout=remaining()):
+        return TerminateIdentityResult.FAILED
+    if not _lineage_allows_session_adopt(leader, identity):
+        return TerminateIdentityResult.FAILED
+    return _killpg_owned_session(leader, timeout=remaining())
+
+
 def _terminate_linux_identity(
     identity: ProcessIdentity,
     *,
@@ -1121,14 +1212,26 @@ def _terminate_linux_identity(
     if state is IdentityInspectState.UNVERIFIABLE:
         return TerminateIdentityResult.FAILED
 
-    captured = capture_process_group_identities(identity, timeout=remaining())
+    session = identity
+    if not is_owned_session_leader(identity, timeout=remaining()):
+        pgid = read_process_group_id(identity.pid, timeout=remaining())
+        if pgid is not None and pgid != identity.pid:
+            leader = read_process_identity(pgid, timeout=remaining())
+            if (
+                leader is not None
+                and is_owned_session_leader(leader, pgid=pgid, timeout=remaining())
+                and _lineage_allows_session_adopt(leader, identity)
+            ):
+                session = leader
+
+    captured = capture_process_group_identities(session, timeout=remaining())
     if captured is None:
         return TerminateIdentityResult.FAILED
 
-    pgid = read_process_group_id(identity.pid, timeout=remaining())
+    pgid = read_process_group_id(session.pid, timeout=remaining())
     if drain_owned_process_group(
         pgid=pgid,
-        leader_identity=identity,
+        leader_identity=session,
         known_identities=captured,
         timeout=remaining(),
     ):
@@ -1181,6 +1284,8 @@ def terminate_verified_process_identity(
             return TerminateIdentityResult.FAILED
         return TerminateIdentityResult.ALREADY_GONE
 
+    if not _pidfd_supported():
+        return _terminate_unbound_without_pidfd(identity, timeout=remaining())
     return _terminate_linux_identity(identity, timeout=remaining())
 
 

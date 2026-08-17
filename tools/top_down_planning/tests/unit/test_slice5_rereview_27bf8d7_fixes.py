@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -96,3 +97,90 @@ def test_kill_orphan_agents_terminates_live_run_agent(tmp_path: Path) -> None:
         if orphan.poll() is None:
             orphan.kill()
             orphan.wait(timeout=2)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX orphan cleanup")
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
+def test_kill_orphan_agents_cleans_janitor_session_not_raw_child_pid(
+    tmp_path: Path,
+) -> None:
+    run_id = "run-20260101T270911-270911"
+    store = FileRunStore(tmp_path)
+    store.create_run(
+        run_id,
+        plan=_plan(),
+        **create_run_kwargs(tmp_path, resolved_config=minimal_resolved_config()),
+    )
+    child_file = tmp_path / "agent.pid"
+    env = {**os.environ, "TDP_RUN_ID": run_id}
+    script = (
+        "import os, sys, time\n"
+        f"path = {str(child_file)!r}\n"
+        "child = os.fork()\n"
+        "if child == 0:\n"
+        "    os.execl(\n"
+        f"        {sys.executable!r}, {sys.executable!r}, '-c',\n"
+        "        'import time; time.sleep(60)  # agent --output-format stream-json --trust',\n"
+        "    )\n"
+        "with open(path, 'w', encoding='utf-8') as handle:\n"
+        "    handle.write(str(child))\n"
+        "time.sleep(60)\n"
+    )
+    janitor = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 2.0
+        child_pid = None
+        while time.monotonic() < deadline:
+            if child_file.exists():
+                child_pid = int(child_file.read_text(encoding="utf-8").strip())
+                break
+            time.sleep(0.05)
+        assert child_pid is not None
+        assert is_pid_alive(child_pid)
+        assert (
+            classify_pid_run_agent(run_id, child_pid)
+            is PidRunAgentMatch.CONFIRMED_SAME
+        )
+
+        def live_scan(run_id: str, **kwargs: object) -> list[int]:
+            return [child_pid]
+
+        killed_child: list[int] = []
+        real_kill = os.kill
+
+        def tracking_kill(pid: int, sig: int) -> None:
+            if pid == child_pid and sig in (signal.SIGTERM, signal.SIGKILL):
+                killed_child.append(pid)
+            real_kill(pid, sig)
+
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+            live_scan,
+        ), patch(
+            "core_tools.provider.process_identity.os.kill",
+            side_effect=tracking_kill,
+        ):
+            cleanup = kill_orphan_agents(
+                store,
+                run_id,
+                list_live_pids=lambda: [child_pid],
+            )
+        assert child_pid in cleanup.cleaned_pids
+        assert cleanup.failed_pids == ()
+        assert not is_pid_alive(child_pid)
+        assert killed_child == []
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and janitor.poll() is None:
+            time.sleep(0.05)
+        assert janitor.poll() is not None
+    finally:
+        if janitor.poll() is None:
+            janitor.kill()
+            janitor.wait(timeout=2)
+

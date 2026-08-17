@@ -144,12 +144,11 @@ def test_drain_adopts_new_members_when_original_live_anchor_still_owns_group() -
             return [leader]
         return [leader, child]
 
-    def fake_signal(identity: ProcessIdentity, sig: int, *, timeout: float | None = None) -> bool:
-        signaled.append(identity.pid)
-        return True
+    def fake_killpg(pgid: int, sig: int) -> None:
+        signaled.append(pgid)
 
     def fake_state(pgid: int, *, timeout: float | None = None) -> ProcessGroupState:
-        if child.pid in signaled:
+        if rounds["n"] >= 2 and signaled:
             return ProcessGroupState.GONE
         return ProcessGroupState.LIVE
 
@@ -170,21 +169,25 @@ def test_drain_adopts_new_members_when_original_live_anchor_still_owns_group() -
                     return_value=4242,
                 ):
                     with patch(
-                        "core_tools.provider.process_identity._signal_identity",
-                        side_effect=fake_signal,
+                        "core_tools.provider.process_identity._wait_identities_dead",
+                        return_value=True,
                     ):
                         with patch(
-                            "core_tools.provider.process_identity._wait_identities_dead",
+                            "core_tools.provider.process_identity.is_owned_session_leader",
                             return_value=True,
                         ):
-                            result = drain_owned_process_group(
-                                pgid=4242,
-                                leader_identity=leader,
-                                known_identities=[leader],
-                            )
+                            with patch(
+                                "core_tools.provider.process_identity.os.killpg",
+                                side_effect=fake_killpg,
+                            ):
+                                result = drain_owned_process_group(
+                                    pgid=4242,
+                                    leader_identity=leader,
+                                    known_identities=[leader],
+                                )
 
     assert result is True
-    assert 5151 in signaled
+    assert signaled
 
 
 # --- S5-RR13-001: tree-aware provider bookkeeping ---
@@ -436,12 +439,11 @@ def test_drain_discovers_or_fails_when_child_forks_after_first_snapshot() -> Non
         snapshots.append([identity.pid for identity in members])
         return members
 
-    def fake_signal(identity: ProcessIdentity, sig: int, *, timeout: float | None = None) -> bool:
-        signaled.append(identity.pid)
-        return True
+    def fake_killpg(pgid: int, sig: int) -> None:
+        signaled.append(pgid)
 
     def fake_state(pgid: int, *, timeout: float | None = None) -> ProcessGroupState:
-        if late_child.pid in signaled:
+        if rounds["n"] >= 2 and signaled:
             return ProcessGroupState.GONE
         return ProcessGroupState.LIVE
 
@@ -462,23 +464,27 @@ def test_drain_discovers_or_fails_when_child_forks_after_first_snapshot() -> Non
                     return_value=4242,
                 ):
                     with patch(
-                        "core_tools.provider.process_identity._signal_identity",
-                        side_effect=fake_signal,
+                        "core_tools.provider.process_identity._wait_identities_dead",
+                        return_value=True,
                     ):
                         with patch(
-                            "core_tools.provider.process_identity._wait_identities_dead",
+                            "core_tools.provider.process_identity.is_owned_session_leader",
                             return_value=True,
                         ):
-                            result = drain_owned_process_group(
-                                pgid=4242,
-                                leader_identity=leader,
-                                known_identities=[leader],
-                            )
+                            with patch(
+                                "core_tools.provider.process_identity.os.killpg",
+                                side_effect=fake_killpg,
+                            ):
+                                result = drain_owned_process_group(
+                                    pgid=4242,
+                                    leader_identity=leader,
+                                    known_identities=[leader],
+                                )
 
     assert snapshots[0] == [4242]
     assert 5151 in snapshots[1]
     assert result is True
-    assert 5151 in signaled
+    assert signaled
 
 
 def test_drain_never_succeeds_while_bounded_late_forks_keep_appearing() -> None:
