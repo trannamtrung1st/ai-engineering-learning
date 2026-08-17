@@ -50,9 +50,15 @@ class PidInspectResult:
 
 
 class ProcessGroupState(Enum):
-    """Whether a process group still has live members."""
+    """Whether a process group still has live or unreaped members.
+
+    ``GONE`` means no group members remain. ``ZOMBIE_ONLY`` means members
+    exist but none are runnable — cleanup is not complete until they are
+    waitpid-reaped.
+    """
 
     LIVE = "live"
+    ZOMBIE_ONLY = "zombie_only"
     GONE = "gone"
     UNVERIFIABLE = "unverifiable"
 
@@ -245,11 +251,11 @@ def list_process_group_pids(
     return members
 
 
-def _list_darwin_process_group_pids(
+def _darwin_process_group_rows(
     pgid: int,
     *,
     timeout: float,
-) -> list[int] | None:
+) -> list[tuple[int, str]] | None:
     if timeout <= 0:
         return None
     try:
@@ -264,7 +270,7 @@ def _list_darwin_process_group_pids(
         return None
     if result.returncode != 0:
         return None
-    members: list[int] = []
+    members: list[tuple[int, str]] = []
     for line in result.stdout.splitlines():
         text = line.strip()
         if not text:
@@ -280,8 +286,19 @@ def _list_darwin_process_group_pids(
         state = parts[2]
         if member_pgid != pgid:
             continue
-        members.append(pid)
+        members.append((pid, state))
     return members
+
+
+def _list_darwin_process_group_pids(
+    pgid: int,
+    *,
+    timeout: float,
+) -> list[int] | None:
+    rows = _darwin_process_group_rows(pgid, timeout=timeout)
+    if rows is None:
+        return None
+    return [pid for pid, _state in rows]
 
 
 def process_group_state(
@@ -291,18 +308,68 @@ def process_group_state(
 ) -> ProcessGroupState:
     """Return whether *pgid* still has verifiably live members."""
 
-    members = list_process_group_pids(pgid, timeout=timeout)
+    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+
+    def remaining() -> float | None:
+        if deadline is None:
+            return None
+        return max(0.0, deadline - time.monotonic())
+
+    leftover = remaining()
+    if leftover is not None and leftover <= 0:
+        return ProcessGroupState.UNVERIFIABLE
+    if sys.platform == "darwin":
+        budget = leftover if leftover is not None else _DARWIN_PS_TIMEOUT_SECONDS
+        rows = _darwin_process_group_rows(pgid, timeout=budget)
+        if rows is None:
+            return ProcessGroupState.UNVERIFIABLE
+        if not rows:
+            return ProcessGroupState.GONE
+        saw_live = False
+        saw_zombie = False
+        for pid, ps_state in rows:
+            leftover = remaining()
+            if leftover is not None and leftover <= 0:
+                return ProcessGroupState.UNVERIFIABLE
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                return ProcessGroupState.UNVERIFIABLE
+            except OSError as exc:
+                if exc.errno == errno.ESRCH:
+                    continue
+                return ProcessGroupState.UNVERIFIABLE
+            if ps_state.startswith("Z"):
+                saw_zombie = True
+            else:
+                saw_live = True
+        if saw_live:
+            return ProcessGroupState.LIVE
+        if saw_zombie:
+            return ProcessGroupState.ZOMBIE_ONLY
+        return ProcessGroupState.GONE
+    members = list_process_group_pids(pgid, timeout=leftover)
     if members is None:
         return ProcessGroupState.UNVERIFIABLE
     saw_live = False
+    saw_zombie = False
     for pid in members:
-        state = inspect_pid_liveness(pid, timeout=timeout)
+        leftover = remaining()
+        if leftover is not None and leftover <= 0:
+            return ProcessGroupState.UNVERIFIABLE
+        state = inspect_pid_liveness(pid, timeout=leftover)
         if state is PidInspectState.LIVE:
             saw_live = True
         elif state is PidInspectState.UNVERIFIABLE:
             return ProcessGroupState.UNVERIFIABLE
+        elif state is PidInspectState.ZOMBIE:
+            saw_zombie = True
     if saw_live:
         return ProcessGroupState.LIVE
+    if saw_zombie:
+        return ProcessGroupState.ZOMBIE_ONLY
     return ProcessGroupState.GONE
 
 

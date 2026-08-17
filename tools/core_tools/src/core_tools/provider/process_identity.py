@@ -442,11 +442,17 @@ def _lineage_allows_session_adopt(
     leader: ProcessIdentity,
     member: ProcessIdentity,
 ) -> bool:
-    if leader.owner_id:
-        return member.owner_id == leader.owner_id
-    if leader.run_id and member.run_id:
-        return member.run_id == leader.run_id
-    return True
+    if leader.owner_id is not None:
+        return (
+            member.owner_id is not None
+            and member.owner_id == leader.owner_id
+        )
+    if leader.run_id is not None:
+        return (
+            member.run_id is not None
+            and member.run_id == leader.run_id
+        )
+    return False
 
 
 def is_owned_session_leader(
@@ -818,15 +824,27 @@ def drain_owned_process_group(
     if known_identities:
         known_list.extend(known_identities)
 
-    for _round in range(_MAX_DRAIN_ROUNDS):
-        if wait_budget() <= 0:
-            return process_group_state(resolved_pgid, timeout=0.0) is ProcessGroupState.GONE
+    def group_fully_reaped() -> bool | None:
         for identity in known_list:
             _reap_identity(identity)
         state = process_group_state(resolved_pgid, timeout=wait_budget())
         if state is ProcessGroupState.UNVERIFIABLE:
             return False
-        if state is ProcessGroupState.GONE:
+        if state is not ProcessGroupState.GONE:
+            return None
+        if any(
+            _identity_still_present(identity, timeout=0.0) for identity in known_list
+        ):
+            return None
+        return True
+
+    for _round in range(_MAX_DRAIN_ROUNDS):
+        if wait_budget() <= 0:
+            return group_fully_reaped() is True
+        complete = group_fully_reaped()
+        if complete is False:
+            return False
+        if complete is True:
             return True
 
         current = _current_group_identities(
@@ -845,14 +863,11 @@ def drain_owned_process_group(
         if targets is None:
             return False
         if not targets:
-            for identity in current:
-                if _identity_token(identity) in known_tokens:
-                    _reap_identity(identity)
-            state = process_group_state(resolved_pgid, timeout=wait_budget())
-            if state is ProcessGroupState.GONE:
-                return True
-            if state is ProcessGroupState.UNVERIFIABLE:
+            complete = group_fully_reaped()
+            if complete is False:
                 return False
+            if complete is True:
+                return True
             continue
 
         session_owned = (
@@ -871,14 +886,20 @@ def drain_owned_process_group(
             return False
 
         if _wait_identities_dead(targets, timeout=wait_budget()):
-            if process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE:
+            complete = group_fully_reaped()
+            if complete is False:
+                return False
+            if complete is True:
                 return True
 
-        if process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE:
+        complete = group_fully_reaped()
+        if complete is False:
+            return False
+        if complete is True:
             return True
 
         if wait_budget() <= 0:
-            return process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE
+            return group_fully_reaped() is True
 
         survivors = [
             identity
@@ -895,10 +916,13 @@ def drain_owned_process_group(
             return False
 
         if _wait_identities_dead(survivors, timeout=wait_budget()):
-            if process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE:
+            complete = group_fully_reaped()
+            if complete is False:
+                return False
+            if complete is True:
                 return True
 
-    return process_group_state(resolved_pgid, timeout=wait_budget()) is ProcessGroupState.GONE
+    return group_fully_reaped() is True
 
 
 def _request_janitor_stop(proc: subprocess.Popen[Any]) -> bool:

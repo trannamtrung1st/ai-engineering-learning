@@ -26,7 +26,10 @@ from core_tools.provider.process_identity import (
 )
 
 
-def test_process_group_state_treats_zombie_only_members_as_gone() -> None:
+def test_process_group_state_treats_zombie_only_members_as_quiescent(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux", raising=False)
     with patch(
         "core_tools.provider.process_cleanup.list_process_group_pids",
         return_value=[4242],
@@ -34,7 +37,7 @@ def test_process_group_state_treats_zombie_only_members_as_gone() -> None:
         "core_tools.provider.process_cleanup.inspect_pid_liveness",
         return_value=PidInspectState.ZOMBIE,
     ):
-        assert process_group_state(99) is ProcessGroupState.GONE
+        assert process_group_state(99) is ProcessGroupState.ZOMBIE_ONLY
 
 
 def test_drain_does_not_reap_unknown_identities_when_targets_empty() -> None:
@@ -47,11 +50,7 @@ def test_drain_does_not_reap_unknown_identities_when_targets_empty() -> None:
 
     with patch(
         "core_tools.provider.process_identity.process_group_state",
-        side_effect=[
-            ProcessGroupState.LIVE,
-            ProcessGroupState.LIVE,
-            ProcessGroupState.GONE,
-        ],
+        return_value=ProcessGroupState.LIVE,
     ), patch(
         "core_tools.provider.process_identity._current_group_identities",
         return_value=[foreign],
