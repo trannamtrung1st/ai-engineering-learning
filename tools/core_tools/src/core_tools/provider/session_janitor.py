@@ -741,21 +741,14 @@ def _signal_group(sig: int) -> None:
     try:
         me = os.getpid()
         pgid = os.getpgrp()
-        if me != pgid:
+        start = _process_start_token(me)
+        if not _leader_still_owns_group(pgid, me, start):
             _record_group_signal(
-                target_pgid=pgid, sig=sig, reason="not_session_leader", authorized=False
+                target_pgid=pgid,
+                sig=sig,
+                reason="unowned_session",
+                authorized=False,
             )
-            return
-        try:
-            if os.getpgid(me) != pgid:
-                _record_group_signal(
-                    target_pgid=pgid,
-                    sig=sig,
-                    reason="pgid_mismatch",
-                    authorized=False,
-                )
-                return
-        except OSError:
             return
         try:
             if os.getpgid(os.getppid()) == pgid:
@@ -769,7 +762,7 @@ def _signal_group(sig: int) -> None:
         except OSError:
             pass
         _record_group_signal(
-            target_pgid=pgid, sig=sig, reason="session_leader_group", authorized=True
+            target_pgid=pgid, sig=sig, reason="owned_session_leader", authorized=True
         )
         os.killpg(pgid, sig)
     except OSError:
@@ -1099,9 +1092,15 @@ def _wait_agent(
 
 
 def _abandon_group_if_unresolved(drain: DrainResult) -> None:
-    if drain is DrainResult.CLEAN:
-        return
-    _signal_group(signal.SIGKILL)
+    if drain is DrainResult.SURVIVORS:
+        _signal_group(signal.SIGKILL)
+
+
+def _complete_unresolved_cleanup(drain: DrainResult | None) -> None:
+    """Fail closed unless the group still has verified owned survivors."""
+
+    if drain is DrainResult.SURVIVORS:
+        _abandon_group_if_unresolved(drain)
 
 
 def _close_agent_streams(agent: subprocess.Popen[Any]) -> None:
@@ -1631,7 +1630,7 @@ def main(
             },
         )
         return 0 if stop_requested and return_code < 0 else return_code
-    _abandon_group_if_unresolved(DrainResult.SURVIVORS)
+    _complete_unresolved_cleanup(handed)
     _hold_ownership_anchor(active)
     return 1
 

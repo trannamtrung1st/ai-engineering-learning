@@ -78,13 +78,17 @@ jobs:
 
   linux-process-lifecycle:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install core_tools
         run: |
@@ -114,7 +118,7 @@ jobs:
         run: |
           cd tools/core_tools
           set +e
-          setsid python -m pytest -p no:xdist -o addopts='' --tb=short -s \
+          python -m pytest -p no:xdist -o addopts='' --tb=short -s \
             tests/unit/test_process_cleanup.py \
             tests/unit/test_slice5_rereview*_fixes.py
           status=$?
@@ -126,18 +130,23 @@ jobs:
 
   darwin-janitor:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install core_tools
+      - name: Install packages
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e "tools/core_tools[dev]"
+          python -m pip install -e "tools/top_down_planning[dev]"
 
       - name: Isolated buffered-drain reproducer
         env:
@@ -153,3 +162,9 @@ jobs:
           python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_process_cleanup.py \
             tests/unit/test_slice5_rereview*_fixes.py
+
+      - name: TDP Darwin orphan cleanup
+        run: |
+          cd tools/top_down_planning
+          python -m pytest -p no:xdist -o addopts='' --tb=short \
+            tests/unit/test_slice5_rereview_27bf8d7_fixes.py

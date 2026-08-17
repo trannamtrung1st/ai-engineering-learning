@@ -138,12 +138,16 @@ def read_process_identity(
     start_time = read_process_start_time(pid, timeout=timeout)
     if start_time is None:
         return None
+    # Caller-provided *run_id* is not lineage. Observe TDP env from the process.
+    _ = run_id
+    observed_run = read_process_run_id(pid, timeout=timeout)
+    observed_owner = read_process_owner_id(pid, timeout=timeout)
     return ProcessIdentity(
         pid=pid,
         start_time=start_time,
-        run_id=run_id,
+        run_id=observed_run,
         command=command,
-        owner_id=None,
+        owner_id=observed_owner,
     )
 
 
@@ -431,7 +435,62 @@ def _signal_identity(
         return False
     if _pidfd_supported():
         return _signal_identity_via_pidfd(identity, sig, timeout=remaining())
-    return False
+    return _signal_identity_via_kill(identity, sig, timeout=remaining())
+
+
+def _signal_identity_via_kill(
+    identity: ProcessIdentity,
+    sig: int,
+    *,
+    timeout: float | None = None,
+) -> bool:
+    """Send *sig* to the verified PID instance. Never uses ``killpg``."""
+
+    remaining = _remaining_fn(timeout)
+    state = inspect_process_identity(identity, timeout=remaining())
+    if _identity_needs_no_signal(state):
+        return True
+    if state is not IdentityInspectState.LIVE_MATCH:
+        return False
+    current_start = read_process_start_time(identity.pid, timeout=remaining())
+    if current_start != identity.start_time:
+        return False
+    try:
+        os.kill(identity.pid, sig)
+    except OSError as exc:
+        if getattr(exc, "errno", None) == errno.ESRCH:
+            return True
+        return False
+    return True
+
+
+def is_owned_session_leader(
+    identity: ProcessIdentity,
+    *,
+    pgid: int | None = None,
+    timeout: float | None = None,
+) -> bool:
+    """Return True when *identity* still leads its process group and session."""
+
+    remaining = _remaining_fn(timeout)
+    if inspect_process_identity(identity, timeout=remaining()) is not (
+        IdentityInspectState.LIVE_MATCH
+    ):
+        return False
+    resolved = pgid
+    if resolved is None:
+        resolved = read_process_group_id(identity.pid, timeout=remaining())
+    if resolved is None or identity.pid != resolved:
+        return False
+    try:
+        if os.getpgid(identity.pid) != resolved:
+            return False
+        if os.getsid(identity.pid) != identity.pid:
+            return False
+    except OSError:
+        return False
+    current_start = read_process_start_time(identity.pid, timeout=remaining())
+    return current_start == identity.start_time
 
 
 def _group_still_ours(
@@ -606,7 +665,7 @@ def _current_group_identities(
     )
 
     for pid in pids:
-        identity = read_process_identity(pid, run_id=run_id, timeout=remaining())
+        identity = read_process_identity(pid, timeout=remaining())
         if identity is None:
             state = inspect_pid_liveness(pid, timeout=remaining())
             if state in {PidInspectState.ZOMBIE, PidInspectState.GONE}:
@@ -647,10 +706,9 @@ def _select_owned_targets(
         token = _identity_token(identity)
         if token in known_tokens:
             targets.append(identity)
-            continue
-        known_tokens.add(token)
-        targets.append(identity)
-    targets.extend(zombie_current)
+    for identity in zombie_current:
+        if _identity_token(identity) in known_tokens:
+            targets.append(identity)
     return targets
 
 
@@ -670,7 +728,6 @@ def capture_process_group_identities(
 
     current = read_process_identity(
         leader.pid,
-        run_id=leader.run_id,
         command=leader.command,
         timeout=remaining(),
     )
@@ -680,8 +737,9 @@ def capture_process_group_identities(
     pgid = read_process_group_id(leader.pid, timeout=remaining())
     if pgid is None:
         return [leader]
-
-    return _current_group_identities(pgid, run_id=leader.run_id, timeout=remaining())
+    if not is_owned_session_leader(leader, pgid=pgid, timeout=remaining()):
+        return [leader]
+    return _current_group_identities(pgid, timeout=remaining())
 
 
 def drain_owned_process_group(
@@ -1123,9 +1181,6 @@ def terminate_verified_process_identity(
             return TerminateIdentityResult.FAILED
         return TerminateIdentityResult.ALREADY_GONE
 
-    if not _pidfd_supported():
-        return TerminateIdentityResult.FAILED
-
     return _terminate_linux_identity(identity, timeout=remaining())
 
 
@@ -1136,6 +1191,7 @@ __all__ = [
     "capture_process_group_identities",
     "drain_owned_process_group",
     "inspect_process_identity",
+    "is_owned_session_leader",
     "process_identities_from_termination_record",
     "process_identities_match",
     "process_identity_from_termination_record",

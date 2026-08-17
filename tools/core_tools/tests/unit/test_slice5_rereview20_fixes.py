@@ -136,6 +136,12 @@ def test_signal_group_uses_only_killpg_not_raw_pids() -> None:
                 "core_tools.provider.session_janitor.os.getppid", return_value=1
             ), patch(
                 "core_tools.provider.session_janitor.os.getpgid", side_effect=fake_pgid
+            ), patch(
+                "core_tools.provider.session_janitor.os.getsid",
+                return_value=99,
+            ), patch(
+                "core_tools.provider.session_janitor._process_start_token",
+                return_value="1.0",
             ):
                 _signal_group(signal.SIGTERM)
                 _signal_group(signal.SIGKILL)
