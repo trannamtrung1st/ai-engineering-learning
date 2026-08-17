@@ -343,6 +343,9 @@ def test_leader_ownership_false_when_lookup_returns_token_after_deadline() -> No
     with patch(
         "core_tools.provider.session_janitor.os.getpgid",
         return_value=1,
+    ), patch(
+        "core_tools.provider.session_janitor.os.getsid",
+        return_value=1,
     ):
         with patch(
             "core_tools.provider.session_janitor._process_start_token",

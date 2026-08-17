@@ -857,6 +857,12 @@ def _fallback_kill_bound_janitor_group(
             return _fallback_status(DrainResult.UNVERIFIABLE)
     if resolved is None or resolved <= 0:
         return _fallback_status(DrainResult.UNVERIFIABLE)
+    try:
+        caller_pgid = os.getpgrp()
+    except OSError:
+        return _fallback_status(DrainResult.UNVERIFIABLE)
+    if int(resolved) == int(caller_pgid):
+        return _fallback_status(DrainResult.UNVERIFIABLE)
     raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
     try:
         leader_exited = raw_poll() is not None if callable(raw_poll) else True

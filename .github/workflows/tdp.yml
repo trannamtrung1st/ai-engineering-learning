@@ -110,11 +110,19 @@ jobs:
       - name: Serial process-lifecycle tests
         env:
           TDP_TRACE_PROCESS_SIGNALS: "1"
+          TDP_GROUP_SIGNAL_LOG: ${{ runner.temp }}/tdp-group-signals.jsonl
         run: |
           cd tools/core_tools
-          python -m pytest -p no:xdist -o addopts='' --tb=short \
+          set +e
+          setsid python -m pytest -p no:xdist -o addopts='' --tb=short -s \
             tests/unit/test_process_cleanup.py \
             tests/unit/test_slice5_rereview*_fixes.py
+          status=$?
+          if [ -f "$TDP_GROUP_SIGNAL_LOG" ]; then
+            echo "---- TDP_GROUP_SIGNAL_LOG ----"
+            cat "$TDP_GROUP_SIGNAL_LOG" || true
+          fi
+          exit "$status"
 
   darwin-janitor:
     runs-on: macos-latest

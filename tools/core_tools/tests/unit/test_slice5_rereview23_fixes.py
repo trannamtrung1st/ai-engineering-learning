@@ -312,7 +312,11 @@ def test_leader_identity_requires_matching_start_token() -> None:
     assert _leader_still_owns_group(os.getpgrp(), os.getpid(), "wrong-token") is False
     start = _process_start_token(os.getpid())
     assert start
-    assert _leader_still_owns_group(os.getpgrp(), os.getpid(), start) is True
+    owns = _leader_still_owns_group(os.getpgrp(), os.getpid(), start)
+    if os.getpid() == os.getpgrp():
+        assert owns is True
+    else:
+        assert owns is False
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

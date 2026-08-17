@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from unittest.mock import patch
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderTurnError
@@ -268,7 +269,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
             }
         )
         started.set()
-        release.wait(timeout=0.5)
+        assert release.wait(timeout=5)
         yield json.dumps(
             {
                 "type": "result",
@@ -280,7 +281,14 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
         )
 
     provider = CursorProvider(
-        {"limits": {"provider": {"max_retries_per_call": 0}}},
+        {
+            "limits": {
+                "provider": {
+                    "max_retries_per_call": 0,
+                    "turn_idle_timeout_seconds": 0.0,
+                }
+            }
+        },
         workspace=tmp_path,
         runner=stalling_runner,
         binary=str(agent_path),
@@ -302,11 +310,41 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
     thread.start()
     _wait_for_runner_block(started)
     provider.abort_turn(session_id)
-    provider.resume_primary_session(session_id, {"goal": "turn-2"}, role="producer")
-    release.set()
-    thread.join(timeout=0.5)
+    resume_done = threading.Event()
+    resume_errors: list[BaseException] = []
 
+    def resume() -> None:
+        try:
+            provider.resume_primary_session(
+                session_id,
+                {"goal": "turn-2"},
+                role="producer",
+            )
+        except BaseException as exc:
+            resume_errors.append(exc)
+        finally:
+            resume_done.set()
+
+    entered_wait = threading.Event()
+    real_wait = provider.wait_turn_settled
+
+    def wait_and_mark(*args: object, **kwargs: object) -> None:
+        entered_wait.set()
+        return real_wait(*args, **kwargs)
+
+    resume_thread = threading.Thread(target=resume)
+    with patch.object(provider, "wait_turn_settled", wait_and_mark):
+        resume_thread.start()
+        assert entered_wait.wait(timeout=2)
+        assert not resume_done.wait(timeout=0.2)
+        release.set()
+        assert resume_done.wait(timeout=2)
+    resume_thread.join(timeout=2)
+    thread.join(timeout=2)
+
+    assert not resume_thread.is_alive()
     assert not thread.is_alive()
+    assert resume_errors == []
     assert errors == []
     assert provider._sessions[durable_id].pending_argv is not None
 

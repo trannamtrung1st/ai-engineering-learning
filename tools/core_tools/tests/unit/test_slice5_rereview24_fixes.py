@@ -176,6 +176,9 @@ def test_same_second_start_tokens_do_not_match() -> None:
     with patch(
         "core_tools.provider.session_janitor.os.getpgid",
         return_value=1,
+    ), patch(
+        "core_tools.provider.session_janitor.os.getsid",
+        return_value=1,
     ):
         with patch(
             "core_tools.provider.session_janitor._process_start_token",

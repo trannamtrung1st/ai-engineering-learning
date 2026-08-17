@@ -689,8 +689,13 @@ def _leader_still_owns_group(
 
     if leader_pid is None or not leader_start or _deadline_expired(deadline):
         return False
+    # A process-group leader's PID must equal its PGID.
+    if leader_pid != pgid:
+        return False
     try:
         if os.getpgid(leader_pid) != pgid:
+            return False
+        if os.getsid(leader_pid) != leader_pid:
             return False
     except OSError:
         return False
