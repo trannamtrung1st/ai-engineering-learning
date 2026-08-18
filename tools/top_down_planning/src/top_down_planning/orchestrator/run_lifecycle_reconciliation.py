@@ -256,13 +256,76 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
     return removed
 
 
-def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
-    """Summarize workspace-level run store hygiene issues."""
+def _active_txn_dirs(run_dir: Path) -> list[Path]:
+    return [
+        path
+        for path in sorted(run_dir.glob(".txn-*"))
+        if path.is_dir() and not path.is_symlink()
+    ]
+
+
+def diagnose_canonical_run(run_dir: Path, run_id: str) -> dict[str, Any]:
+    """Non-mutating, commit-lock-aware classification of a run directory."""
 
     from core_tools.persistence import PersistenceError
     from top_down_planning.persistence.persisted_validation import (
         validate_canonical_run_artifacts,
     )
+
+    lock_path = run_dir / ".commit.lock"
+    with try_exclusive_file_lock(lock_path) as acquired:
+        if not acquired:
+            return {"kind": "busy"}
+        txn_dirs = _active_txn_dirs(run_dir)
+        if txn_dirs:
+            return {
+                "kind": "recoverable",
+                "transaction_dirs": [f"{run_id}/{path.name}" for path in txn_dirs],
+            }
+        try:
+            if run_dir.is_symlink() or not run_dir.is_dir():
+                raise PersistenceError("run directory must not be a symlink")
+            run = validate_canonical_run_artifacts(run_dir, run_id)
+        except (
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            PersistenceError,
+            TypeError,
+            ValueError,
+        ):
+            return {"kind": "corrupt"}
+        return {"kind": "ok", "run": run}
+
+
+def recover_abandoned_transactions(store: RunStore) -> list[str]:
+    """Recover abandoned ``.txn-*`` journals when the commit lock is free."""
+
+    recovered: list[str] = []
+    recover = getattr(store, "recover_incomplete_transactions", None)
+    root = getattr(store, "root", None)
+    if root is None or not callable(recover):
+        return recovered
+    root_path = Path(root)
+    if not root_path.is_dir():
+        return recovered
+    for entry in sorted(root_path.iterdir()):
+        run_id = entry.name
+        if not _RUN_DIR_PATTERN.match(run_id) or not entry.is_dir():
+            continue
+        lock_path = entry / ".commit.lock"
+        with try_exclusive_file_lock(lock_path) as acquired:
+            if not acquired:
+                continue
+            if not _active_txn_dirs(entry):
+                continue
+        recover(run_id)
+        recovered.append(run_id)
+    return recovered
+
+
+def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
+    """Summarize workspace-level run store hygiene issues."""
 
     incomplete_run_dirs = list_incomplete_run_dirs(store)
     staging_run_dirs = list_staging_run_dirs(store)
@@ -271,6 +334,9 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
     idle_running: list[str] = []
     interrupted_running: list[str] = []
     corrupt_run_dirs: list[str] = []
+    busy_run_dirs: list[str] = []
+    recoverable_transaction_run_ids: list[str] = []
+    recoverable_transaction_dirs: list[str] = []
     root = getattr(store, "root", None)
     if root is not None:
         root_path = Path(root)
@@ -279,23 +345,24 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
                 run_id = entry.name
                 if not _RUN_DIR_PATTERN.match(run_id):
                     continue
-                try:
-                    if entry.is_symlink() or not entry.is_dir():
-                        raise PersistenceError("run directory must not be a symlink")
-                    run_json = entry / "run.json"
-                    if not run_json.is_file() and not run_json.is_symlink():
-                        continue
-                    run = validate_canonical_run_artifacts(entry, run_id)
-                except (
-                    OSError,
-                    json.JSONDecodeError,
-                    UnicodeDecodeError,
-                    PersistenceError,
-                    TypeError,
-                    ValueError,
-                ):
+                run_json = entry / "run.json"
+                if not run_json.is_file() and not run_json.is_symlink():
+                    continue
+                diagnosis = diagnose_canonical_run(entry, run_id)
+                kind = str(diagnosis.get("kind") or "")
+                if kind == "busy":
+                    busy_run_dirs.append(run_id)
+                    continue
+                if kind == "recoverable":
+                    recoverable_transaction_run_ids.append(run_id)
+                    recoverable_transaction_dirs.extend(
+                        list(diagnosis.get("transaction_dirs") or [])
+                    )
+                    continue
+                if kind != "ok":
                     corrupt_run_dirs.append(run_id)
                     continue
+                run = diagnosis["run"]
                 if str(run.get("status") or "") != "running":
                     continue
                 run_dir = resolve_run_dir(store, run_id)
@@ -316,6 +383,9 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
         "staging_run_dirs": staging_run_dirs,
         "commit_transaction_dirs": commit_transaction_dirs,
         "corrupt_run_dirs": corrupt_run_dirs,
+        "busy_run_dirs": busy_run_dirs,
+        "recoverable_transaction_run_ids": recoverable_transaction_run_ids,
+        "recoverable_transaction_dirs": recoverable_transaction_dirs,
         "idle_running_run_ids": idle_running,
         "interrupted_running_run_ids": interrupted_running,
     }
@@ -324,10 +394,12 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
 __all__ = [
     "cleanup_commit_transaction_dirs",
     "cleanup_staging_dirs",
+    "diagnose_canonical_run",
     "list_commit_transaction_dirs",
     "list_incomplete_run_dirs",
     "list_staging_run_dirs",
     "reconcile_stale_running_run",
     "reconcile_stale_running_run_under_ownership",
+    "recover_abandoned_transactions",
     "workspace_diagnostics",
 ]

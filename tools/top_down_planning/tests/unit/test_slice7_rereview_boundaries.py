@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import shutil
 from pathlib import Path
@@ -15,13 +16,19 @@ from top_down_planning.config import resolve_config
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.package.digests import compute_package_digest
-from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence import FileRunStore, PersistenceError
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
     compute_config_execution_digest,
 )
 from tests.conftest import run_cli
+from tests.fixtures.commit_concurrency_worker import pause_after_run_json_replace_worker
 from tests.helpers import create_run_kwargs, minimal_resolved_config, write_config
+from tests.unit.test_commit_crash_recovery import (
+    _crash_after_dest_replace_count,
+    _crash_before_appending_events,
+    _multi_file_commit,
+)
 from tests.unit.test_prepared_runs import _built_package
 from tests.unit.test_slice7_rereview_cli_schema import (
     _create_planning_run,
@@ -766,3 +773,155 @@ def test_doctor_reports_missing_or_corrupt_events_and_invocation(
     mutate_run_dir(store.run_dir(run_id))
     _wipe_txn_dirs(store.run_dir(run_id))
     _assert_doctor_marks_corrupt(store, run_id)
+
+
+def _assert_doctor_not_corrupt(store: FileRunStore, run_id: str) -> dict:
+    structured = run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"])
+    workspace = json.loads(structured.stdout)["workspace"]
+    assert run_id not in workspace["corrupt_run_dirs"]
+    assert "Traceback" not in structured.stderr
+    targeted = run_cli(
+        ["doctor", "--run", run_id, "--runs-dir", str(store.root), "--stream-json"]
+    )
+    targeted_payload = json.loads(targeted.stdout)
+    assert targeted_payload.get("error", {}).get("code") != "corrupt_run"
+    assert "Traceback" not in targeted.stderr
+    human = run_cli(["doctor", "--run", run_id, "--runs-dir", str(store.root)])
+    assert "Traceback" not in human.stderr
+    return {
+        "workspace": structured,
+        "workspace_payload": json.loads(structured.stdout),
+        "targeted": targeted,
+        "targeted_payload": targeted_payload,
+    }
+
+
+def _crash_on_replacing_status():
+    from core_tools.persistence import atomic_write_json as original_write
+
+    def patched_write(path: Path, payload: dict) -> None:
+        if path.name == "journal.json" and payload.get("status") == "replacing":
+            raise OSError("simulated crash")
+        original_write(path, payload)
+
+    return patched_write
+
+
+def test_doctor_does_not_treat_in_progress_commit_as_corrupt(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111801-111801"
+    _create_planning_run(store, run_id)
+    ctx = multiprocessing.get_context("spawn")
+    ready_queue: multiprocessing.Queue[str] = ctx.Queue()
+    release_queue: multiprocessing.Queue[str] = ctx.Queue()
+    writer = ctx.Process(
+        target=pause_after_run_json_replace_worker,
+        args=(str(store.root), run_id, ready_queue, release_queue),
+    )
+    writer.start()
+    try:
+        assert ready_queue.get(timeout=30) == "ready"
+        observed = _assert_doctor_not_corrupt(store, run_id)
+        workspace = observed["workspace_payload"]["workspace"]
+        assert run_id in workspace.get("busy_run_dirs", [])
+        assert observed["targeted_payload"].get("busy") is True
+        assert observed["targeted"].exit_code == 0
+    finally:
+        release_queue.put("release")
+        writer.join(timeout=30)
+        assert writer.exitcode == 0
+    _assert_doctor_run_healthy(store, run_id)
+
+
+@pytest.mark.parametrize(
+    "crash",
+    [
+        lambda: patch(
+            "top_down_planning.persistence.file_store.atomic_write_json",
+            _crash_on_replacing_status(),
+        ),
+        lambda: patch.object(Path, "replace", _crash_after_dest_replace_count(1)),
+        lambda: patch(
+            "top_down_planning.persistence.file_store.atomic_write_json",
+            _crash_before_appending_events(),
+        ),
+        lambda: patch.object(
+            FileRunStore,
+            "_retire_transaction_dir",
+            side_effect=OSError("simulated crash"),
+        ),
+    ],
+)
+def test_doctor_reports_recoverable_transactions_and_fix_recovers_them(
+    tmp_path: Path, crash
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111802-111802"
+    _create_planning_run(store, run_id)
+    with crash():
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    assert list(store.run_dir(run_id).glob(".txn-*"))
+
+    observed = _assert_doctor_not_corrupt(store, run_id)
+    workspace = observed["workspace_payload"]["workspace"]
+    assert run_id in workspace.get("recoverable_transaction_run_ids", [])
+    assert list(store.run_dir(run_id).glob(".txn-*"))
+    assert observed["targeted_payload"].get("recoverable_transaction") is True
+    assert observed["targeted"].exit_code == 0
+
+    fixed = run_cli(
+        ["doctor", "--fix", "--runs-dir", str(store.root), "--stream-json"]
+    )
+    assert fixed.exit_code == 0
+    assert "Traceback" not in fixed.stderr
+    assert run_id not in json.loads(fixed.stdout)["workspace"]["corrupt_run_dirs"]
+    assert not list(store.run_dir(run_id).glob(".txn-*"))
+    targeted_fix = run_cli(
+        [
+            "doctor",
+            "--fix",
+            "--run",
+            run_id,
+            "--runs-dir",
+            str(store.root),
+            "--stream-json",
+        ]
+    )
+    assert targeted_fix.exit_code == 0
+    assert json.loads(targeted_fix.stdout).get("error", {}).get("code") != "corrupt_run"
+    _assert_doctor_run_healthy(store, run_id)
+
+
+def test_store_invocation_boundary_uses_persisted_invocation_schema(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111803-111803"
+    invalid = create_run_kwargs(store.root)
+    invalid["invocation"]["stream_json"] = "yes"
+    with pytest.raises(PersistenceError, match="stream_json"):
+        store.create_run(
+            run_id,
+            plan=Plan(
+                id="plan-invocation",
+                revision=0,
+                output_goal="Goal.",
+                items={
+                    "item-root": PlanItem(
+                        id="item-root",
+                        parent_id=None,
+                        order_key="0000000000",
+                        title="Root",
+                        kind="aggregate",
+                    )
+                },
+            ),
+            phase=PLANNING,
+            **invalid,
+        )
+    _create_planning_run(store, run_id)
+    with pytest.raises(PersistenceError, match="stream_json"):
+        store.save_invocation(run_id, {"stream_json": "yes"})
+    loaded = store.load_invocation(run_id)
+    assert loaded.get("stream_json") is False

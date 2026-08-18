@@ -81,3 +81,58 @@ def load_plan_reader_worker(
         attempt_queue.put("loading")
     plan = store.load_plan(run_id)
     result_queue.put(int(plan["revision"]))
+
+
+def pause_after_run_json_replace_worker(
+    store_root: str,
+    run_id: str,
+    ready_queue,
+    release_queue,
+) -> None:
+    """Hold the commit lock after publishing a new run.json and before plan.json."""
+
+    from pathlib import Path
+
+    from top_down_planning.persistence import FileRunStore
+    from top_down_planning.persistence.commit import CommitSpec
+    from top_down_planning.persistence.snapshot_bindings import (
+        bind_run_digests_for_plan_update,
+    )
+
+    original_replace = Path.replace
+
+    def patched_replace(self: Path, target: Path) -> Path:
+        result = original_replace(self, target)
+        self_parts = self.parts
+        target_parts = target.parts
+        if (
+            any(part.startswith(".txn-") for part in self_parts)
+            and not any(part.startswith(".txn-") for part in target_parts)
+            and target.name == "run.json"
+        ):
+            ready_queue.put("ready")
+            release_queue.get(timeout=30)
+        return result
+
+    Path.replace = patched_replace
+    store = FileRunStore(Path(store_root))
+    run = store.load_run(run_id)
+    plan = store.load_plan(run_id)
+    run_expected = int(run["revision"])
+    plan_expected = int(plan["revision"])
+    plan = dict(plan)
+    plan["revision"] = plan_expected + 1
+    run = bind_run_digests_for_plan_update(
+        {**dict(run), "revision": run_expected + 1},
+        plan,
+    )
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=run_expected,
+            plan=plan,
+            plan_expected_revision=plan_expected,
+            events=[{"type": "test_commit", "run_id": run_id}],
+        ),
+    )

@@ -28,7 +28,9 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
 )
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
     cleanup_staging_dirs,
+    diagnose_canonical_run,
     reconcile_stale_running_run_under_ownership,
+    recover_abandoned_transactions,
     workspace_diagnostics,
 )
 
@@ -129,6 +131,7 @@ def _handle_doctor_command(args: Namespace, store) -> None:
     removed_staging_dirs: list[str] = []
     if fix:
         removed_staging_dirs = cleanup_staging_dirs(store)
+        recover_abandoned_transactions(store)
 
     if not args.run:
         diagnostics = workspace_diagnostics(store)
@@ -203,6 +206,20 @@ def _handle_doctor_command(args: Namespace, store) -> None:
             )
         else:
             lines.append("  corrupt run dirs: none")
+        if diagnostics.get("busy_run_dirs"):
+            lines.append(
+                "  busy run dirs (commit in progress): "
+                + ", ".join(diagnostics["busy_run_dirs"])
+            )
+        else:
+            lines.append("  busy run dirs: none")
+        if diagnostics.get("recoverable_transaction_run_ids"):
+            lines.append(
+                "  recoverable transaction runs: "
+                + ", ".join(diagnostics["recoverable_transaction_run_ids"])
+            )
+        else:
+            lines.append("  recoverable transaction runs: none")
         if diagnostics["staging_run_dirs"]:
             lines.append(
                 "  staging dirs (.creating-*): "
@@ -239,13 +256,44 @@ def _handle_doctor_command(args: Namespace, store) -> None:
         return
 
     run_id = str(args.run)
-    from top_down_planning.persistence.persisted_validation import (
-        validate_canonical_run_artifacts,
-    )
+    from core_tools.persistence import PersistenceError
 
     lexical_run_dir = store.root / run_id
+    diagnosis: dict[str, Any] | None = None
     if lexical_run_dir.exists() or lexical_run_dir.is_symlink():
-        validate_canonical_run_artifacts(lexical_run_dir, run_id)
+        diagnosis = diagnose_canonical_run(lexical_run_dir, run_id)
+        kind = str(diagnosis.get("kind") or "")
+        if kind == "busy":
+            payload = {
+                "ok": True,
+                "run_id": run_id,
+                "busy": True,
+                "recoverable_transaction": False,
+            }
+            lines = [f"run {run_id}: commit in progress"]
+            _emit_doctor_result(args, payload, lines)
+            return
+        if kind == "recoverable" and not fix:
+            payload = {
+                "ok": True,
+                "run_id": run_id,
+                "busy": False,
+                "recoverable_transaction": True,
+            }
+            lines = [f"run {run_id}: recoverable transaction pending"]
+            _emit_doctor_result(args, payload, lines)
+            return
+        if kind == "recoverable" and fix:
+            recover = getattr(store, "recover_incomplete_transactions", None)
+            if callable(recover):
+                recover(run_id)
+            else:
+                store.load_run(run_id)
+            diagnosis = diagnose_canonical_run(lexical_run_dir, run_id)
+            kind = str(diagnosis.get("kind") or "")
+        if kind == "corrupt":
+            raise PersistenceError("canonical run artifacts are inconsistent")
+
     repair_refused: str | None = None
     reconciled = False
     repair_incomplete = False
@@ -262,7 +310,10 @@ def _handle_doctor_command(args: Namespace, store) -> None:
             else:
                 reconciled = repair.reconciled
 
-    run = store.load_run(run_id)
+    if diagnosis is not None and diagnosis.get("kind") == "ok" and not fix:
+        run = diagnosis["run"]
+    else:
+        run = store.load_run(run_id)
     orphan_pids = scan_orphan_agent_pids(
         run_id,
         exclude_pids=frozenset({os.getpid()}),
@@ -273,6 +324,8 @@ def _handle_doctor_command(args: Namespace, store) -> None:
         "ok": repair_refused is None and not repair_incomplete,
         "run_id": run_id,
         "status": run.get("status"),
+        "busy": False,
+        "recoverable_transaction": False,
         "reconciled": reconciled,
         "repair_incomplete": repair_incomplete,
         "repair_refused": repair_refused,

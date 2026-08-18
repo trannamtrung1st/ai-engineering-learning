@@ -75,6 +75,7 @@ from top_down_planning.persistence.persisted_validation import (
     reject_protected_run_extras_keys,
     validate_canonical_run,
     validate_event_log_integrity,
+    validate_persisted_invocation,
     validate_persisted_production,
     validate_persisted_review_binding,
     validate_persisted_run,
@@ -269,6 +270,7 @@ class FileRunStore:
             raise PersistenceError("workspace is required")
         if not isinstance(invocation, dict):
             raise PersistenceError("invocation metadata is required")
+        invocation = validate_persisted_invocation(invocation)
 
         final_run_dir = self.run_dir(validated_run_id)
         creation_lock_path = self._assert_contained(
@@ -428,6 +430,12 @@ class FileRunStore:
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
         with self._with_recovered_run(run_id) as validated_run_id:
             return self._commit_locked(validated_run_id, self.run_dir(validated_run_id), spec)
+
+    def recover_incomplete_transactions(self, run_id: str) -> None:
+        """Recover abandoned journals under the commit lock without extra canonical reads."""
+
+        with self._with_run_commit_lock(run_id) as validated_run_id:
+            self._recover_incomplete_transactions(validated_run_id)
 
     def _commit_locked(
         self,
@@ -799,9 +807,10 @@ class FileRunStore:
                 )
 
             if spec.invocation is not None:
+                invocation_payload = validate_persisted_invocation(spec.invocation)
                 staged_path = stage_dir / "invocation.json"
                 dest = run_dir / "invocation.json"
-                atomic_write_json(staged_path, spec.invocation)
+                atomic_write_json(staged_path, invocation_payload)
                 staged_files.append(
                     {
                         "kind": "invocation",
@@ -987,8 +996,7 @@ class FileRunStore:
         """
 
         with self._with_recovered_run(run_id) as validated_run_id:
-            if not isinstance(invocation, dict):
-                raise PersistenceError("invocation metadata must be a mapping")
+            invocation = validate_persisted_invocation(invocation)
             path = self.run_dir(validated_run_id) / "invocation.json"
             atomic_write_json(path, invocation)
 
@@ -1001,7 +1009,9 @@ class FileRunStore:
                     "invocation.json missing",
                     runs_root=self._root,
                 )
-            return self._read_json_object(path, label="invocation.json")
+            return validate_persisted_invocation(
+                self._read_json_object(path, label="invocation.json")
+            )
 
     def reviews_dir(self, run_id: str) -> Path:
         run_dir = self.run_dir(run_id)
