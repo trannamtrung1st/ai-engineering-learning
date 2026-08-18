@@ -21,6 +21,7 @@ from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import (
     apply_production,
+    bind_focused_review_freshness,
     create_run_kwargs,
     done_events,
     grant_capability,
@@ -127,10 +128,14 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
 
     token = grant_capability(store, run_id, role="planner", phase="planning")
     ReviewAgentService(store, run_id).request(
-        {
+        bind_focused_review_freshness(
+            store,
+            run_id,
+            {
             "type": "focused_plan",
             "scope": {"item_ids": ["item-root"]},
-        },
+            },
+        ),
         capability_token=token,
     )
 
@@ -389,10 +394,14 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
 
     planner_token = grant_capability(store, run_id, role="planner", phase="planning")
     ReviewAgentService(store, run_id).request(
-        {
+        bind_focused_review_freshness(
+            store,
+            run_id,
+            {
             "type": "focused_plan",
             "scope": {"item_ids": ["item-root"]},
-        },
+            },
+        ),
         capability_token=planner_token,
     )
 
@@ -487,10 +496,14 @@ def test_planning_runs_store_created_focused_review_before_advancing(
 
     planner_token = grant_capability(store, run_id, role="planner", phase="planning")
     ReviewAgentService(store, run_id).request(
-        {
+        bind_focused_review_freshness(
+            store,
+            run_id,
+            {
             "type": "focused_plan",
             "scope": {"item_ids": ["item-api"]},
-        },
+            },
+        ),
         capability_token=planner_token,
     )
     run = store.load_run(run_id)

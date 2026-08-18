@@ -32,6 +32,11 @@ PUBLIC_SCHEMAS: tuple[str, ...] = (
     "amendment-request",
     "completion-claim",
     "blocker-report",
+    "agent-error",
+    "plan-apply-response",
+    "production-apply-response",
+    "run-status-response",
+    "focused-review-request-response",
 )
 
 PUBLIC_EXAMPLES: tuple[str, ...] = (
@@ -139,6 +144,17 @@ _PLAN_METADATA_PATCH_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_PLACEMENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "first_child": {"type": "boolean"},
+        "last_child": {"type": "boolean"},
+        "before": {"type": "string"},
+        "after": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+
 _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
@@ -147,11 +163,11 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
             "properties": {
                 "op": {"const": "add_item"},
                 "temp_id": {"type": "string"},
-                "parent_id": {"type": ["string", "null"]},
-                "placement": {"type": "object"},
+                "parent_id": {"type": "string"},
+                "placement": _PLACEMENT_SCHEMA,
                 "item": _PLAN_ITEM_INPUT_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -161,7 +177,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "item_id": {"type": "string"},
                 "patch": _PLAN_ITEM_PATCH_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -170,7 +186,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "op": {"const": "update_plan"},
                 "patch": _PLAN_METADATA_PATCH_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -178,10 +194,10 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
             "properties": {
                 "op": {"const": "move_subtree"},
                 "item_id": {"type": "string"},
-                "new_parent_id": {"type": ["string", "null"]},
-                "placement": {"type": "object"},
+                "new_parent_id": {"type": "string"},
+                "placement": _PLACEMENT_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -193,7 +209,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "temp_id": {"type": "string"},
                 "replacement": _PLAN_ITEM_INPUT_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -202,7 +218,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "op": {"const": "remove_item"},
                 "item_id": {"type": "string"},
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -216,7 +232,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "item_id": {"type": "string"},
                 "depends_on": _SINGLE_DEPENDENCY_EDGE_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -226,7 +242,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "item_id": {"type": "string"},
                 "depends_on": _SINGLE_DEPENDENCY_EDGE_SCHEMA,
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
         {
             "type": "object",
@@ -236,7 +252,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "item_id": {"type": "string"},
                 "depends_on": {"type": "array", "items": {"type": "string"}},
             },
-            "additionalProperties": True,
+            "additionalProperties": False,
         },
     ]
 }
@@ -481,10 +497,12 @@ _FOCUSED_REVIEW_SCOPE_SCHEMA = {
 _FOCUSED_REVIEW_BRANCH_SCHEMAS = [
     {
         "type": "object",
-        "required": ["type", "scope"],
+        "required": ["type", "scope", "target_revision", "target_digest"],
         "properties": {
             "type": {"const": review_type},
             "scope": _FOCUSED_REVIEW_SCOPE_SCHEMA,
+            "target_revision": {"type": "integer"},
+            "target_digest": {"type": "string", "minLength": 1},
         },
         "additionalProperties": False,
     }
@@ -1432,6 +1450,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": {"type": "string"},
                         "ref": {"type": "string"},
                     },
+                    "additionalProperties": False,
                 },
             },
             "contributions": {
@@ -1447,13 +1466,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         },
                         "summary": {"type": "string"},
                     },
+                    "additionalProperties": False,
                 },
             },
             "summary": {"type": "string"},
             "goal_assessment": {"type": "string"},
             "empty_output": {"type": "boolean"},
             "empty_output_reason": {
-                "type": "string",
+                "type": ["string", "null"],
                 "description": "Required when empty_output is true.",
             },
             "evidence_revision": {
@@ -1604,8 +1624,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "AmendmentRequest",
         "description": "Controlled plan amendment request for `tdp agent production request-amendment`.",
         "type": "object",
-        "required": ["evidence", "affected_refs"],
+        "required": ["production_revision", "evidence", "affected_refs"],
         "properties": {
+            "production_revision": {"type": "integer"},
             "evidence": {"type": "string", "minLength": 1},
             "affected_refs": {
                 "type": "array",
@@ -1621,8 +1642,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "CompletionClaimRequest",
         "description": "Production completion claim for `tdp agent production submit-completion`.",
         "type": "object",
-        "required": ["goal_assessment"],
+        "required": ["production_revision", "goal_assessment"],
         "properties": {
+            "production_revision": {"type": "integer"},
             "goal_assessment": {"type": "string", "minLength": 1},
             "summary": {"type": "string"},
         },
@@ -1633,8 +1655,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "BlockerReportRequest",
         "description": "Production blocker report for `tdp agent production report-blocked`.",
         "type": "object",
-        "required": ["evidence"],
+        "required": ["production_revision", "evidence"],
         "properties": {
+            "production_revision": {"type": "integer"},
             "evidence": {"type": "string", "minLength": 1},
             "affected_refs": {
                 "type": "array",
@@ -1643,6 +1666,104 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "summary": {"type": "string"},
         },
         "additionalProperties": False,
+    },
+    "agent-error": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AgentErrorResponse",
+        "type": "object",
+        "required": ["ok", "error"],
+        "properties": {
+            "ok": {"const": False},
+            "error": {
+                "type": "object",
+                "required": ["code", "message"],
+                "properties": {
+                    "code": {"type": "string"},
+                    "message": {"type": "string"},
+                    "action": {"type": "string"},
+                    "hint": {"type": "string"},
+                    "expected_revision": {"type": "integer"},
+                    "actual_revision": {"type": "integer"},
+                },
+                "additionalProperties": True,
+            },
+        },
+        "additionalProperties": True,
+    },
+    "plan-apply-response": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "PlanApplyResponse",
+        "type": "object",
+        "required": ["ok", "applied", "revision"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "applied": {"type": "boolean"},
+            "revision": {"type": "integer"},
+            "id_map": {"type": "object"},
+            "changed_item_ids": {"type": "array", "items": {"type": "string"}},
+            "warnings": {"type": "array"},
+            "issues": {"type": "array"},
+            "ready_changes": {"type": "object"},
+            "audit_degraded": {"type": "boolean"},
+        },
+        "additionalProperties": True,
+    },
+    "production-apply-response": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ProductionApplyResponse",
+        "type": "object",
+        "required": ["ok", "production_revision"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "batch_id": {"type": "string"},
+            "production_revision": {"type": "integer"},
+            "output_revision": {"type": "integer"},
+            "changed_disposition_count": {"type": "integer"},
+            "changed_dispositions": {"type": "object"},
+            "all_applicable_items_processed": {"type": "boolean"},
+            "audit_degraded": {"type": "boolean"},
+        },
+        "additionalProperties": True,
+    },
+    "run-status-response": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RunStatusResponse",
+        "type": "object",
+        "required": ["ok", "run"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "run_path": {"type": "string"},
+            "agent_requests_dir": {"type": "string"},
+            "run": {
+                "type": "object",
+                "required": ["id", "revision"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "revision": {"type": "integer"},
+                    "plan_revision": {"type": "integer"},
+                    "status": {"type": "string"},
+                    "phase": {"type": "string"},
+                },
+                "additionalProperties": True,
+            },
+        },
+        "additionalProperties": True,
+    },
+    "focused-review-request-response": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "FocusedReviewRequestResponse",
+        "type": "object",
+        "required": ["ok", "loop_id", "type", "target_revision"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "loop_id": {"type": "string"},
+            "type": {"type": "string"},
+            "scope": {"type": "object"},
+            "target_revision": {"type": "integer"},
+            "status": {"type": "string"},
+            "audit_degraded": {"type": "boolean"},
+        },
+        "additionalProperties": True,
     },
 }
 
@@ -2373,12 +2494,15 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "scope": {
                 "item_ids": ["item-api"],
             },
+            "target_revision": 0,
+            "target_digest": "plan-digest-placeholder",
         },
     },
     "amendment-request": {
         "schema": "amendment-request",
         "description": "Producer requests a controlled plan amendment during production.",
         "payload": {
+            "production_revision": 0,
             "evidence": "Plan item item-api omits a dependency required for batch sequencing.",
             "affected_refs": ["item-api", "item-ui"],
             "summary": "Add missing dependency before production can continue.",
@@ -2388,6 +2512,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "completion-claim",
         "description": "Producer submits a completion claim after all applicable items are terminal.",
         "payload": {
+            "production_revision": 0,
             "goal_assessment": "Every applicable plan item has a terminal disposition or derived satisfaction.",
             "summary": "Production batches complete; ready for whole-output review.",
         },
@@ -2396,6 +2521,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "blocker-report",
         "description": "Producer reports a blocker with evidence when production cannot continue.",
         "payload": {
+            "production_revision": 0,
             "evidence": "Upstream credential rotation blocks deployment verification.",
             "affected_refs": ["item-deploy"],
             "summary": "Deployment verification cannot proceed until credentials are restored.",

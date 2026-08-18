@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from top_down_planning.domain.models import Plan
 from top_down_planning.persistence.commit import CommitSpec
+from top_down_planning.persistence.snapshot import CanonicalRunSnapshot
 
 
 class RunStore(Protocol):
@@ -60,6 +61,9 @@ class RunStore(Protocol):
 
     def load_production(self, run_id: str) -> dict[str, Any]:
         """Load the current production snapshot under the per-run commit lock."""
+
+    def load_canonical_snapshot(self, run_id: str) -> CanonicalRunSnapshot:
+        """Load run, plan, production, reviews, and config under one commit lock."""
 
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
         """Apply a journaled commit under the per-run commit lock."""
@@ -138,3 +142,6 @@ class RunStore(Protocol):
 
         Raises ``PersistenceError`` when the snapshot path already exists.
         """
+
+    def delete_artifact_snapshot(self, run_id: str, snapshot_id: str) -> None:
+        """Remove an unreferenced artifact snapshot directory if it exists."""

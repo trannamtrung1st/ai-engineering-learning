@@ -329,6 +329,7 @@ def test_submit_completion_blocked_while_focused_findings_unresolved(
         service.submit_completion(
             {
                 "goal_assessment": "Everything is done.",
+                "production_revision": int(store.load_production("run-20260101T000551-000551")["revision"]),
             },
             capability_token=token,
         )

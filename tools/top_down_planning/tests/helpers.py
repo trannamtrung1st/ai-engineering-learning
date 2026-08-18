@@ -1827,9 +1827,35 @@ def request_focused_review(
 
     def mutate() -> None:
         token = grant_capability(store, run_id, role=role, phase=phase)
-        ReviewAgentService(store, run_id).request(request, capability_token=token)
+        ReviewAgentService(store, run_id).request(
+            bind_focused_review_freshness(store, run_id, request),
+            capability_token=token,
+        )
 
     return mutate
+
+
+def bind_focused_review_freshness(
+    store: Any,
+    run_id: str,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    from top_down_planning.persistence.digests import (
+        compute_output_digest,
+        compute_plan_digest,
+    )
+
+    payload = dict(request)
+    review_type = str(payload.get("type") or "")
+    if review_type == "focused_output":
+        production = store.load_production(run_id)
+        payload.setdefault("target_revision", int(production["output_revision"]))
+        payload.setdefault("target_digest", compute_output_digest(production))
+    else:
+        plan = store.load_plan(run_id)
+        payload.setdefault("target_revision", int(plan["revision"]))
+        payload.setdefault("target_digest", compute_plan_digest(plan))
+    return payload
 
 
 def enrich_mandatory_review_respond_payload(
@@ -2192,8 +2218,15 @@ def apply_production(
 
     def mutate() -> None:
         token = grant_capability(store, run_id, role=role, phase=phase)
+        payload = dict(request)
+        if handler in {
+            "request_amendment",
+            "submit_completion",
+            "report_blocked",
+        } and "production_revision" not in payload:
+            payload["production_revision"] = int(store.load_production(run_id)["revision"])
         ProductionAgentService(store, run_id).__getattribute__(handler)(
-            request,
+            payload,
             capability_token=token,
         )
 
@@ -2290,8 +2323,11 @@ def request_amendment(
 
     def mutate() -> None:
         token = grant_capability(store, run_id, role=role, phase=phase)
+        payload = dict(request)
+        if "production_revision" not in payload:
+            payload["production_revision"] = int(store.load_production(run_id)["revision"])
         ProductionAgentService(store, run_id).request_amendment(
-            request,
+            payload,
             capability_token=token,
         )
 

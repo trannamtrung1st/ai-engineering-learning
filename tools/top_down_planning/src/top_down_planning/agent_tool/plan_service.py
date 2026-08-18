@@ -6,6 +6,7 @@ from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.authorization import authorize_mutation
+from top_down_planning.agent_tool.commit import commit_authorized
 from top_down_planning.agent_tool.errors import (
     OperationError,
     RequestError,
@@ -44,8 +45,8 @@ from top_down_planning.agent_tool.request_audit import (
 )
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
-from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.snapshot import CanonicalRunSnapshot
 
 
 class PlanAgentService:
@@ -63,10 +64,11 @@ class PlanAgentService:
         depth: int | None = None,
         mode: ValidationMode = "draft",
     ) -> dict[str, Any]:
-        plan = self._store.load_plan_model(self._run_id)
-        limits = self._planning_limits()
-        dispositions = self._dispositions()
-        reviews = self._store.list_reviews(self._run_id)
+        canonical = self._canonical_snapshot()
+        plan = Plan.from_dict(canonical.plan)
+        limits = planning_limits_from_config(canonical.resolved_config)
+        dispositions = self._dispositions_from(canonical.production)
+        reviews = canonical.reviews
         review_state, digests = plan_approval_validation_context(
             self._store,
             self._run_id,
@@ -119,7 +121,7 @@ class PlanAgentService:
         capability_token: str | None = None,
         request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
-        authorize_mutation(
+        auth = authorize_mutation(
             self._store,
             self._run_id,
             operation="plan_apply",
@@ -186,41 +188,35 @@ class PlanAgentService:
 
         before_plan = plan
         run = self._store.load_run(self._run_id)
-        expected_run_revision = int(run["revision"])
         run_payload = dict(run)
-        run_payload["revision"] = expected_run_revision + 1
+        run_payload["revision"] = auth.run_revision + 1
         run_payload["digests"] = dict(run_payload.get("digests") or {})
         run_payload["digests"]["plan"] = compute_plan_digest(result.plan)
 
-        try:
-            self._store.commit(
-                self._run_id,
-                CommitSpec(
-                    plan=result.plan.to_dict(),
-                    plan_expected_revision=base_revision,
-                    run=run_payload,
-                    run_expected_revision=expected_run_revision,
-                    events=[
-                        apply_request_audit_fields(
-                            {
-                                "type": "plan_applied",
-                                "run_id": self._run_id,
-                                "base_revision": base_revision,
-                                "revision": result.revision,
-                                "operation_count": len(operations),
-                                "changed_item_ids": result.changed_item_ids,
-                            },
-                            request_audit,
-                        )
-                    ],
-                ),
-            )
-        except StoreRevisionConflictError as exc:
-            raise RevisionConflictError(
-                str(exc),
-                expected=exc.expected,
-                actual=exc.actual,
-            ) from exc
+        commit_authorized(
+            self._store,
+            self._run_id,
+            CommitSpec(
+                plan=result.plan.to_dict(),
+                plan_expected_revision=base_revision,
+                run=run_payload,
+                run_expected_revision=auth.run_revision,
+                events=[
+                    apply_request_audit_fields(
+                        {
+                            "type": "plan_applied",
+                            "run_id": self._run_id,
+                            "base_revision": base_revision,
+                            "revision": result.revision,
+                            "operation_count": len(operations),
+                            "changed_item_ids": result.changed_item_ids,
+                        },
+                        request_audit,
+                    )
+                ],
+            ),
+            auth,
+        )
 
         validation = after_validation
 
@@ -241,10 +237,11 @@ class PlanAgentService:
         }
 
     def check(self, *, mode: ValidationMode = "draft") -> dict[str, Any]:
-        plan = self._store.load_plan_model(self._run_id)
-        limits = self._planning_limits()
-        dispositions = self._dispositions()
-        reviews = self._store.list_reviews(self._run_id)
+        canonical = self._canonical_snapshot()
+        plan = Plan.from_dict(canonical.plan)
+        limits = planning_limits_from_config(canonical.resolved_config)
+        dispositions = self._dispositions_from(canonical.production)
+        reviews = canonical.reviews
         review_state, digests = plan_approval_validation_context(
             self._store,
             self._run_id,
@@ -268,11 +265,17 @@ class PlanAgentService:
             "warnings": validation_warnings(validation),
         }
 
+    def _canonical_snapshot(self) -> CanonicalRunSnapshot:
+        return self._store.load_canonical_snapshot(self._run_id)
+
     def _planning_limits(self):
         config = self._store.load_resolved_config(self._run_id)
         return planning_limits_from_config(config)
 
     def _dispositions(self) -> DispositionMap:
         production = self._store.load_production(self._run_id)
+        return self._dispositions_from(production)
+
+    def _dispositions_from(self, production: dict[str, Any]) -> DispositionMap:
         raw = production.get("dispositions") or {}
         return dict(raw)

@@ -9,6 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core_tools.persistence import PersistenceError
+
+
+class StoreAuthorizationConflictError(PersistenceError):
+    """Authorized mutation is no longer valid under the commit lock."""
+
 
 @dataclass
 class CommitSpec:
@@ -25,3 +31,5 @@ class CommitSpec:
     invocation: dict[str, Any] | None = None
     reviews: list[dict[str, Any]] = field(default_factory=list)
     review_expected_revisions: dict[str, int] = field(default_factory=dict)
+    authorized_capability_id: str | None = None
+    authorized_phase: str | None = None

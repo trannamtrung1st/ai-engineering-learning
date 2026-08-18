@@ -76,7 +76,7 @@ def test_authorize_mutation_uses_token_file(
     monkeypatch.setenv(CAPABILITY_TOKEN_FILE_ENV_VAR, str(token_path))
 
     role = authorize_mutation(store, run_id, operation="plan_apply")
-    assert role == "planner"
+    assert role.role == "planner"
 
 
 def test_revoked_token_file_is_denied(

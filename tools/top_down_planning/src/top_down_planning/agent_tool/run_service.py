@@ -14,8 +14,7 @@ class RunAgentService:
         self._run_id = run_id
 
     def status(self) -> dict[str, Any]:
-        run = self._store.load_run(self._run_id)
-        plan = self._store.load_plan(self._run_id)
+        snapshot = self._store.load_canonical_snapshot(self._run_id)
         agent_requests_dir = self._store.agent_requests_dir(self._run_id)
         run_path = self._store.run_dir(self._run_id)
         return {
@@ -23,7 +22,7 @@ class RunAgentService:
             "run_path": str(run_path),
             "agent_requests_dir": str(agent_requests_dir),
             "run": build_run_status_view(
-                run,
-                plan_revision=plan.get("revision"),
+                snapshot.run,
+                plan_revision=snapshot.plan.get("revision"),
             ),
         }

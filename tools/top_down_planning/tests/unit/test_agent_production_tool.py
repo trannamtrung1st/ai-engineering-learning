@@ -195,7 +195,10 @@ def test_submit_completion_rejected_when_items_remain_open(tmp_path: Path) -> No
 
     with pytest.raises(RequestError, match="every applicable item"):
         service.submit_completion(
-            {"goal_assessment": "Goal is met."},
+            {
+                "production_revision": 0,
+                "goal_assessment": "Goal is met.",
+            },
             capability_token=token,
         )
 
@@ -223,7 +226,10 @@ def test_submit_completion_success_does_not_set_outcome(tmp_path: Path) -> None:
     )
 
     result = service.submit_completion(
-        {"goal_assessment": "Output goal is fully met."},
+        {
+            "production_revision": int(store.load_production("run-20260101T000201-000201")["revision"]),
+            "goal_assessment": "Output goal is fully met.",
+        },
         capability_token=token,
     )
 
@@ -243,6 +249,7 @@ def test_request_amendment_persists_pending_request(tmp_path: Path) -> None:
 
     result = service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T000201-000201")["revision"]),
             "evidence": "Missing API branch in approved plan.",
             "affected_refs": ["item-root"],
             "summary": "Need API subtree.",
@@ -265,6 +272,7 @@ def test_report_blocked_persists_blocker_without_outcome(tmp_path: Path) -> None
 
     result = service.report_blocked(
         {
+            "production_revision": int(store.load_production("run-20260101T000201-000201")["revision"]),
             "evidence": "Upstream service unavailable.",
             "affected_refs": ["item-first"],
             "summary": "Cannot proceed.",
@@ -354,7 +362,10 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         store,
         run_id,
         "completion.json",
-        {"goal_assessment": "Delivered the feature."},
+        {
+            "production_revision": second_apply.json()["production_revision"],
+            "goal_assessment": "Delivered the feature.",
+        },
     )
     completion = run_cli(
         [

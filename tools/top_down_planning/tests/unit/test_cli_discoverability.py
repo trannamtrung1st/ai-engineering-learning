@@ -260,7 +260,7 @@ def test_default_config_validates_against_config_schema() -> None:
 def test_completion_claim_schema_rejects_goal_met_field() -> None:
     schema = schema_docs.show_schema("completion-claim")
     issues = validate_against_schema(
-        {"goal_assessment": "Done.", "goal_met": True},
+        {"goal_assessment": "Done.", "goal_met": True, "production_revision": 0},
         schema,
     )
     assert issues
@@ -273,6 +273,8 @@ def test_focused_review_request_schema_rejects_scope_kind() -> None:
         {
             "type": "focused_plan",
             "scope": {"kind": "focused_plan", "item_ids": ["item-api"]},
+            "target_revision": 0,
+            "target_digest": "digest",
         },
         schema,
     )

@@ -454,10 +454,6 @@ def test_invalid_evidence_refs_fail_at_apply_time(tmp_path: Path) -> None:
                         "id": "out-bad",
                         "type": "artifact",
                         "ref": "/etc/passwd",
-                        "sha256": "0" * 64,
-                        "size": 0,
-                        "media_type": "application/octet-stream",
-                        "captured_at": "2026-01-01T00:00:00Z",
                     }
                 ],
             },
@@ -573,7 +569,7 @@ def test_completion_gate_still_blocks_unauthorized_drift_after_valid_apply(
     helper.write_text("orphan drift\n", encoding="utf-8")
 
     service.submit_completion(
-        {"goal_assessment": "Done."},
+        {"goal_assessment": "Done.", "production_revision": int(store.load_production(run_id)["revision"])},
         capability_token=token,
     )
 

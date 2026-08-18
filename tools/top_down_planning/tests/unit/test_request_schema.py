@@ -35,6 +35,7 @@ def test_validate_agent_request_rejects_completion_claim_goal_met() -> None:
     payload = {
         "goal_assessment": "Done.",
         "goal_met": True,
+        "production_revision": 0,
     }
     with pytest.raises(RequestError, match="unexpected properties"):
         validate_agent_request("production_submit_completion", payload)
@@ -44,6 +45,8 @@ def test_validate_agent_request_accepts_focused_review_request_without_scope_kin
     payload = {
         "type": "focused_plan",
         "scope": {"item_ids": ["item-api"]},
+        "target_revision": 0,
+        "target_digest": "digest",
     }
     validate_agent_request("review_request", payload)
 

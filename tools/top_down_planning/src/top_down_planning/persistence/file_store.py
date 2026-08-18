@@ -33,7 +33,11 @@ from core_tools.persistence import (
 from top_down_planning.persistence.capabilities import new_capability_record
 
 AGENT_REQUESTS_DIR = "agent-requests"
-from top_down_planning.persistence.commit import CommitSpec
+from top_down_planning.persistence.commit import (
+    CommitSpec,
+    StoreAuthorizationConflictError,
+)
+from top_down_planning.persistence.snapshot import CanonicalRunSnapshot
 from top_down_planning.persistence.journal_schema import (
     journal_file_entry_as_dict,
     parse_recovery_journal,
@@ -407,6 +411,16 @@ class FileRunStore:
         with self._with_recovered_run(run_id) as validated_run_id:
             return self._read_production(validated_run_id)
 
+    def load_canonical_snapshot(self, run_id: str) -> CanonicalRunSnapshot:
+        with self._with_recovered_run(run_id) as validated_run_id:
+            return CanonicalRunSnapshot(
+                run=self._read_run(validated_run_id),
+                plan=self._read_plan(validated_run_id),
+                production=self._read_production(validated_run_id),
+                reviews=self._read_reviews(validated_run_id),
+                resolved_config=self._read_resolved_config(validated_run_id),
+            )
+
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
         with self._with_recovered_run(run_id) as validated_run_id:
             return self._commit_locked(validated_run_id, self.run_dir(validated_run_id), spec)
@@ -439,6 +453,36 @@ class FileRunStore:
                 run_payload["sessions"] = self._read_run(validated_run_id)["sessions"]
         else:
             run_payload = None
+
+        current_run = self._read_run(validated_run_id)
+        if spec.run is None and spec.run_expected_revision is not None:
+            expected = parse_revision_value(spec.run_expected_revision, "run")
+            current_revision = parse_revision_value(current_run["revision"], "run")
+            if current_revision != expected:
+                raise StoreRevisionConflictError(expected, current_revision)
+
+        if spec.authorized_phase is not None:
+            current_phase = str(current_run.get("phase") or "")
+            if current_phase != spec.authorized_phase:
+                raise StoreAuthorizationConflictError(
+                    f"authorized phase {spec.authorized_phase!r} does not match "
+                    f"run phase {current_phase!r}"
+                )
+
+        if spec.authorized_capability_id is not None:
+            capability = self._read_capability_record(
+                validated_run_id,
+                spec.authorized_capability_id,
+            )
+            if capability.get("revoked") is True:
+                raise StoreAuthorizationConflictError("capability token has been revoked")
+            record_phase = str(capability.get("phase") or "")
+            current_phase = str(current_run.get("phase") or "")
+            if record_phase != current_phase:
+                raise StoreAuthorizationConflictError(
+                    f"capability token phase {record_phase!r} does not match "
+                    f"run phase {current_phase!r}"
+                )
 
         if spec.plan is not None:
             expected_raw = spec.plan_expected_revision
@@ -479,7 +523,6 @@ class FileRunStore:
             production_payload = None
 
         resolved_config_payload = spec.resolved_config
-        current_run = self._read_run(validated_run_id)
 
         auto_run_patch: dict[str, Any] | None = None
         if run_payload is None and (
@@ -488,6 +531,8 @@ class FileRunStore:
             or resolved_config_payload is not None
         ):
             run_expected = parse_revision_value(current_run["revision"], "run")
+            if spec.run_expected_revision is not None:
+                run_expected = parse_revision_value(spec.run_expected_revision, "run")
             auto_run_patch = {
                 **current_run,
                 "revision": run_expected + 1,
@@ -543,10 +588,11 @@ class FileRunStore:
             expected_review_revision = spec.review_expected_revisions.get(validated_review_id)
             if expected_review_revision is None:
                 if review_exists:
-                    raise PersistenceError(
-                        f"review {validated_review_id} already exists; "
-                        "expected_revision is required for updates"
+                    current_review_revision = self._read_review_revision(
+                        validated_run_id,
+                        validated_review_id,
                     )
+                    raise StoreRevisionConflictError(0, current_review_revision)
                 review_payload = canonicalize_persisted_review(
                     validated_review_id,
                     dict(review),
@@ -973,10 +1019,13 @@ class FileRunStore:
 
     def load_capability(self, run_id: str, capability_id: str) -> dict[str, Any]:
         validated_run_id = self._require_existing_run(run_id)
-        path = self._capability_record_path(validated_run_id, capability_id)
+        return self._read_capability_record(validated_run_id, capability_id)
+
+    def _read_capability_record(self, run_id: str, capability_id: str) -> dict[str, Any]:
+        path = self._capability_record_path(run_id, capability_id)
         if not path.exists():
             raise RunNotFoundError(
-                validated_run_id,
+                run_id,
                 f"capability {capability_id} missing",
                 runs_root=self._root,
             )
@@ -996,14 +1045,14 @@ class FileRunStore:
         return records
 
     def revoke_capability(self, run_id: str, capability_id: str) -> None:
-        validated_run_id = self._require_existing_run(run_id)
-        record = self.load_capability(validated_run_id, capability_id)
-        record["revoked"] = True
-        validated_id = validate_store_id(capability_id, label="capability_id")
-        atomic_write_json(
-            self._capability_record_path(validated_run_id, validated_id),
-            record,
-        )
+        with self._with_recovered_run(run_id) as validated_run_id:
+            record = self._read_capability_record(validated_run_id, capability_id)
+            record["revoked"] = True
+            validated_id = validate_store_id(capability_id, label="capability_id")
+            atomic_write_json(
+                self._capability_record_path(validated_run_id, validated_id),
+                record,
+            )
 
     def revoke_capabilities_for_session(self, run_id: str, session_id: str) -> None:
         normalized_session_id = str(session_id).strip()
@@ -1050,6 +1099,17 @@ class FileRunStore:
             / validate_store_id(filename, label="artifact_filename")
         )
 
+    def delete_artifact_snapshot(self, run_id: str, snapshot_id: str) -> None:
+        validated_run_id = self._require_existing_run(run_id)
+        validated_snapshot_id = validate_store_id(snapshot_id, label="snapshot_id")
+        run_dir = self.run_dir(validated_run_id)
+        snapshot_dir = self.artifacts_dir(validated_run_id) / validated_snapshot_id
+        contained = self._assert_run_contained(run_dir, snapshot_dir)
+        if contained.is_symlink():
+            raise PersistenceError("artifact snapshot path must not be a symlink")
+        if contained.is_dir():
+            shutil.rmtree(contained)
+
     def save_review(
         self,
         run_id: str,
@@ -1092,19 +1152,22 @@ class FileRunStore:
 
     def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
         with self._with_recovered_run(run_id) as validated_run_id:
-            reviews_dir = self.reviews_dir(validated_run_id)
-            if not reviews_dir.is_dir():
-                return []
-            reviews: list[dict[str, Any]] = []
-            for path in sorted(reviews_dir.glob("*.json")):
-                review_path = self._review_record_path(validated_run_id, path.stem)
-                reviews.append(
-                    canonicalize_persisted_review(
-                        path.stem,
-                        self._read_json_object(review_path, label=f"review {path.stem}"),
-                    )
+            return self._read_reviews(validated_run_id)
+
+    def _read_reviews(self, run_id: str) -> list[dict[str, Any]]:
+        reviews_dir = self.reviews_dir(run_id)
+        if not reviews_dir.is_dir():
+            return []
+        reviews: list[dict[str, Any]] = []
+        for path in sorted(reviews_dir.glob("*.json")):
+            review_path = self._review_record_path(run_id, path.stem)
+            reviews.append(
+                canonicalize_persisted_review(
+                    path.stem,
+                    self._read_json_object(review_path, label=f"review {path.stem}"),
                 )
-            return reviews
+            )
+        return reviews
 
     def _recover_incomplete_transactions(self, run_id: str) -> None:
         """Recover journaled transactions. Caller must hold the per-run commit lock."""

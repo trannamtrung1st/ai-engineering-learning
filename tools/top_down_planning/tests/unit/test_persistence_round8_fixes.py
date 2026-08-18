@@ -160,7 +160,7 @@ def test_review_update_without_expected_revision_conflicts(tmp_path: Path) -> No
     stale = dict(loop.to_dict())
     stale["status"] = "stale"
 
-    with pytest.raises(PersistenceError, match="expected_revision is required"):
+    with pytest.raises(PersistenceError, match="store revision conflict"):
         store.commit(run_id, CommitSpec(reviews=[stale]))
 
 

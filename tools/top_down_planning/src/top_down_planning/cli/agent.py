@@ -281,12 +281,20 @@ def _run_mutating_command(
             request_path=args.request,
         )
         result = handler(payload, request_audit=context)
-        complete_agent_request(
-            store,
-            run_id,
-            context,
-            result=map_response_to_result(result),
-        )
+        applied = map_response_to_result(result)
+        try:
+            complete_agent_request(
+                store,
+                run_id,
+                context,
+                result=applied,
+            )
+        except Exception:
+            if applied == "applied":
+                result = dict(result)
+                result["audit_degraded"] = True
+            else:
+                raise
         if default_exit_code is not None:
             exit_code = default_exit_code
         else:

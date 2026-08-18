@@ -217,7 +217,7 @@ def test_active_item_outside_root_tree_fails_validation() -> None:
 
 
 def test_agent_plan_apply_rejects_second_root(tmp_path) -> None:
-    from top_down_planning.agent_tool.errors import OperationError
+    from top_down_planning.agent_tool.errors import RequestError
     from top_down_planning.orchestrator.phases import PLANNING
     from top_down_planning.persistence import FileRunStore
     from tests.helpers import create_run_kwargs
@@ -233,7 +233,7 @@ def test_agent_plan_apply_rejects_second_root(tmp_path) -> None:
     service = PlanAgentService(store, run_id)
     token = grant_capability(store, run_id, role="planner", phase=PLANNING)
 
-    with pytest.raises(OperationError, match="parent_id"):
+    with pytest.raises(RequestError, match="oneOf|new_parent_id|expected string"):
         service.apply(
             {
                 "base_revision": 1,

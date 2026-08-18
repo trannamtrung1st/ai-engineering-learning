@@ -189,6 +189,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
     )
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "Missing API branch in approved plan.",
             "affected_refs": ["item-root"],
             "summary": "Need API subtree.",
@@ -272,7 +273,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             run_id,
             operation="production_apply",
             capability_token=producer_capability,
-        )
+        ).role
         == "producer"
     )
 
@@ -298,7 +299,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
         capability_token=producer_capability,
     )
     service.submit_completion(
-        {"goal_assessment": "Output goal is fully met."},
+        {"goal_assessment": "Output goal is fully met.", "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"])},
         capability_token=producer_capability,
     )
 
@@ -322,6 +323,7 @@ def test_apply_rejected_while_amendment_pending(tmp_path: Path) -> None:
 
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
@@ -352,6 +354,7 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
 
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "First defect.",
             "affected_refs": ["item-root"],
             "summary": "First amendment.",
@@ -369,6 +372,7 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
     with pytest.raises(RequestError, match="amendment limit exceeded"):
         service.request_amendment(
             {
+                "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
                 "evidence": "Second defect.",
                 "affected_refs": ["item-root"],
                 "summary": "Second amendment.",
@@ -406,6 +410,7 @@ def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> N
 
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
@@ -415,7 +420,7 @@ def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> N
 
     with pytest.raises(RequestError, match="paused while a plan amendment is pending"):
         service.submit_completion(
-            {"goal_assessment": "Output goal is fully met."},
+            {"goal_assessment": "Output goal is fully met.", "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"])},
             capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
         )
 
@@ -427,6 +432,7 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     service = ProductionAgentService(store, "run-20260101T001901-001901")
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
@@ -507,6 +513,7 @@ def test_resume_amendment_requires_prior_plan_snapshot(tmp_path: Path) -> None:
     service = ProductionAgentService(store, "run-20260101T001901-001901")
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
@@ -552,6 +559,7 @@ def test_amendment_activation_persists_revoke_all_when_cleanup_fails(tmp_path: P
     service = ProductionAgentService(store, run_id)
     service.request_amendment(
         {
+            "production_revision": int(store.load_production("run-20260101T001901-001901")["revision"]),
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",

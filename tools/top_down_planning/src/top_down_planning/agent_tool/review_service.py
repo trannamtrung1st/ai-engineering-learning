@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from top_down_planning.agent_tool.authorization import authorize_mutation
-from top_down_planning.agent_tool.errors import RequestError
+from top_down_planning.agent_tool.commit import commit_authorized
+from top_down_planning.agent_tool.errors import RequestError, RevisionConflictError
 from top_down_planning.agent_tool.mandatory_review_target import (
     resolve_focused_review_target,
     resolve_mandatory_review_target,
@@ -171,12 +172,13 @@ class ReviewAgentService:
         capability_token: str | None = None,
         request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
-        role = authorize_mutation(
+        auth = authorize_mutation(
             self._store,
             self._run_id,
             operation="review_request",
             capability_token=capability_token,
         )
+        role = auth.role
         validate_agent_request("review_request", request)
         review_type = str(request.get("type") or "").strip()
         if review_type not in {"focused_plan", "focused_output"}:
@@ -220,9 +222,48 @@ class ReviewAgentService:
             )
 
         if review_type == "focused_output":
-            target_revision = int(self._store.load_production(self._run_id)["output_revision"])
+            production = self._store.load_production(self._run_id)
+            target_revision = int(production["output_revision"])
+            current_digest = _current_focused_artifact_digest(
+                self._store, self._run_id, review_type
+            )
         else:
-            target_revision = int(self._store.load_plan(self._run_id)["revision"])
+            plan = self._store.load_plan(self._run_id)
+            target_revision = int(plan["revision"])
+            current_digest = _current_focused_artifact_digest(
+                self._store, self._run_id, review_type
+            )
+        requested_revision = request.get("target_revision")
+        if requested_revision is None:
+            raise RevisionConflictError(
+                "focused review request requires target_revision",
+                action="Call `tdp agent plan snapshot` or production snapshot and retry.",
+            )
+        try:
+            requested_revision_int = int(requested_revision)
+        except (TypeError, ValueError) as exc:
+            raise RequestError("target_revision must be an integer") from exc
+        if requested_revision_int != target_revision:
+            raise RevisionConflictError(
+                (
+                    f"focused review target_revision conflict: expected {requested_revision_int}, "
+                    f"current {target_revision}"
+                ),
+                expected=requested_revision_int,
+                actual=target_revision,
+                action="Refresh the artifact snapshot and retry with current revision and digest.",
+            )
+        requested_digest = str(request.get("target_digest") or "").strip()
+        if not requested_digest:
+            raise RevisionConflictError(
+                "focused review request requires target_digest",
+                action="Refresh the artifact snapshot and retry with current revision and digest.",
+            )
+        if requested_digest != current_digest:
+            raise RevisionConflictError(
+                "focused review target_digest does not match the current artifact digest",
+                action="Refresh the artifact snapshot and retry with current revision and digest.",
+            )
 
         loop_id = _next_focused_loop_id(reviews, review_type)
         loop = new_focused_review_loop(
@@ -233,7 +274,8 @@ class ReviewAgentService:
             config=config,
         )
         loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
-        self._store.commit(
+        commit_authorized(
+            self._store,
             self._run_id,
             CommitSpec(
                 reviews=[loop.to_dict()],
@@ -252,6 +294,8 @@ class ReviewAgentService:
                     )
                 ],
             ),
+            auth,
+            conflict_action="Refresh reviews and retry the focused review request.",
         )
 
         return {
@@ -275,7 +319,7 @@ class ReviewAgentService:
             raise RequestError("respond requires loop_id")
         loop_id = str(loop_id).strip()
 
-        authorize_mutation(
+        auth = authorize_mutation(
             self._store,
             self._run_id,
             operation="review_respond",
@@ -755,13 +799,16 @@ class ReviewAgentService:
             if loop.type in {"focused_plan", "focused_output"}:
                 run = self._store.load_run(self._run_id)
                 incomplete_event["phase"] = run.get("phase")
-                self._store.commit(
+                commit_authorized(
+                    self._store,
                     self._run_id,
                     CommitSpec(
                         reviews=[updated.to_dict()],
                         events=[event, *extra_events, *family_events, incomplete_event],
                         review_expected_revisions={loop_id: expected_review_revision},
                     ),
+                    auth,
+                    conflict_action="Refresh the review loop and retry respond.",
                 )
             else:
                 run = self._store.load_run(self._run_id)
@@ -769,29 +816,34 @@ class ReviewAgentService:
                     raise RequestError(
                         "review_incomplete cannot override an existing quality outcome"
                     )
-                expected_run_revision = int(run["revision"])
                 run_patch = dict(run)
-                run_patch["revision"] = expected_run_revision + 1
+                run_patch["revision"] = auth.run_revision + 1
                 run_patch["status"] = "failed"
                 incomplete_event["phase"] = run.get("phase")
-                self._store.commit(
+                commit_authorized(
+                    self._store,
                     self._run_id,
                     CommitSpec(
                         reviews=[updated.to_dict()],
                         events=[event, *extra_events, *family_events, incomplete_event],
                         run=run_patch,
-                        run_expected_revision=expected_run_revision,
+                        run_expected_revision=auth.run_revision,
                         review_expected_revisions={loop_id: expected_review_revision},
                     ),
+                    auth,
+                    conflict_action="Refresh the review loop and retry respond.",
                 )
         else:
-            self._store.commit(
+            commit_authorized(
+                self._store,
                 self._run_id,
                 CommitSpec(
                     reviews=[updated.to_dict()],
                     events=[event, *extra_events, *family_events],
                     review_expected_revisions={loop_id: expected_review_revision},
                 ),
+                auth,
+                conflict_action="Refresh the review loop and retry respond.",
             )
 
         response: dict[str, Any] = {
@@ -823,12 +875,13 @@ class ReviewAgentService:
             raise RequestError("record_finding_actions requires loop_id")
         loop_id = str(loop_id).strip()
 
-        role = authorize_mutation(
+        auth = authorize_mutation(
             self._store,
             self._run_id,
             operation="review_record_finding_actions",
             capability_token=capability_token,
         )
+        role = auth.role
         if role not in {"planner", "producer"}:
             raise RequestError(
                 "review_record_finding_actions requires a planner or producer capability"
@@ -976,13 +1029,16 @@ class ReviewAgentService:
             event["type"] = "review_challenge_submitted"
         event.update(policy_observability_fields_for_loop(updated))
 
-        self._store.commit(
+        commit_authorized(
+            self._store,
             self._run_id,
             CommitSpec(
                 reviews=[updated.to_dict()],
                 events=[event, *family_events],
                 review_expected_revisions={loop_id: expected_review_revision},
             ),
+            auth,
+            conflict_action="Refresh the review loop and retry record-actions.",
         )
 
         return {

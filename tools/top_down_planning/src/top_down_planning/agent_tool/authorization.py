@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
@@ -22,6 +23,15 @@ from top_down_planning.persistence.capabilities import (
 )
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.session_bindings import get_primary_binding
+
+
+@dataclass(frozen=True)
+class MutationAuthorization:
+    role: str
+    run_revision: int
+    phase: str
+    capability_id: str
+    operation: str
 
 
 def resolve_capability_token(explicit: str | None = None) -> str | None:
@@ -63,8 +73,8 @@ def authorize_mutation(
     operation: str,
     capability_token: str | None = None,
     loop_id: str | None = None,
-) -> str:
-    """Authorize a mutating agent operation and return the bound role."""
+) -> MutationAuthorization:
+    """Authorize a mutating agent operation and return the bound authorization."""
 
     if operation not in MUTATING_OPS:
         raise CapabilityDeniedError(
@@ -208,4 +218,10 @@ def authorize_mutation(
                 message="capability token session does not match the active provider session",
             )
 
-    return role
+    return MutationAuthorization(
+        role=role,
+        run_revision=int(run["revision"]),
+        phase=current_phase,
+        capability_id=token_id,
+        operation=operation,
+    )

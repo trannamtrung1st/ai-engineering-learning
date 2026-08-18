@@ -485,6 +485,7 @@ def _amendment_production_fixture(
     token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
     ProductionAgentService(store, run_id).request_amendment(
         {
+            "production_revision": int(store.load_production(run_id)["revision"]),
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",

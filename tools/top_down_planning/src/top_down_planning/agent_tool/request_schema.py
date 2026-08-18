@@ -20,18 +20,6 @@ _OPERATION_SCHEMAS: dict[str, str] = {
 }
 
 
-def _strip_null_fields(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            key: _strip_null_fields(item)
-            for key, item in value.items()
-            if item is not None
-        }
-    if isinstance(value, list):
-        return [_strip_null_fields(item) for item in value]
-    return value
-
-
 def validate_agent_request(operation: str, request: dict[str, Any]) -> None:
     """Raise RequestError when request does not match the operation schema."""
 
@@ -45,8 +33,7 @@ def validate_agent_request(operation: str, request: dict[str, Any]) -> None:
     if schema is None:
         raise RequestError(f"missing schema definition: {schema_name!r}")
 
-    normalized = _strip_null_fields(request)
-    issues = validate_against_schema(normalized, schema)
+    issues = validate_against_schema(request, schema)
     if issues:
         raise RequestError("; ".join(issues))
 
