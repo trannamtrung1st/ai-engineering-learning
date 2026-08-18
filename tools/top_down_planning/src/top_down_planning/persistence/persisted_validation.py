@@ -1487,6 +1487,174 @@ def canonicalize_persisted_review(
     return normalized
 
 
+def parse_canonical_events_text(text: str, *, events_path: Path) -> list[dict[str, Any]]:
+    """Parse events.jsonl without creating or recovering the file."""
+
+    events: list[dict[str, Any]] = []
+    if not text:
+        return events
+    if text.endswith("\n"):
+        body_lines = text.splitlines()
+        trailing_line: str | None = None
+    else:
+        if "\n" not in text:
+            body_lines = []
+            trailing_line = text
+        else:
+            body, trailing_line = text.rsplit("\n", 1)
+            body_lines = body.splitlines() if body else []
+    for line in body_lines:
+        if not line.strip():
+            continue
+        events.append(_parse_canonical_event_line(line, events_path))
+    if trailing_line is not None and trailing_line.strip():
+        events.append(_parse_canonical_event_line(trailing_line, events_path))
+    return events
+
+
+def _parse_canonical_event_line(line: str, events_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise PersistenceError(
+            f"failed to load malformed events.jsonl line in {events_path}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise PersistenceError(
+            f"events.jsonl line in {events_path} must be a JSON object"
+        )
+    _require_journaled_event_fields(payload)
+    return payload
+
+
+def _require_journaled_event_fields(payload: dict[str, Any]) -> None:
+    txn_id = payload.get("txn_id")
+    has_txn = txn_id is not None and str(txn_id).strip() != ""
+    has_index = "event_index" in payload
+    has_count = "event_count" in payload
+    if not has_txn and not has_index and not has_count:
+        return
+    if not has_txn or not has_index or not has_count:
+        missing: list[str] = []
+        if not has_txn:
+            missing.append("txn_id")
+        if not has_index:
+            missing.append("event_index")
+        if not has_count:
+            missing.append("event_count")
+        raise PersistenceError(
+            "events.jsonl journaled event missing required fields: " + ", ".join(missing)
+        )
+    event_index = payload["event_index"]
+    event_count = payload["event_count"]
+    if not isinstance(event_index, int) or isinstance(event_index, bool):
+        raise PersistenceError("events.jsonl event_index must be an integer")
+    if not isinstance(event_count, int) or isinstance(event_count, bool):
+        raise PersistenceError("events.jsonl event_count must be an integer")
+    if event_count <= 0:
+        raise PersistenceError("events.jsonl event_count must be positive")
+    if event_index < 0 or event_index >= event_count:
+        raise PersistenceError(
+            "events.jsonl event_index must satisfy 0 <= event_index < event_count"
+        )
+
+
+def validate_event_log_integrity(events: list[dict[str, Any]]) -> None:
+    txn_indices: dict[str, list[int]] = {}
+    txn_positions: dict[str, list[int]] = {}
+    txn_counts: dict[str, int] = {}
+    seen: set[tuple[str, int]] = set()
+    for physical_index, payload in enumerate(events):
+        txn_id = payload.get("txn_id")
+        if txn_id is None or not str(txn_id).strip():
+            continue
+        normalized_txn_id = str(txn_id)
+        event_index = payload["event_index"]
+        event_count = payload["event_count"]
+        if not isinstance(event_index, int) or isinstance(event_index, bool):
+            raise PersistenceError("events.jsonl event_index must be an integer")
+        if not isinstance(event_count, int) or isinstance(event_count, bool):
+            raise PersistenceError("events.jsonl event_count must be an integer")
+        key = (normalized_txn_id, event_index)
+        if key in seen:
+            raise PersistenceError(
+                f"duplicate journaled event {normalized_txn_id!r} index {event_index}"
+            )
+        seen.add(key)
+        previous_count = txn_counts.get(normalized_txn_id)
+        if previous_count is not None and previous_count != event_count:
+            raise PersistenceError(
+                f"events.jsonl txn_id {normalized_txn_id!r} has inconsistent event_count"
+            )
+        txn_counts[normalized_txn_id] = event_count
+        txn_indices.setdefault(normalized_txn_id, []).append(event_index)
+        txn_positions.setdefault(normalized_txn_id, []).append(physical_index)
+    for normalized_txn_id, ordered in txn_indices.items():
+        event_count = txn_counts[normalized_txn_id]
+        expected = list(range(event_count))
+        if ordered == expected:
+            positions = txn_positions[normalized_txn_id]
+            if positions != list(range(positions[0], positions[0] + len(positions))):
+                raise PersistenceError(
+                    f"journaled events for txn_id {normalized_txn_id!r} are not contiguous"
+                )
+            continue
+        if set(ordered) == set(expected):
+            raise PersistenceError(
+                f"journaled events for txn_id {normalized_txn_id!r} are out of physical order"
+            )
+        raise PersistenceError(
+            f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
+        )
+
+
+def validate_run_created_anchor(run_id: str, events: list[dict[str, Any]]) -> None:
+    if not events:
+        raise PersistenceError("events.jsonl must contain a run_created event")
+    first = events[0]
+    if first.get("type") != "run_created":
+        raise PersistenceError("events.jsonl must begin with run_created")
+    if str(first.get("run_id") or "") != run_id:
+        raise PersistenceError("run_created run_id does not match run")
+
+
+def validate_canonical_event_journal(run_dir: Path, run_id: str) -> list[dict[str, Any]]:
+    events_path = run_dir / "events.jsonl"
+    if events_path.is_symlink():
+        raise PersistenceError("events.jsonl must not be a symlink")
+    if not events_path.is_file():
+        raise PersistenceError("events.jsonl missing")
+    events = parse_canonical_events_text(
+        events_path.read_text(encoding="utf-8"),
+        events_path=events_path,
+    )
+    validate_event_log_integrity(events)
+    validate_run_created_anchor(run_id, events)
+    return events
+
+
+def validate_persisted_invocation(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise PersistenceError("invocation.json must contain a JSON object")
+    for field in ("observability", "notifications", "runs_dir"):
+        value = payload.get(field)
+        if value is not None and not isinstance(value, dict):
+            raise PersistenceError(f"invocation.{field} must be an object")
+    if "stream_json" in payload and not isinstance(payload["stream_json"], bool):
+        raise PersistenceError("invocation.stream_json must be a boolean")
+    return payload
+
+
+def validate_canonical_invocation(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "invocation.json"
+    if path.is_symlink():
+        raise PersistenceError("invocation.json must not be a symlink")
+    if not path.is_file():
+        raise PersistenceError("invocation.json missing")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return validate_persisted_invocation(payload)
+
+
 def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, Any]:
     """Read-only canonical artifact checks for doctor and CLI corrupt-run mapping.
 
@@ -1540,6 +1708,8 @@ def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, An
             production=production_payload,
             resolved_config=config_payload,
         )
+        validate_canonical_event_journal(run_dir, run_id)
+        validate_canonical_invocation(run_dir)
         reviews_dir = run_dir / "reviews"
         if reviews_dir.exists():
             if reviews_dir.is_symlink():
@@ -1562,10 +1732,15 @@ __all__ = [
     "canonicalize_persisted_plan",
     "canonicalize_persisted_review",
     "reject_protected_run_extras_keys",
+    "validate_canonical_event_journal",
+    "validate_canonical_invocation",
     "validate_canonical_run",
     "validate_canonical_run_artifacts",
+    "validate_event_log_integrity",
+    "validate_persisted_invocation",
     "validate_persisted_production",
     "validate_persisted_review_binding",
     "validate_persisted_run",
+    "validate_run_created_anchor",
     "validate_persisted_sessions",
 ]

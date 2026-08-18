@@ -71,11 +71,14 @@ from top_down_planning.config.binding_validation import validate_context_snapsho
 from top_down_planning.persistence.persisted_validation import (
     canonicalize_persisted_plan,
     canonicalize_persisted_review,
+    parse_canonical_events_text,
     reject_protected_run_extras_keys,
+    validate_canonical_run,
+    validate_event_log_integrity,
     validate_persisted_production,
     validate_persisted_review_binding,
-    validate_canonical_run,
     validate_persisted_run,
+    validate_run_created_anchor,
 )
 from top_down_planning.persistence.snapshot_bindings import (
     bind_run_digests_for_config_update,
@@ -1362,13 +1365,7 @@ class FileRunStore:
         run_id: str,
         events: list[dict[str, Any]],
     ) -> None:
-        if not events:
-            raise PersistenceError("events.jsonl must contain a run_created event")
-        first = events[0]
-        if first.get("type") != "run_created":
-            raise PersistenceError("events.jsonl must begin with run_created")
-        if str(first.get("run_id") or "") != run_id:
-            raise PersistenceError("run_created run_id does not match run")
+        validate_run_created_anchor(run_id, events)
 
     def _read_transaction_journal(
         self,
@@ -1464,95 +1461,10 @@ class FileRunStore:
             )
 
     def _validate_event_log_integrity(self, events: list[dict[str, Any]]) -> None:
-        txn_indices: dict[str, list[int]] = {}
-        txn_positions: dict[str, list[int]] = {}
-        txn_counts: dict[str, int] = {}
-        seen: set[tuple[str, int]] = set()
-
-        for physical_index, payload in enumerate(events):
-            txn_id = payload.get("txn_id")
-            if txn_id is None or not str(txn_id).strip():
-                continue
-            normalized_txn_id = str(txn_id)
-            event_index = payload["event_index"]
-            event_count = payload["event_count"]
-            if not isinstance(event_index, int) or isinstance(event_index, bool):
-                raise PersistenceError("events.jsonl event_index must be an integer")
-            if not isinstance(event_count, int) or isinstance(event_count, bool):
-                raise PersistenceError("events.jsonl event_count must be an integer")
-            key = (normalized_txn_id, event_index)
-            if key in seen:
-                raise PersistenceError(
-                    f"duplicate journaled event {normalized_txn_id!r} index {event_index}"
-                )
-            seen.add(key)
-
-            previous_count = txn_counts.get(normalized_txn_id)
-            if previous_count is not None and previous_count != event_count:
-                raise PersistenceError(
-                    f"events.jsonl txn_id {normalized_txn_id!r} has inconsistent event_count"
-                )
-            txn_counts[normalized_txn_id] = event_count
-            txn_indices.setdefault(normalized_txn_id, []).append(event_index)
-            txn_positions.setdefault(normalized_txn_id, []).append(physical_index)
-
-        for normalized_txn_id, ordered in txn_indices.items():
-            event_count = txn_counts[normalized_txn_id]
-            expected = list(range(event_count))
-            if ordered == expected:
-                positions = txn_positions[normalized_txn_id]
-                if positions != list(range(positions[0], positions[0] + len(positions))):
-                    raise PersistenceError(
-                        f"journaled events for txn_id {normalized_txn_id!r} are not contiguous"
-                    )
-                continue
-            if set(ordered) == set(expected):
-                raise PersistenceError(
-                    f"journaled events for txn_id {normalized_txn_id!r} are out of physical order"
-                )
-            raise PersistenceError(
-                f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
-            )
+        validate_event_log_integrity(events)
 
     def _parse_events_text(self, text: str, events_path: Path) -> list[dict[str, Any]]:
-        events: list[dict[str, Any]] = []
-        if not text:
-            return events
-
-        if text.endswith("\n"):
-            body_lines = text.splitlines()
-            trailing_line: str | None = None
-        else:
-            if "\n" not in text:
-                body_lines: list[str] = []
-                trailing_line = text
-            else:
-                body, trailing_line = text.rsplit("\n", 1)
-                body_lines = body.splitlines() if body else []
-
-        for line in body_lines:
-            if not line.strip():
-                continue
-            events.append(self._parse_event_line(line, events_path))
-
-        if trailing_line is not None and trailing_line.strip():
-            events.append(self._parse_event_line(trailing_line, events_path))
-
-        return events
-
-    def _parse_event_line(self, line: str, events_path: Path) -> dict[str, Any]:
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise PersistenceError(
-                f"failed to load malformed events.jsonl line in {events_path}: {exc}"
-            ) from exc
-        if not isinstance(payload, dict):
-            raise PersistenceError(
-                f"events.jsonl line in {events_path} must be a JSON object"
-            )
-        self._require_journaled_event_fields(payload)
-        return payload
+        return parse_canonical_events_text(text, events_path=events_path)
 
     def _ensure_events_file_append_boundary(self, run_id: str) -> None:
         events_path = self._events_path(run_id)

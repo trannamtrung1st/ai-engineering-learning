@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -692,3 +693,76 @@ def test_doctor_does_not_treat_live_workspace_drift_as_corrupt_run(
 
     shutil.rmtree(workspace)
     _assert_doctor_run_healthy(store, run_id)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda manifest: manifest.pop("workspace", None),
+        lambda manifest: manifest["workspace"].pop("path", None),
+        lambda manifest: manifest["workspace"].__setitem__("path", ""),
+        lambda manifest: manifest["workspace"].__setitem__("path", "   "),
+        lambda manifest: manifest["workspace"].__setitem__("portability", "portable"),
+        lambda manifest: manifest["workspace"].__setitem__("portability", 1),
+    ],
+)
+def test_package_workspace_binding_is_required_and_not_cwd(
+    tmp_path: Path, mutate
+) -> None:
+    def mutate_package(package) -> None:
+        manifest = json.loads(package.manifest_path.read_text(encoding="utf-8"))
+        mutate(manifest)
+        _recompute_package_digest(manifest)
+        package.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    previous = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        _execute_and_attach_package_error(tmp_path, mutate_package)
+    finally:
+        os.chdir(previous)
+
+
+@pytest.mark.parametrize(
+    "mutate_run_dir",
+    [
+        lambda run_dir: (run_dir / "events.jsonl").unlink(),
+        lambda run_dir: (run_dir / "events.jsonl").write_text(
+            "{not-json\n", encoding="utf-8"
+        ),
+        lambda run_dir: (run_dir / "events.jsonl").write_text("", encoding="utf-8"),
+        lambda run_dir: (run_dir / "events.jsonl").write_text(
+            json.dumps({"type": "run_updated", "run_id": run_dir.name}) + "\n",
+            encoding="utf-8",
+        ),
+        lambda run_dir: (run_dir / "events.jsonl").write_text(
+            json.dumps(
+                {
+                    "type": "run_created",
+                    "run_id": "run-20260101T111999-111999",
+                    "revision": 0,
+                    "phase": "planning",
+                    "ts": "2026-01-01T00:00:00Z",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        ),
+        lambda run_dir: (run_dir / "invocation.json").unlink(),
+        lambda run_dir: (run_dir / "invocation.json").write_text(
+            "{not-json", encoding="utf-8"
+        ),
+        lambda run_dir: (run_dir / "invocation.json").write_text(
+            "[]", encoding="utf-8"
+        ),
+    ],
+)
+def test_doctor_reports_missing_or_corrupt_events_and_invocation(
+    tmp_path: Path, mutate_run_dir
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111701-111701"
+    _create_planning_run(store, run_id)
+    mutate_run_dir(store.run_dir(run_id))
+    _wipe_txn_dirs(store.run_dir(run_id))
+    _assert_doctor_marks_corrupt(store, run_id)

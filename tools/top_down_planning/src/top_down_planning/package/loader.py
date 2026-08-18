@@ -85,8 +85,15 @@ def _load_json(path: Path) -> Any:
         ) from exc
 
 
-def _require_mapping(value: Any, *, field: str) -> dict[str, Any]:
+def _require_mapping(
+    value: Any, *, field: str, required: bool = False
+) -> dict[str, Any]:
     if value is None:
+        if required:
+            raise ExecutionPackageError(
+                f"{field} is required",
+                code="package_field_invalid",
+            )
         return {}
     if not isinstance(value, dict):
         raise ExecutionPackageError(
@@ -231,8 +238,29 @@ class ExecutionPackageLoader:
                 code="package_id_invalid",
             ) from exc
 
-        workspace_info = _require_mapping(manifest.get("workspace"), field="workspace")
-        workspace_path = Path(str(workspace_info.get("path") or "")).resolve()
+        workspace_info = _require_mapping(
+            manifest.get("workspace"),
+            field="workspace",
+            required=True,
+        )
+        workspace_raw = workspace_info.get("path")
+        if not isinstance(workspace_raw, str) or not workspace_raw.strip():
+            raise ExecutionPackageError(
+                "workspace.path is required",
+                code="package_workspace_invalid",
+            )
+        workspace_path = Path(workspace_raw)
+        if not workspace_path.is_absolute():
+            raise ExecutionPackageError(
+                "workspace.path must be an absolute path",
+                code="package_workspace_invalid",
+            )
+        workspace_path = workspace_path.resolve()
+        if workspace_info.get("portability") != "workspace_bound":
+            raise ExecutionPackageError(
+                "workspace.portability must be workspace_bound",
+                code="package_workspace_invalid",
+            )
         if verify_workspace and not workspace_path.is_dir():
             raise ExecutionPackageError(f"workspace path missing: {workspace_path}")
 
