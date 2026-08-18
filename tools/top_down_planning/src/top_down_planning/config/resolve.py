@@ -281,6 +281,17 @@ def validate_presentation_config(config: dict[str, Any]) -> None:
             if field in section:
                 _require_bool(section[field], path=f"notifications.{field}")
 
+    runtime = config.get("runtime")
+    if runtime is not None:
+        section = _require_mapping(runtime, path="runtime")
+        if "runs_dir" in section:
+            value = section["runs_dir"]
+            if not isinstance(value, str) or isinstance(value, bool):
+                raise ConfigError(
+                    "runtime.runs_dir must be a string",
+                    path="runtime.runs_dir",
+                )
+
 
 def is_presentation_config_path(path: str) -> bool:
     return (
@@ -371,6 +382,7 @@ def finalize_resolved_config(
     _validate_revise_at_config(finalized)
     validate_presentation_config(finalized)
     validate_execution_config(finalized)
+    validate_resolved_config_schema(finalized)
 
     workspace = resolve_workspace(finalized, cwd=cwd)
 

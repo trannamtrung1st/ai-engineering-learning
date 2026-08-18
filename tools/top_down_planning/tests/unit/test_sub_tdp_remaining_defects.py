@@ -287,9 +287,14 @@ def test_evidence_promotion_rejects_malformed_snapshot_ref() -> None:
 def test_parse_upstream_bindings() -> None:
     from top_down_planning.cli.execute import parse_upstream_bindings
 
-    assert parse_upstream_bindings(["item-a=run-1", "item-b=run-2"]) == {
-        "item-a": "run-1",
-        "item-b": "run-2",
+    assert parse_upstream_bindings(
+        [
+            "item-a=run-20260101T000001-000001",
+            "item-b=run-20260101T000002-000002",
+        ]
+    ) == {
+        "item-a": "run-20260101T000001-000001",
+        "item-b": "run-20260101T000002-000002",
     }
     with pytest.raises(ValueError, match="upstream"):
         parse_upstream_bindings(["bad"])

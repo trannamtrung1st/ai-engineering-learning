@@ -44,7 +44,8 @@ from top_down_planning.package.execution_validation import (
     verify_package_immutable_contract,
 )
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
-from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence import FileRunStore, PersistenceError
+from top_down_planning.persistence.path_ids import validate_run_id
 from top_down_planning.persistence.sub_tdp_state import (
     initial_sub_tdp_state_from_package,
     merge_sub_tdp_state_into_production,
@@ -61,13 +62,16 @@ def parse_upstream_bindings(raw: list[str] | None) -> dict[str, str]:
             raise ValueError(
                 f"invalid --upstream binding {text!r}; expected unit_id=run_id"
             )
-        unit_id, run_id = text.split("=", 1)
+        unit_id, raw_run_id = text.split("=", 1)
         unit_id = unit_id.strip()
-        run_id = run_id.strip()
-        if not unit_id or not run_id:
+        if not unit_id or raw_run_id == "":
             raise ValueError(
                 f"invalid --upstream binding {text!r}; expected unit_id=run_id"
             )
+        try:
+            run_id = validate_run_id(raw_run_id)
+        except PersistenceError as exc:
+            raise ValueError(str(exc)) from exc
         if unit_id in bindings:
             raise ValueError(f"duplicate --upstream unit_id {unit_id!r}")
         bindings[unit_id] = run_id
@@ -80,9 +84,13 @@ def parse_baseline_run_ids(raw: list[str] | None) -> list[str]:
     run_ids: list[str] = []
     seen: set[str] = set()
     for item in raw or []:
-        run_id = str(item or "").strip()
-        if not run_id:
+        run_id = str(item or "")
+        if run_id == "":
             raise ValueError("invalid --baseline value; expected a non-empty run id")
+        try:
+            run_id = validate_run_id(run_id)
+        except PersistenceError as exc:
+            raise ValueError(str(exc)) from exc
         if run_id in seen:
             raise ValueError(f"duplicate --baseline run id {run_id!r}")
         seen.add(run_id)

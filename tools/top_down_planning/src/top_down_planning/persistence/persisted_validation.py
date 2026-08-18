@@ -1345,7 +1345,10 @@ def validate_persisted_run(run_id: str, payload: dict[str, Any]) -> dict[str, An
 def canonicalize_persisted_plan(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise PersistenceError("plan.json must contain a JSON object")
-    return Plan.from_dict(dict(payload)).to_dict()
+    try:
+        return Plan.from_dict(dict(payload)).to_dict()
+    except (TypeError, ValueError, KeyError) as exc:
+        raise PersistenceError(f"plan.json is invalid: {exc}") from exc
 
 
 def validate_persisted_production(
@@ -1469,8 +1472,11 @@ def canonicalize_persisted_review(
     review_id = str(payload.get("id") or "").strip()
     if review_id != expected_review_id:
         raise PersistenceError("review.id does not match review filename id")
-    loop = ReviewLoop.from_dict(dict(payload))
-    normalized = validate_persisted_review_binding(loop.to_dict())
+    try:
+        loop = ReviewLoop.from_dict(dict(payload))
+        normalized = validate_persisted_review_binding(loop.to_dict())
+    except (TypeError, ValueError, KeyError) as exc:
+        raise PersistenceError(f"review record is invalid: {exc}") from exc
     for key in _PRESERVED_REVIEW_ATTESTATION_KEYS:
         if key in payload:
             normalized[key] = payload[key]

@@ -535,14 +535,8 @@ def handle_resume_command(args: Namespace) -> None:
 
     try:
         stored = store.load_resolved_config(args.run)
-    except RunNotFoundError:
-        emit_error_message(
-            f"run {args.run} is missing resolved configuration",
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="run_not_found",
-        )
-        return
+    except (RunNotFoundError, PersistenceError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
 
     try:
         candidate = resolve_resume_candidate_for_run(
@@ -590,6 +584,8 @@ def handle_resume_command(args: Namespace) -> None:
             code=exc.code,
         )
         return
+    except (RunNotFoundError, PersistenceError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
 
     plan_summary = build_resume_plan_summary(
         resume_plan,
@@ -814,14 +810,21 @@ def handle_status_command(args: Namespace) -> None:
     if resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION:
         try:
             production = store.load_production(args.run)
-            completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
-            if total:
-                payload["run"]["units_completed"] = completed
-                payload["run"]["units_total"] = total
-                if active_unit:
-                    payload["run"]["active_unit"] = active_unit
         except RunNotFoundError:
-            pass
+            emit_error_message(
+                f"parent execution run {args.run} is missing production.json",
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="corrupt_run",
+            )
+        except PersistenceError as exc:
+            emit_run_access_error(exc, stream_json=args.stream_json)
+        completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
+        if total:
+            payload["run"]["units_completed"] = completed
+            payload["run"]["units_total"] = total
+            if active_unit:
+                payload["run"]["active_unit"] = active_unit
     stop = run.get("stop")
     if isinstance(stop, dict):
         payload["run"]["stop"] = dict(stop)
@@ -862,13 +865,20 @@ def handle_status_command(args: Namespace) -> None:
     if resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION:
         try:
             production = store.load_production(args.run)
-            completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
-            if total:
-                lines.append(f"  units: {completed}/{total} completed")
-                if active_unit:
-                    lines.append(f"  active_unit: {active_unit}")
         except RunNotFoundError:
-            pass
+            emit_error_message(
+                f"parent execution run {args.run} is missing production.json",
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="corrupt_run",
+            )
+        except PersistenceError as exc:
+            emit_run_access_error(exc, stream_json=args.stream_json)
+        completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
+        if total:
+            lines.append(f"  units: {completed}/{total} completed")
+            if active_unit:
+                lines.append(f"  active_unit: {active_unit}")
     lines.extend(digest_lines)
     if isinstance(stop, dict):
         lines.append(f"  stop: {stop.get('code')} ({stop.get('category')})")
@@ -940,6 +950,7 @@ def handle_validate_command(args: Namespace) -> None:
         plan = store.load_plan_model(args.run)
         config = store.load_resolved_config(args.run)
         production = store.load_production(args.run)
+        reviews = store.list_reviews(args.run)
     except (RunNotFoundError, PersistenceError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
@@ -953,12 +964,15 @@ def handle_validate_command(args: Namespace) -> None:
     limits = planning_limits_from_config(config)
     dispositions = dict(production.get("dispositions") or {})
     phase = str(run.get("phase") or "")
-    mode, review_state, digest_bundle = user_validate_mode_and_context(
-        store,
-        args.run,
-        run,
-        plan,
-    )
+    try:
+        mode, review_state, digest_bundle = user_validate_mode_and_context(
+            store,
+            args.run,
+            run,
+            plan,
+        )
+    except PersistenceError as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
 
     plan_validation = validate_plan(
         plan,
@@ -967,14 +981,14 @@ def handle_validate_command(args: Namespace) -> None:
         mode=mode,
         review_state=review_state,
         digests=digest_bundle,
-        reviews=store.list_reviews(args.run),
+        reviews=reviews,
     )
 
     output_validation = None
     output_mode = "draft"
     completion_claim = production.get("completion_claim")
     output_revision = int(production.get("output_revision") or 0)
-    output_approval = find_whole_output_approval(store.list_reviews(args.run), output_revision)
+    output_approval = find_whole_output_approval(reviews, output_revision)
     should_validate_output = (
         output_approval is not None
         or phase in {WHOLE_OUTPUT_REVIEW, OUTPUT_VALIDATED}
@@ -1010,7 +1024,7 @@ def handle_validate_command(args: Namespace) -> None:
             production,
             review_state=output_review_state,
             digests=output_digest_bundle,
-            reviews=store.list_reviews(args.run),
+            reviews=reviews,
             mode=output_mode,
         )
 

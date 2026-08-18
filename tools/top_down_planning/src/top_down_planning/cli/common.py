@@ -241,7 +241,7 @@ def require_cli_run_id(run_id: str | None, *, stream_json: bool) -> str:
 
     from core_tools.persistence import PersistenceError
 
-    text = str(run_id or "").strip()
+    text = str(run_id or "")
     try:
         return validate_run_id(text)
     except PersistenceError as exc:

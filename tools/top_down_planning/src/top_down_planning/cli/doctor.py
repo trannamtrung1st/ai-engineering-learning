@@ -134,12 +134,18 @@ def _handle_doctor_command(args: Namespace, store) -> None:
         diagnostics = workspace_diagnostics(store)
         reconciled: list[str] = []
         repair_incomplete: list[str] = []
+        repair_refused_run_ids: list[str] = []
         cleanup_failed_pids_by_run: dict[str, list[int]] = {}
         if fix:
             for run_id in _repair_candidate_run_ids(diagnostics):
-                if _destructive_fix_blocked(store, run_id) is not None:
+                blocked = _destructive_fix_blocked(store, run_id)
+                if blocked is not None:
+                    repair_refused_run_ids.append(run_id)
                     continue
                 repair = _apply_destructive_run_repair(store, run_id)
+                if repair.refusal is not None:
+                    repair_refused_run_ids.append(run_id)
+                    continue
                 if repair.failed_pids:
                     repair_incomplete.append(run_id)
                     cleanup_failed_pids_by_run[run_id] = list(repair.failed_pids)
@@ -148,11 +154,19 @@ def _handle_doctor_command(args: Namespace, store) -> None:
                     reconciled.append(run_id)
             diagnostics = workspace_diagnostics(store)
 
+        leftover_repair_targets: list[str] = []
+        if fix:
+            leftover_repair_targets = list(diagnostics["staging_run_dirs"]) + list(
+                diagnostics["commit_transaction_dirs"]
+            )
         payload: dict[str, Any] = {
-            "ok": not repair_incomplete,
+            "ok": not repair_incomplete
+            and not repair_refused_run_ids
+            and not leftover_repair_targets,
             "workspace": diagnostics,
             "reconciled_run_ids": reconciled,
             "repair_incomplete_run_ids": repair_incomplete,
+            "repair_refused_run_ids": repair_refused_run_ids,
             "cleanup_failed_pids_by_run": cleanup_failed_pids_by_run,
             "removed_staging_dirs": removed_staging_dirs,
         }
@@ -189,6 +203,13 @@ def _handle_doctor_command(args: Namespace, store) -> None:
             )
         else:
             lines.append("  staging dirs: none")
+        if diagnostics["commit_transaction_dirs"]:
+            lines.append(
+                "  commit transaction dirs (.stage-*/.retired-txn-*): "
+                + ", ".join(diagnostics["commit_transaction_dirs"])
+            )
+        else:
+            lines.append("  commit transaction dirs: none")
         if fix and reconciled:
             lines.append("  reconciled runs: " + ", ".join(reconciled))
         if fix and repair_incomplete:

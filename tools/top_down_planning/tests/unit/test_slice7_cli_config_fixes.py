@@ -436,11 +436,18 @@ def test_execute_malformed_upstream_and_baseline_are_usage_errors(tmp_path: Path
     with pytest.raises(ValueError, match="expected unit_id=run_id"):
         parse_upstream_bindings(["not-a-binding"])
     with pytest.raises(ValueError, match="duplicate"):
-        parse_upstream_bindings(["item-a=run-1", "item-a=run-2"])
-    with pytest.raises(ValueError, match="non-empty"):
+        parse_upstream_bindings(
+            [
+                "item-a=run-20260101T000001-000001",
+                "item-a=run-20260101T000002-000002",
+            ]
+        )
+    with pytest.raises(ValueError):
         parse_baseline_run_ids([" "])
     with pytest.raises(ValueError, match="duplicate"):
-        parse_baseline_run_ids(["run-a", "run-a"])
+        parse_baseline_run_ids(
+            ["run-20260101T000001-000001", "run-20260101T000001-000001"]
+        )
 
     common = [
         "execute",
@@ -467,7 +474,13 @@ def test_execute_malformed_upstream_and_baseline_are_usage_errors(tmp_path: Path
     assert _stdout_json(empty_upstream)["error"]["code"] == "sub_tdp_upstream_invalid"
 
     duplicate_upstream = run_cli(
-        [*common, "--upstream", "item-a=run-1", "--upstream", "item-a=run-2"]
+        [
+            *common,
+            "--upstream",
+            "item-a=run-20260101T000001-000001",
+            "--upstream",
+            "item-a=run-20260101T000002-000002",
+        ]
     )
     assert duplicate_upstream.exit_code == 2
     assert _stdout_json(duplicate_upstream)["error"]["code"] == "sub_tdp_upstream_invalid"

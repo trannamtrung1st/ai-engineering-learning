@@ -87,7 +87,9 @@ agent_context:
 
 def test_parse_baseline_run_ids_rejects_duplicates() -> None:
     with pytest.raises(ValueError, match="duplicate"):
-        parse_baseline_run_ids(["run-1", "run-1"])
+        parse_baseline_run_ids(
+            ["run-20260101T000001-000001", "run-20260101T000001-000001"]
+        )
 
 
 def test_direct_b_with_upstream_a_rejects_without_baseline_for_independent_c(

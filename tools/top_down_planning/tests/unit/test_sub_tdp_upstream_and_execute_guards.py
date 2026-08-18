@@ -25,7 +25,12 @@ from tests.unit.test_sub_tdp_defect_pass import _build_package
 
 def test_parse_upstream_bindings_rejects_duplicate_unit() -> None:
     with pytest.raises(ValueError, match="duplicate"):
-        parse_upstream_bindings(["item-a=run-1", "item-a=run-2"])
+        parse_upstream_bindings(
+            [
+                "item-a=run-20260101T000001-000001",
+                "item-a=run-20260101T000002-000002",
+            ]
+        )
 
 
 def test_validate_explicit_upstream_requires_complete_dependency_map(tmp_path: Path) -> None:

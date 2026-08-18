@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -258,6 +259,10 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
 def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
     """Summarize workspace-level run store hygiene issues."""
 
+    incomplete_run_dirs = list_incomplete_run_dirs(store)
+    staging_run_dirs = list_staging_run_dirs(store)
+    commit_transaction_dirs = list_commit_transaction_dirs(store)
+
     idle_running: list[str] = []
     interrupted_running: list[str] = []
     root = getattr(store, "root", None)
@@ -265,12 +270,21 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
         root_path = Path(root)
         if root_path.is_dir():
             for entry in sorted(root_path.iterdir()):
-                if not entry.is_dir() or not (entry / "run.json").is_file():
+                run_json = entry / "run.json"
+                if not entry.is_dir() or not run_json.is_file():
                     continue
                 run_id = entry.name
-                if not _running_without_live_orchestrator(store, run_id):
+                if not _RUN_DIR_PATTERN.match(run_id):
                     continue
-                run = store.load_run(run_id)
+                try:
+                    run = json.loads(run_json.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if not isinstance(run, dict) or str(run.get("status") or "") != "running":
+                    continue
+                run_dir = resolve_run_dir(store, run_id)
+                if run_dir is None or is_run_orchestrator_alive(run_dir):
+                    continue
                 orphan_pids = scan_orphan_agent_pids(
                     run_id,
                     exclude_pids=frozenset({os.getpid()}),
@@ -282,9 +296,9 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
                     idle_running.append(run_id)
 
     return {
-        "incomplete_run_dirs": list_incomplete_run_dirs(store),
-        "staging_run_dirs": list_staging_run_dirs(store),
-        "commit_transaction_dirs": list_commit_transaction_dirs(store),
+        "incomplete_run_dirs": incomplete_run_dirs,
+        "staging_run_dirs": staging_run_dirs,
+        "commit_transaction_dirs": commit_transaction_dirs,
         "idle_running_run_ids": idle_running,
         "interrupted_running_run_ids": interrupted_running,
     }
