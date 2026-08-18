@@ -16,21 +16,70 @@ from core_tools.provider.cursor import _TrackedTurnProc
 from core_tools.provider.process_identity import ProcessIdentity
 
 
-def close_and_reap_iterator(iterator) -> None:
-    """Close a direct stdout iterator and reap its janitor through raw Popen."""
+def _kill_session_and_raw_wait(
+    proc: subprocess.Popen[str],
+    extra_pids: tuple[int, ...] = (),
+) -> None:
+    """SIGKILL the bound session group, then consume the leader's raw wait status."""
 
-    proc = getattr(iterator, "_proc", None)
-    iterator.close()
-    if proc is None:
-        return
-    raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
-    raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
-    if raw_poll() is None:
+    pgid = getattr(proc, "_core_tools_session_pgid", None)
+    if pgid is None and proc.pid:
         try:
-            proc.kill()
+            pgid = os.getpgid(proc.pid)
+        except OSError:
+            pgid = proc.pid
+    if pgid is not None:
+        try:
+            os.killpg(int(pgid), signal.SIGKILL)
         except OSError:
             pass
-    raw_wait(timeout=2)
+    for pid in extra_pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+    try:
+        raw_wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    for pid in extra_pids:
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                break
+            time.sleep(0.05)
+
+
+def close_and_reap_iterator(iterator) -> None:
+    """Kill a bound iterator's process group, close pipes, and raw-reap the leader."""
+
+    proc = getattr(iterator, "_proc", None)
+    pgid = None
+    if proc is not None:
+        pgid = getattr(proc, "_core_tools_session_pgid", None)
+        if pgid is None and proc.pid:
+            try:
+                pgid = os.getpgid(proc.pid)
+            except OSError:
+                pgid = proc.pid
+        if pgid is not None:
+            try:
+                os.killpg(int(pgid), signal.SIGKILL)
+            except OSError:
+                pass
+    try:
+        iterator.close()
+    except Exception:
+        pass
+    if proc is None:
+        return
+    raw_wait = getattr(proc, "_core_tools_raw_wait", proc.wait)
+    try:
+        raw_wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def tracked_turn_proc(
@@ -122,40 +171,9 @@ def reap_process_group(
     proc: subprocess.Popen[str],
     extra_pids: tuple[int, ...] = (),
 ) -> None:
-    """SIGKILL the spawned session and any known descendants, then wait."""
+    """SIGKILL the spawned session and any known descendants, then raw-wait."""
 
-    pgid: int | None = None
-    try:
-        if proc.pid:
-            pgid = os.getpgid(proc.pid)
-    except OSError:
-        pgid = None
-    if pgid is not None:
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except OSError:
-            pass
-    for pid in extra_pids:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
-    if proc.poll() is None:
-        try:
-            proc.kill()
-        except OSError:
-            pass
-    try:
-        proc.wait(timeout=5)
-    except Exception:
-        pass
-    for pid in extra_pids:
-        for _ in range(20):
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                break
-            time.sleep(0.05)
+    _kill_session_and_raw_wait(proc, extra_pids=extra_pids)
 
 
 def _python_descendant_pids(root_pid: int) -> dict[int, str]:

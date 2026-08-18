@@ -104,14 +104,14 @@ def test_fast_stream_events_loop_leaves_no_zombie_descendants(tmp_path: Path) ->
 
     parent = os.getpid()
     before = set(_python_descendant_pids(parent))
-    holder: dict[str, _SubprocessStdoutIterator] = {}
+    spawned: list[_SubprocessStdoutIterator] = []
 
     def runner(argv: list[str], cwd: Path):
         del argv
         iterator = _SubprocessStdoutIterator(
             [sys.executable, "-c", _assistant_script("loop")], cwd
         )
-        holder["it"] = iterator
+        spawned.append(iterator)
         return iterator
 
     agent = tmp_path / "agent"
@@ -128,15 +128,23 @@ def test_fast_stream_events_loop_leaves_no_zombie_descendants(tmp_path: Path) ->
         return_value=[],
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
-        for _ in range(20):
+        for index in range(20):
+            if index:
+                provider.resume_primary_session(
+                    session_id,
+                    {"request": f"turn-{index}"},
+                    role="planner",
+                )
             list(provider.stream_events(session_id))
-            assert holder["it"]._proc.returncode is not None
+            assert spawned[-1]._proc.returncode is not None
             leftover = {
                 pid: cmd
                 for pid, cmd in _python_descendant_pids(parent).items()
                 if pid not in before and not _is_pytest_infrastructure(cmd)
             }
             assert leftover == {}, leftover
+    assert len(spawned) == 20
+    assert all(iterator._proc.returncode is not None for iterator in spawned)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor wait")

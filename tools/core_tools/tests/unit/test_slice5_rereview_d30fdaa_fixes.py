@@ -13,6 +13,7 @@ import pytest
 from core_tools.provider.cursor import CursorProvider, _SubprocessStdoutIterator
 from core_tools.provider.errors import ProviderTurnStalledError
 from core_tools.provider.process_identity import ProcessIdentity, _any_identities_still_alive
+from tests.conftest import close_and_reap_iterator
 
 
 def _idle_config(idle: float) -> dict:
@@ -37,9 +38,13 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
     def fake_monotonic() -> float:
         return clock["t"]
 
+    holder: dict[str, _SubprocessStdoutIterator] = {}
+
     def runner(argv: list[str], cwd: Path):
         del argv
-        return _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
+        iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
+        holder["it"] = iterator
+        return iterator
 
     def slow_capture(*_args, timeout=None, **_kwargs):
         del timeout
@@ -83,31 +88,36 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
         binary=str(agent),
         skip_probe=True,
     )
-    with patch(
-        "core_tools.provider.cursor.time.monotonic",
-        fake_monotonic,
-    ), patch(
-        "core_tools.provider.process_identity.capture_process_group_identities",
-        side_effect=slow_capture,
-    ), patch.object(
-        _SubprocessStdoutIterator,
-        "wait_agent_started",
-        wait_then_idle,
-    ), patch.object(
-        _SubprocessStdoutIterator,
-        "read_nonempty_line",
-        fake_read_nonempty_line,
-    ), patch.object(
-        CursorProvider,
-        "_iter_stream_with_idle_timeout",
-        recording_iter,
-    ), patch(
-        "core_tools.provider.cursor.terminate_process_tree",
-        side_effect=mark_stall,
-    ):
-        session_id = provider.start_primary_session("planner", {"goal": "x"})
-        with pytest.raises(ProviderTurnStalledError):
-            list(provider.stream_events(session_id))
+    try:
+        with patch(
+            "core_tools.provider.cursor.time.monotonic",
+            fake_monotonic,
+        ), patch(
+            "core_tools.provider.process_identity.capture_process_group_identities",
+            side_effect=slow_capture,
+        ), patch.object(
+            _SubprocessStdoutIterator,
+            "wait_agent_started",
+            wait_then_idle,
+        ), patch.object(
+            _SubprocessStdoutIterator,
+            "read_nonempty_line",
+            fake_read_nonempty_line,
+        ), patch.object(
+            CursorProvider,
+            "_iter_stream_with_idle_timeout",
+            recording_iter,
+        ), patch(
+            "core_tools.provider.cursor.terminate_process_tree",
+            side_effect=mark_stall,
+        ):
+            session_id = provider.start_primary_session("planner", {"goal": "x"})
+            with pytest.raises(ProviderTurnStalledError):
+                list(provider.stream_events(session_id))
+    finally:
+        iterator = holder.get("it")
+        if iterator is not None:
+            close_and_reap_iterator(iterator)
 
     assert seen_deadline["value"] == pytest.approx(seen_deadline["wrap_mono"] + idle)
     assert stall_clock["t"] == pytest.approx(seen_deadline["value"])
