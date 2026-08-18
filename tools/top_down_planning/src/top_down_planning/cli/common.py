@@ -276,6 +276,19 @@ def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
     raise exc
 
 
+def emit_operational_error(exc: BaseException, *, stream_json: bool) -> None:
+    """Normalize filesystem I/O failures for mutating user commands."""
+
+    from top_down_planning.orchestrator.failure import sanitize_operational_error
+
+    emit_error_message(
+        sanitize_operational_error(exc),
+        exit_code=1,
+        stream_json=stream_json,
+        code="operational_error",
+    )
+
+
 __all__ = [
     "AGENT_REQUESTS_DIR_ENV_VAR",
     "AGENT_RUNS_DIR_HELP",
@@ -292,6 +305,7 @@ __all__ = [
     "emit_message",
     "emit_payload",
     "emit_run_access_error",
+    "emit_operational_error",
     "require_cli_run_id",
     "format_run_startup_diagnostics",
     "load_config_for_runs_dir",

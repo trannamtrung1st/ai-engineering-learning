@@ -58,12 +58,23 @@ def resolve_expanded_path_list(
 
         candidates: list[Path]
         if _path_has_glob_metacharacters(configured_value):
+            if Path(configured_value).is_absolute():
+                raise ConfigError(
+                    f"{field}={configured_value!r} glob must be workspace-relative",
+                    path=field,
+                )
             base = workspace.resolve()
-            matches = sorted(
-                path.resolve()
-                for path in base.glob(configured_value)
-                if path.is_file()
-            )
+            try:
+                matches = sorted(
+                    path.resolve()
+                    for path in base.glob(configured_value)
+                    if path.is_file()
+                )
+            except (NotImplementedError, ValueError) as exc:
+                raise ConfigError(
+                    f"{field}={configured_value!r} is not a valid workspace glob",
+                    path=field,
+                ) from exc
             if not matches:
                 raise ConfigError(
                     f"{field}={configured_value!r} matched no files in workspace "

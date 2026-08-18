@@ -13,6 +13,7 @@ from top_down_planning.cli.common import (
     ResolvedRunsDir,
     emit_command_result,
     emit_error_message,
+    emit_operational_error,
     format_run_startup_diagnostics,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
@@ -57,7 +58,7 @@ def parse_upstream_bindings(raw: list[str] | None) -> dict[str, str]:
 
     bindings: dict[str, str] = {}
     for item in raw or []:
-        text = str(item or "").strip()
+        text = str(item or "")
         if "=" not in text:
             raise ValueError(
                 f"invalid --upstream binding {text!r}; expected unit_id=run_id"
@@ -193,8 +194,11 @@ def handle_execute_command(args: Namespace) -> None:
         )
 
     store = FileRunStore(resolved_runs.path)
-    store.root.mkdir(parents=True, exist_ok=True)
-    cleanup_staging_dirs(store)
+    try:
+        store.root.mkdir(parents=True, exist_ok=True)
+        cleanup_staging_dirs(store)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     invocation = invocation_options_from_args(
         args,

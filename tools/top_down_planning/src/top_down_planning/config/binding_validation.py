@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from typing import Any
 
@@ -24,15 +25,22 @@ def _require_relative_binding_path(path: object, *, field: str) -> str:
         raise InvalidSnapshotBindingError(
             f"{field} path must be a non-empty canonical relative string"
         )
-    if path.startswith("/") or path.startswith("\\"):
+    if path.startswith("/") or path.startswith("\\") or "\\" in path:
         raise InvalidSnapshotBindingError(
-            f"{field} rejects absolute binding path: {path!r}"
+            f"{field} rejects absolute or non-POSIX binding path: {path!r}"
         )
-    if "\\" in path:
+    first, _, _rest = path.partition("/")
+    if len(first) >= 2 and first[1] == ":":
         raise InvalidSnapshotBindingError(
-            f"{field} rejects non-POSIX binding path: {path!r}"
+            f"{field} rejects non-canonical binding path: {path!r}"
         )
-    if path == "." or path.startswith("../") or "/../" in path or path.endswith("/.."):
+    normalized = posixpath.normpath(path)
+    if (
+        normalized != path
+        or normalized in {".", ".."}
+        or normalized.startswith("../")
+        or "/../" in normalized
+    ):
         raise InvalidSnapshotBindingError(
             f"{field} rejects non-canonical binding path: {path!r}"
         )

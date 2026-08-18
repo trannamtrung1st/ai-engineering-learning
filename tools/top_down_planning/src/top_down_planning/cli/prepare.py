@@ -9,6 +9,7 @@ from typing import Any
 from top_down_planning.cli.common import (
     emit_command_result,
     emit_error_message,
+    emit_operational_error,
     format_run_startup_diagnostics,
     provider_extra_env,
     resolve_runs_dir_from_args,
@@ -77,12 +78,20 @@ def handle_prepare_command(args: Namespace) -> None:
 
     input_digest = compute_input_digest(resolved, base_dir=workspace)
     output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
-    binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
-        build_initial_context_snapshot_binding_with_diagnostics(
-            resolved,
-            workspace=workspace,
+    try:
+        binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
+            build_initial_context_snapshot_binding_with_diagnostics(
+                resolved,
+                workspace=workspace,
+            )
         )
-    )
+    except ConfigError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="config_error",
+        )
     run_id = new_run_id()
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
@@ -97,8 +106,11 @@ def handle_prepare_command(args: Namespace) -> None:
         )
 
     store = FileRunStore(resolved_runs.path)
-    store.root.mkdir(parents=True, exist_ok=True)
-    cleanup_staging_dirs(store)
+    try:
+        store.root.mkdir(parents=True, exist_ok=True)
+        cleanup_staging_dirs(store)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     invocation = invocation_options_from_args(
         args,
@@ -199,6 +211,8 @@ def handle_prepare_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="package_build_failed",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
     digests = dict(run_record.get("digests") or {})

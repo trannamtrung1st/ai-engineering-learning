@@ -16,7 +16,7 @@ from top_down_planning.config.activities import (
 from top_down_planning.config.defaults import (
     ALLOWED_OVERRIDE_PATHS,
 )
-from top_down_planning.config.resolve import resolve_config
+from top_down_planning.config.resolve import finalize_resolved_config, resolve_config
 from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
@@ -220,6 +220,7 @@ def resolve_resume_candidate_for_run(
             overrides,
             allowed_paths=ALLOWED_OVERRIDE_PATHS,
         )
+        candidate = finalize_resolved_config(candidate, cwd=cwd or Path.cwd())
     return candidate
 
 

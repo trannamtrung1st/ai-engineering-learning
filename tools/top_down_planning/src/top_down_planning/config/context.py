@@ -29,7 +29,10 @@ from top_down_planning.config.bundled_skills import (
     load_bundled_skills_for_role,
 )
 from top_down_planning.config.resolve import resolve_output_goal_text
-from top_down_planning.config.snapshot_policy import _has_glob_metacharacters
+from top_down_planning.config.snapshot_policy import (
+    _has_glob_metacharacters,
+    expand_workspace_resource_glob,
+)
 
 AgentRole = Literal["planner", "producer", "reviewer"]
 
@@ -246,6 +249,11 @@ def _normalize_resource_selection(
             continue
 
         if _has_glob_metacharacters(configured_value):
+            expand_workspace_resource_glob(
+                configured_value,
+                workspace=workspace,
+                field=field,
+            )
             key = configured_value
         else:
             candidate = resolve_workspace_path(configured_value, workspace=workspace)
@@ -568,6 +576,11 @@ def _read_guidance_file_content(
     except UnicodeDecodeError as exc:
         raise ConfigError(
             f"{entry_field}.file must be UTF-8 text: {path}",
+            path=f"{entry_field}.file",
+        ) from exc
+    except OSError as exc:
+        raise ConfigError(
+            f"{entry_field}.file could not be read: {path}: {exc}",
             path=f"{entry_field}.file",
         ) from exc
     normalized = content.strip()
@@ -984,7 +997,7 @@ def _materialize_resource_digests(
     """
 
     from top_down_planning.config.snapshot_diagnostics import SnapshotDiagnostics
-    from top_down_planning.config.snapshot_policy import SnapshotPolicy
+    from top_down_planning.config.snapshot_policy import CanonicalPathError, SnapshotPolicy
 
     policy = SnapshotPolicy.from_config(config, workspace=workspace)
     resources: list[str] = []
@@ -999,10 +1012,13 @@ def _materialize_resource_digests(
             )
         resources.append(configured_value)
 
-    collection = policy.collect(
-        resources,
-        missing_digest=MISSING_RESOURCE_FILE_DIGEST,
-    )
+    try:
+        collection = policy.collect(
+            resources,
+            missing_digest=MISSING_RESOURCE_FILE_DIGEST,
+        )
+    except CanonicalPathError as exc:
+        raise ConfigError(str(exc), path="agent_context.resources") from exc
     diagnostics = SnapshotDiagnostics(
         included_files=len(collection.digests),
         excluded_files=collection.excluded_file_count,

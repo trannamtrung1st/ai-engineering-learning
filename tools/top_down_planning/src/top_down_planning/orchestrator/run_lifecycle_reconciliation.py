@@ -259,12 +259,16 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
 def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
     """Summarize workspace-level run store hygiene issues."""
 
+    from core_tools.persistence import PersistenceError
+    from top_down_planning.persistence.persisted_validation import validate_canonical_run
+
     incomplete_run_dirs = list_incomplete_run_dirs(store)
     staging_run_dirs = list_staging_run_dirs(store)
     commit_transaction_dirs = list_commit_transaction_dirs(store)
 
     idle_running: list[str] = []
     interrupted_running: list[str] = []
+    corrupt_run_dirs: list[str] = []
     root = getattr(store, "root", None)
     if root is not None:
         root_path = Path(root)
@@ -278,9 +282,20 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
                     continue
                 try:
                     run = json.loads(run_json.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                    if not isinstance(run, dict):
+                        raise PersistenceError("run.json must contain a JSON object")
+                    validate_canonical_run(run_id, run)
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                    UnicodeDecodeError,
+                    PersistenceError,
+                    TypeError,
+                    ValueError,
+                ):
+                    corrupt_run_dirs.append(run_id)
                     continue
-                if not isinstance(run, dict) or str(run.get("status") or "") != "running":
+                if str(run.get("status") or "") != "running":
                     continue
                 run_dir = resolve_run_dir(store, run_id)
                 if run_dir is None or is_run_orchestrator_alive(run_dir):
@@ -299,6 +314,7 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
         "incomplete_run_dirs": incomplete_run_dirs,
         "staging_run_dirs": staging_run_dirs,
         "commit_transaction_dirs": commit_transaction_dirs,
+        "corrupt_run_dirs": corrupt_run_dirs,
         "idle_running_run_ids": idle_running,
         "interrupted_running_run_ids": interrupted_running,
     }

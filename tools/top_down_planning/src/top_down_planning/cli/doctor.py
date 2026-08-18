@@ -162,7 +162,8 @@ def _handle_doctor_command(args: Namespace, store) -> None:
         payload: dict[str, Any] = {
             "ok": not repair_incomplete
             and not repair_refused_run_ids
-            and not leftover_repair_targets,
+            and not leftover_repair_targets
+            and not diagnostics["corrupt_run_dirs"],
             "workspace": diagnostics,
             "reconciled_run_ids": reconciled,
             "repair_incomplete_run_ids": repair_incomplete,
@@ -196,6 +197,12 @@ def _handle_doctor_command(args: Namespace, store) -> None:
             )
         else:
             lines.append("  incomplete run dirs: none")
+        if diagnostics["corrupt_run_dirs"]:
+            lines.append(
+                "  corrupt run dirs: " + ", ".join(diagnostics["corrupt_run_dirs"])
+            )
+        else:
+            lines.append("  corrupt run dirs: none")
         if diagnostics["staging_run_dirs"]:
             lines.append(
                 "  staging dirs (.creating-*): "

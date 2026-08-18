@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.config.errors import ConfigError
+from core_tools.config import resolve_expanded_path_list
 from core_tools.persistence.digests import digest_file
 
 from top_down_planning.config.exclude_matching import (
@@ -28,6 +29,32 @@ _GLOB_METACHARACTERS = frozenset("*?[]")
 
 def _has_glob_metacharacters(value: str) -> bool:
     return any(char in _GLOB_METACHARACTERS for char in value)
+
+
+def expand_workspace_resource_glob(
+    configured_value: str,
+    *,
+    workspace: Path,
+    field: str,
+) -> list[Path]:
+    """Expand a workspace-relative glob and require in-workspace file matches."""
+
+    if Path(configured_value).is_absolute():
+        raise ConfigError(
+            f"{field}={configured_value!r} glob must be workspace-relative",
+            path=field,
+        )
+    try:
+        return resolve_expanded_path_list(
+            [configured_value],
+            workspace=workspace,
+            field=field,
+        )
+    except NotImplementedError as exc:
+        raise ConfigError(
+            f"{field}={configured_value!r} is not a valid workspace glob",
+            path=field,
+        ) from exc
 
 
 class CanonicalPathError(ValueError):
@@ -286,9 +313,13 @@ class SnapshotPolicy:
                 continue
 
             if _has_glob_metacharacters(configured_text):
-                for match in sorted(workspace_resolved.glob(configured_text)):
-                    if match.is_file():
-                        add_file(match.resolve(), explicitly_declared=False)
+                matches = expand_workspace_resource_glob(
+                    configured_text,
+                    workspace=workspace_resolved,
+                    field="agent_context.resources",
+                )
+                for match in matches:
+                    add_file(match, explicitly_declared=False)
                 continue
 
             configured = Path(configured_text)
@@ -340,4 +371,5 @@ __all__ = [
     "canonicalize_workspace_path",
     "canonicalize_evidence_ref",
     "detect_canonical_collisions",
+    "expand_workspace_resource_glob",
 ]

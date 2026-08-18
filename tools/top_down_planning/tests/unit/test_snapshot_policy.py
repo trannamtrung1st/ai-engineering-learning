@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from core_tools.config.errors import ConfigError
+from core_tools.persistence.digests import digest_file
+
 from top_down_planning.config import (
     SNAPSHOT_POLICY_VERSION,
     CanonicalPathCollisionError,
@@ -14,7 +17,6 @@ from top_down_planning.config import (
     canonicalize_workspace_path,
 )
 from top_down_planning.config.context import MISSING_RESOURCE_FILE_DIGEST
-from core_tools.persistence.digests import digest_file
 
 
 def test_canonicalize_relative_posix(tmp_path: Path) -> None:
@@ -213,5 +215,5 @@ agent_context:
         ),
         cwd=workspace,
     )
-    with pytest.raises(CanonicalPathError, match="escapes"):
+    with pytest.raises(ConfigError, match="escapes"):
         build_context_snapshot_payload(config, workspace=workspace)

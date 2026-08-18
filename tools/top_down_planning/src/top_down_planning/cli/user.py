@@ -14,6 +14,7 @@ from top_down_planning.agent_tool.views import build_active_view, build_audit_vi
 from top_down_planning.cli.common import (
     emit_error_message,
     emit_message,
+    emit_operational_error,
     emit_payload,
     emit_run_access_error,
     format_run_startup_diagnostics,
@@ -301,12 +302,21 @@ def handle_run_command(args: Namespace) -> None:
 
     input_digest = compute_input_digest(resolved, base_dir=workspace)
     output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
-    binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
-        build_initial_context_snapshot_binding_with_diagnostics(
-            resolved,
-            workspace=workspace,
+    try:
+        binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
+            build_initial_context_snapshot_binding_with_diagnostics(
+                resolved,
+                workspace=workspace,
+            )
         )
-    )
+    except ConfigError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="config_error",
+        )
+
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
@@ -320,8 +330,11 @@ def handle_run_command(args: Namespace) -> None:
         )
 
     store = FileRunStore(resolved_runs.path)
-    store.root.mkdir(parents=True, exist_ok=True)
-    cleanup_staging_dirs(store)
+    try:
+        store.root.mkdir(parents=True, exist_ok=True)
+        cleanup_staging_dirs(store)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     orphans = workspace_has_orphan_agents(store)
     if orphans and not getattr(args, "force", False):
