@@ -61,50 +61,46 @@ def _assistant(text: str) -> str:
     )
 
 
-def _wait_until_complete_lines(
-    iterator: _SubprocessStdoutIterator,
-    count: int,
-    *,
-    timeout: float = 2.0,
-) -> None:
-    """Block until ``count`` newline-terminated records are in the stdout buffer.
+def _complete_line_payloads(*records: str) -> bytes:
+    return ("\n".join(records) + "\n").encode("utf-8")
 
-    ``wait_readable`` returns as soon as *one* complete line exists, so a follow-up
-    ``wait_readable(0.0)`` can miss later pipe chunks still in flight. Filling
-    stdout before the janitor starts the agent can also see a spurious empty
-    read and mark EOF (Linux CI).
-    """
 
-    iterator.wait_agent_started(timeout=timeout)
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if iterator._stdout_buf.count(b"\n") >= count:
-            return
-        if iterator._stdout_eof:
-            break
-        iterator._fill_stdout_buffer(0.05)
-    assert iterator._stdout_buf.count(b"\n") >= count
+def _scripted_chunk_iterator(tmp_path: Path, payload: bytes, *, chunk_size: int = 4096):
+    chunks = [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        tmp_path,
+    )
+    remaining = list(chunks)
+
+    def fake_readable(*_args, **_kwargs) -> bool:
+        return bool(remaining)
+
+    def fake_read(_fd: int, _n: int) -> bytes:
+        if not remaining:
+            return b""
+        return remaining.pop(0)
+
+    return iterator, fake_readable, fake_read
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 @pytest.mark.parametrize("size", [4095, 4096, 4097, 8192, 16384])
 def test_zero_budget_drains_all_readable_bytes(tmp_path: Path, size: int) -> None:
     blob = "x" * size
-    payload = _assistant(blob)
-    script = (
-        "import sys, time\n"
-        f"sys.stdout.write({_system_init('chat-drain')!r} + '\\n' + {payload!r} + '\\n')\n"
-        "sys.stdout.flush()\n"
-        "time.sleep(60)\n"
-    )
-    iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
+    payload = _complete_line_payloads(_system_init("chat-drain"), _assistant(blob))
+    iterator, fake_readable, fake_read = _scripted_chunk_iterator(tmp_path, payload)
     try:
-        _wait_until_complete_lines(iterator, 2)
-        assert iterator.wait_readable(0.0) is True
-        first = iterator._pop_complete_line()
-        assert first is not None
-        assert iterator.wait_readable(0.0) is True
-        second = iterator._pop_complete_line()
+        iterator.wait_agent_started(timeout=2.0)
+        with patch(
+            "core_tools.provider.cursor._stdout_fd_readable",
+            side_effect=fake_readable,
+        ), patch("core_tools.provider.cursor.os.read", side_effect=fake_read):
+            assert iterator.wait_readable(0.0) is True
+            first = iterator._pop_complete_line()
+            assert first is not None
+            assert iterator.wait_readable(0.0) is True
+            second = iterator._pop_complete_line()
         assert second is not None
         assert blob[:32] in second
         assert len(second) >= size
@@ -137,16 +133,14 @@ def test_exited_process_preserves_64kib_final_line(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 def test_zero_budget_preserves_multiple_buffered_lines(tmp_path: Path) -> None:
-    lines = [_system_init("chat-multi"), _assistant("one"), _assistant("two")]
-    script = (
-        "import sys, time\n"
-        f"sys.stdout.write({repr(chr(10).join(lines))} + '\\n')\n"
-        "sys.stdout.flush()\n"
-        "time.sleep(60)\n"
+    records = [_system_init("chat-multi"), _assistant("one"), _assistant("two")]
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        tmp_path,
     )
-    iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
     try:
-        _wait_until_complete_lines(iterator, 3)
+        iterator.wait_agent_started(timeout=2.0)
+        iterator._stdout_buf.extend(_complete_line_payloads(*records))
         popped = []
         for _ in range(3):
             assert iterator.wait_readable(0.0) is True
