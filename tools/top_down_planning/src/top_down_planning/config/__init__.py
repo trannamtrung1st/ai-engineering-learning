@@ -63,10 +63,12 @@ from top_down_planning.config.resolve import (
     compute_output_goal_digest,
     compute_unit_output_goal_digest,
     finalize_resolved_config,
+    is_allowed_presentation_override_path,
     is_presentation_config_path,
     resolve_config,
     resolve_output_goal_text,
     validate_presentation_config,
+    validate_resolved_config_schema,
 )
 from top_down_planning.config.resume_policy import (
     RESUME_EXECUTION_POLICY_ALLOWLIST,
@@ -182,5 +184,9 @@ __all__ = [
     "resolve_provider_model_for_activity",
     "resolve_workspace",
     "resolve_workspace_path",
+    "is_allowed_presentation_override_path",
+    "is_presentation_config_path",
     "validate_guidance_for_binding",
+    "validate_presentation_config",
+    "validate_resolved_config_schema",
 ]

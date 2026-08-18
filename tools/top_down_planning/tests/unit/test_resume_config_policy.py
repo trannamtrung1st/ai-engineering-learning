@@ -55,7 +55,7 @@ def test_resume_rejects_contract_path_change() -> None:
 
 def test_resume_rejects_provider_change() -> None:
     stored = _base_config()
-    candidate = resolve_config(None, ["provider.name=other"])
+    candidate = resolve_config(None, ["provider.name=stub"])
     comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
     assert not comparison.ok
     assert any("session-strategy" in error for error in comparison.errors)

@@ -739,10 +739,9 @@ def test_prepare_and_execute_help_does_not_advertise_default_runs_dir() -> None:
         assert result.exit_code == 0
     assert "does not fall back to ./runs" in prepare_help.stdout
     assert "does not fall back to ./runs" in execute_help.stdout
+    assert "does not fall back to ./runs" in run_help.stdout
     assert "does not fall back to ./runs" not in status_help.stdout
-    assert "does not fall back to ./runs" not in run_help.stdout
     assert "./runs" in status_help.stdout
-    assert "./runs" in run_help.stdout
 
 
 def test_config_package_all_exports_exist() -> None:

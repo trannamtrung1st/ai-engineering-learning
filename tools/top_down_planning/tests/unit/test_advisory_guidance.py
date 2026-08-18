@@ -43,10 +43,11 @@ def test_defaults_include_empty_guidance_and_override_paths() -> None:
 
 def test_guidance_rejects_both_text_and_file(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    config = resolve_config(
-        write_config(
-            tmp_path / "both.yaml",
-            """
+    with pytest.raises(ConfigError, match="oneOf"):
+        resolve_config(
+            write_config(
+                tmp_path / "both.yaml",
+                """
 run:
   output_goal: Goal.
 agent_context:
@@ -56,19 +57,18 @@ agent_context:
         - text: hello
           file: guidance.md
 """,
-        ),
-        cwd=workspace,
-    )
-    with pytest.raises(ConfigError, match="exactly one of text or file"):
-        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
+            ),
+            cwd=workspace,
+        )
 
 
 def test_guidance_rejects_neither_text_nor_file(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    config = resolve_config(
-        write_config(
-            tmp_path / "neither.yaml",
-            """
+    with pytest.raises(ConfigError, match="oneOf"):
+        resolve_config(
+            write_config(
+                tmp_path / "neither.yaml",
+                """
 run:
   output_goal: Goal.
 agent_context:
@@ -77,19 +77,18 @@ agent_context:
       guidance:
         - {}
 """,
-        ),
-        cwd=workspace,
-    )
-    with pytest.raises(ConfigError, match="exactly one of text or file"):
-        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
+            ),
+            cwd=workspace,
+        )
 
 
 def test_guidance_rejects_extra_keys(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    config = resolve_config(
-        write_config(
-            tmp_path / "extra-keys.yaml",
-            """
+    with pytest.raises(ConfigError, match="oneOf"):
+        resolve_config(
+            write_config(
+                tmp_path / "extra-keys.yaml",
+                """
 run:
   output_goal: Goal.
 agent_context:
@@ -99,19 +98,18 @@ agent_context:
         - text: hello
           id: extra
 """,
-        ),
-        cwd=workspace,
-    )
-    with pytest.raises(ConfigError, match="unsupported properties: id"):
-        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
+            ),
+            cwd=workspace,
+        )
 
 
 def test_guidance_rejects_empty_text(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    config = resolve_config(
-        write_config(
-            tmp_path / "empty-text.yaml",
-            """
+    with pytest.raises(ConfigError, match="oneOf"):
+        resolve_config(
+            write_config(
+                tmp_path / "empty-text.yaml",
+                """
 run:
   output_goal: Goal.
 agent_context:
@@ -120,11 +118,9 @@ agent_context:
       guidance:
         - text: "   "
 """,
-        ),
-        cwd=workspace,
-    )
-    with pytest.raises(ConfigError, match=r"\.text must not be empty"):
-        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
+            ),
+            cwd=workspace,
+        )
 
 
 def test_guidance_rejects_missing_file(tmp_path: Path) -> None:

@@ -15,9 +15,11 @@ from top_down_planning.cli.common import (
     emit_error_message,
     emit_message,
     emit_payload,
+    emit_run_access_error,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
     provider_extra_env,
+    require_cli_run_id,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
     store_diagnostics_payload,
@@ -95,7 +97,7 @@ from top_down_planning.domain.run_kind import (
     resolve_run_kind,
 )
 from top_down_planning.domain.plan_schema import UnsupportedPlanSchemaVersionError
-from top_down_planning.persistence import FileRunStore, RunNotFoundError
+from top_down_planning.persistence import FileRunStore, PersistenceError, RunNotFoundError
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state, sub_tdp_progress
 from core_tools.observability import ConsoleEvent
@@ -480,27 +482,14 @@ def handle_resume_command(args: Namespace) -> None:
             code="missing_run",
         )
 
+    args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, resolved_runs = _open_run_store_for_command(args)
-    reconcile_stale_running_run(store, args.run)
     try:
+        reconcile_stale_running_run(store, args.run)
         run = store.load_run(args.run)
-    except RunNotFoundError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="run_not_found",
-        )
-
-    try:
         snapshot = load_run_resume_snapshot(store, args.run)
-    except RunNotFoundError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="run_not_found",
-        )
+    except (RunNotFoundError, PersistenceError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
 
     if snapshot.status == "failed":
         emit_error_message(
@@ -782,17 +771,13 @@ def handle_status_command(args: Namespace) -> None:
             code="missing_run",
         )
 
+    args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, resolved_runs = _open_run_store_for_command(args)
     try:
         run = store.load_run(args.run)
         plan = store.load_plan(args.run)
-    except RunNotFoundError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="run_not_found",
-        )
+    except (RunNotFoundError, PersistenceError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
             str(exc),
@@ -910,17 +895,13 @@ def handle_inspect_command(args: Namespace) -> None:
             code="invalid_view",
         )
 
+    args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, _resolved_runs = _open_run_store_for_command(args)
     try:
         plan = store.load_plan_model(args.run)
         config = store.load_resolved_config(args.run)
-    except RunNotFoundError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="run_not_found",
-        )
+    except (RunNotFoundError, PersistenceError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
             str(exc),
@@ -952,19 +933,15 @@ def handle_validate_command(args: Namespace) -> None:
             code="missing_run",
         )
 
+    args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, _resolved_runs = _open_run_store_for_command(args)
     try:
         run = store.load_run(args.run)
         plan = store.load_plan_model(args.run)
         config = store.load_resolved_config(args.run)
         production = store.load_production(args.run)
-    except RunNotFoundError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="run_not_found",
-        )
+    except (RunNotFoundError, PersistenceError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
             str(exc),

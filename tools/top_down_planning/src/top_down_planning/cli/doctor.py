@@ -12,6 +12,7 @@ from top_down_planning.cli.common import (
     emit_payload,
     emit_run_access_error,
     open_run_store_for_cli,
+    require_cli_run_id,
 )
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
@@ -114,6 +115,8 @@ def _repair_candidate_run_ids(diagnostics: dict[str, Any]) -> list[str]:
 
 
 def handle_doctor_command(args: Namespace) -> None:
+    if args.run:
+        args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, _resolved = open_run_store_for_cli(args)
     try:
         _handle_doctor_command(args, store)

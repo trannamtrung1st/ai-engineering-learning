@@ -19,6 +19,7 @@ from core_tools.cli import (
 from top_down_planning.config import resolve_config
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
+from top_down_planning.persistence.path_ids import validate_run_id
 
 RUNS_DIR_ENV_VAR = "TDP_RUNS_DIR"
 RUN_ID_ENV_VAR = "TDP_RUN_ID"
@@ -235,8 +236,26 @@ def open_run_store_for_cli(
         )
 
 
+def require_cli_run_id(run_id: str | None, *, stream_json: bool) -> str:
+    """Validate a user-supplied run id before any store access."""
+
+    from core_tools.persistence import PersistenceError
+
+    text = str(run_id or "").strip()
+    try:
+        return validate_run_id(text)
+    except PersistenceError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=stream_json,
+            code="invalid_run_id",
+        )
+        raise
+
+
 def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
-    """Normalize missing/malformed run identifiers for user-facing commands."""
+    """Normalize missing runs vs persisted-state corruption for user commands."""
 
     from core_tools.persistence import PersistenceError, RunNotFoundError
 
@@ -250,9 +269,9 @@ def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
     if isinstance(exc, PersistenceError):
         emit_error_message(
             str(exc),
-            exit_code=2,
+            exit_code=1,
             stream_json=stream_json,
-            code="invalid_run_id",
+            code="corrupt_run",
         )
     raise exc
 
@@ -273,6 +292,7 @@ __all__ = [
     "emit_message",
     "emit_payload",
     "emit_run_access_error",
+    "require_cli_run_id",
     "format_run_startup_diagnostics",
     "load_config_for_runs_dir",
     "open_run_store",

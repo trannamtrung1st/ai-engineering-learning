@@ -960,7 +960,10 @@ class FileRunStore:
                 "resolved-config.yaml missing",
                 runs_root=self._root,
             )
-        payload = load_yaml(path.read_text(encoding="utf-8"))
+        try:
+            payload = load_yaml(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise PersistenceError(f"failed to load resolved-config.yaml: {exc}") from exc
         if not isinstance(payload, dict):
             raise PersistenceError("resolved-config.yaml must contain a mapping")
         return payload

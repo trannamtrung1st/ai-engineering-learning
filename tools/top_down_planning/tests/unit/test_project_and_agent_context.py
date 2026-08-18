@@ -51,7 +51,10 @@ def _base_config_yaml(
     agent_context: str = "",
 ) -> str:
     refs = input_refs or []
-    refs_yaml = "\n".join(f"    - {ref}" for ref in refs)
+    if refs:
+        refs_yaml = "  input_refs:\n" + "\n".join(f"    - {ref}" for ref in refs)
+    else:
+        refs_yaml = "  input_refs: []"
     goal_line = (
         f"  output_goal_file: {output_goal_file}"
         if output_goal_file
@@ -61,7 +64,6 @@ def _base_config_yaml(
 project:
   workspace: .
 run:
-  input_refs:
 {refs_yaml}
 {goal_line}
 agent_context:

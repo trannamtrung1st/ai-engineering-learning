@@ -167,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH=VALUE",
         help="Resolved-config override (repeatable; proposal §14).",
     )
-    _add_operational_flags(run_parser)
+    _add_operational_flags(run_parser, runs_dir_help=RUNS_DIR_REQUIRED_HELP)
     _add_notification_flags(run_parser)
     run_parser.add_argument(
         "--until",

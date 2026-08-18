@@ -33,10 +33,12 @@ __all__ = [
     "compute_output_goal_digest",
     "compute_unit_output_goal_digest",
     "finalize_resolved_config",
+    "is_allowed_presentation_override_path",
     "is_presentation_config_path",
     "resolve_config",
     "resolve_output_goal_text",
     "validate_presentation_config",
+    "validate_resolved_config_schema",
 ]
 
 _AGENT_CONTEXT_OVERLAY_FIELDS = frozenset({"model", "guidance", "resources", "skills"})
@@ -288,6 +290,30 @@ def is_presentation_config_path(path: str) -> bool:
     )
 
 
+def is_allowed_presentation_override_path(path: str) -> bool:
+    """True when *path* is an exact public presentation/runtime overlay leaf."""
+
+    return path in ALLOWED_OVERRIDE_PATHS and is_presentation_config_path(path)
+
+
+def validate_resolved_config_schema(config: dict[str, Any]) -> None:
+    """Reject resolved config that does not match the public config schema."""
+
+    from core_tools.schema import validate_against_schema
+    from top_down_planning.schema_docs import SCHEMAS
+
+    issues = validate_against_schema(config, SCHEMAS["config"])
+    if not issues:
+        return
+    first = issues[0]
+    schema_path, _, _detail = first.partition(":")
+    dotted = schema_path.strip().lstrip("$").lstrip(".")
+    raise ConfigError(
+        f"invalid configuration: {first}",
+        path=dotted or None,
+    )
+
+
 def _validate_revise_at_value(value: Any, *, path: str) -> None:
     if value is None:
         return
@@ -352,6 +378,7 @@ def finalize_resolved_config(
     if not isinstance(project, dict):
         raise ConfigError("project must be a mapping", path="project")
     project["workspace"] = str(workspace)
+    validate_resolved_config_schema(finalized)
 
     return finalized
 

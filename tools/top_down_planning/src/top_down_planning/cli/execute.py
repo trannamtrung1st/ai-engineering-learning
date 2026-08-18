@@ -22,7 +22,11 @@ from top_down_planning.cli.user import (
     _exit_for_cancel,
     _handle_blocking_run_interrupt,
 )
-from top_down_planning.config import ConfigError, is_presentation_config_path, validate_presentation_config
+from top_down_planning.config import (
+    ConfigError,
+    is_allowed_presentation_override_path,
+    validate_presentation_config,
+)
 from core_tools.config import apply_cli_overrides, collect_leaf_paths, deep_merge, load_yaml_config
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.invocation import invocation_options_from_args, invocation_to_dict
@@ -87,7 +91,7 @@ def parse_baseline_run_ids(raw: list[str] | None) -> list[str]:
 
 
 def _is_execute_presentation_path(path: str) -> bool:
-    return is_presentation_config_path(path)
+    return is_allowed_presentation_override_path(path)
 
 
 def _validate_execute_presentation_sets(set_overrides: list[str] | None) -> list[str]:

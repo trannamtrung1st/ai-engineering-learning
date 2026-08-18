@@ -10,6 +10,7 @@ from top_down_planning.cli.common import (
     emit_error_message,
     emit_run_access_error,
     open_run_store_for_cli,
+    require_cli_run_id,
 )
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
@@ -28,7 +29,7 @@ from top_down_planning.package.lineage import (
     accepted_result_record,
     validate_attach_dependency_consistency,
 )
-from top_down_planning.package.loader import ExecutionPackageLoader
+from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.sub_tdp_state import (
     load_sub_tdp_state,
@@ -41,8 +42,8 @@ _ALLOWED_ATTACH_PHASES = frozenset({SUB_TDPS})
 
 
 def handle_sub_tdp_attach_command(args: Namespace) -> None:
-    parent_run_id = str(args.parent).strip()
-    child_run_id = str(args.child).strip()
+    parent_run_id = require_cli_run_id(args.parent, stream_json=args.stream_json)
+    child_run_id = require_cli_run_id(args.child, stream_json=args.stream_json)
 
     store, resolved_runs = open_run_store_for_cli(args, resolved_config=None)
 
@@ -167,7 +168,15 @@ def _attach_child_under_ownership(
             code="sub_tdp_attach_rejected",
         )
 
-    package = ExecutionPackageLoader().load_from_manifest(Path(manifest_path))
+    try:
+        package = ExecutionPackageLoader().load_from_manifest(Path(manifest_path))
+    except ExecutionPackageError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
     expected_digest = str(package.manifest.get("package_digest") or "")
     binding_digest = str(binding.get("package_digest") or "").strip()
     if not binding_digest:
