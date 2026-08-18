@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from core_tools.persistence import try_exclusive_file_lock
+from core_tools.persistence import PersistenceError, try_exclusive_file_lock
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import (
     holds_run_ownership,
@@ -22,6 +22,11 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
 )
 from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.path_containment import lexical_run_dir
+from top_down_planning.persistence.transaction_inspect import (
+    classify_run_transactions,
+    list_txn_candidate_dirs,
+)
 
 _RUN_DIR_PATTERN = re.compile(r"^run-\d{8}T\d{6}-[0-9a-f]{6}$")
 _CREATING_DIR_PREFIX = ".creating-"
@@ -256,32 +261,31 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
     return removed
 
 
-def _active_txn_dirs(run_dir: Path) -> list[Path]:
-    return [
-        path
-        for path in sorted(run_dir.glob(".txn-*"))
-        if path.is_dir() and not path.is_symlink()
-    ]
-
-
 def diagnose_canonical_run(run_dir: Path, run_id: str) -> dict[str, Any]:
     """Non-mutating, commit-lock-aware classification of a run directory."""
 
-    from core_tools.persistence import PersistenceError
     from top_down_planning.persistence.persisted_validation import (
         validate_canonical_run_artifacts,
     )
+
+    try:
+        lexical_run_dir(run_dir.parent, run_id)
+    except PersistenceError:
+        return {"kind": "corrupt"}
 
     lock_path = run_dir / ".commit.lock"
     with try_exclusive_file_lock(lock_path) as acquired:
         if not acquired:
             return {"kind": "busy"}
-        txn_dirs = _active_txn_dirs(run_dir)
-        if txn_dirs:
+        presence = classify_run_transactions(run_dir, run_id)
+        if presence == "recoverable":
+            txn_dirs = list_txn_candidate_dirs(run_dir)
             return {
                 "kind": "recoverable",
                 "transaction_dirs": [f"{run_id}/{path.name}" for path in txn_dirs],
             }
+        if presence == "unrecoverable":
+            return {"kind": "corrupt"}
         try:
             if run_dir.is_symlink() or not run_dir.is_dir():
                 raise PersistenceError("run directory must not be a symlink")
@@ -311,14 +315,21 @@ def recover_abandoned_transactions(store: RunStore) -> list[str]:
         return recovered
     for entry in sorted(root_path.iterdir()):
         run_id = entry.name
-        if not _RUN_DIR_PATTERN.match(run_id) or not entry.is_dir():
+        if not _RUN_DIR_PATTERN.match(run_id):
             continue
-        lock_path = entry / ".commit.lock"
+        try:
+            lexical = lexical_run_dir(root_path, run_id)
+        except PersistenceError:
+            continue
+        if not lexical.is_dir():
+            continue
+        lock_path = lexical / ".commit.lock"
         with try_exclusive_file_lock(lock_path) as acquired:
             if not acquired:
                 continue
-            if not _active_txn_dirs(entry):
-                continue
+            presence = classify_run_transactions(lexical, run_id)
+        if presence != "recoverable":
+            continue
         recover(run_id)
         recovered.append(run_id)
     return recovered

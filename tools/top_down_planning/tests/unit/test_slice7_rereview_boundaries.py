@@ -925,3 +925,228 @@ def test_store_invocation_boundary_uses_persisted_invocation_schema(
         store.save_invocation(run_id, {"stream_json": "yes"})
     loaded = store.load_invocation(run_id)
     assert loaded.get("stream_json") is False
+
+
+_DIGEST = "a" * 64
+
+
+def _outside_names(path: Path) -> set[str]:
+    return {entry.name for entry in path.iterdir()}
+
+
+def _txn_dir_names(run_dir: Path) -> list[str]:
+    return sorted(path.name for path in run_dir.glob(".txn-*"))
+
+
+def _assert_doctor_rejects_unrecoverable_without_outside_writes(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    evidence_dir: Path,
+    outside: Path | None = None,
+    outside_before: set[str] | None = None,
+) -> None:
+    _assert_doctor_marks_corrupt(store, run_id)
+    workspace = json.loads(
+        run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"]).stdout
+    )["workspace"]
+    assert run_id not in workspace.get("recoverable_transaction_run_ids", [])
+    targeted = json.loads(
+        run_cli(
+            ["doctor", "--run", run_id, "--runs-dir", str(store.root), "--stream-json"]
+        ).stdout
+    )
+    assert targeted.get("recoverable_transaction") is not True
+
+    evidence_before = _txn_dir_names(evidence_dir)
+    assert evidence_before
+
+    workspace_fix = run_cli(
+        ["doctor", "--fix", "--runs-dir", str(store.root), "--stream-json"]
+    )
+    assert workspace_fix.exit_code == 1
+    assert "Traceback" not in workspace_fix.stderr
+    workspace_fix_payload = json.loads(workspace_fix.stdout)
+    assert run_id in workspace_fix_payload["workspace"]["corrupt_run_dirs"]
+    assert run_id not in workspace_fix_payload["workspace"].get(
+        "recoverable_transaction_run_ids", []
+    )
+    assert _txn_dir_names(evidence_dir) == evidence_before
+
+    _assert_corrupt_both(
+        ["doctor", "--fix", "--run", run_id, "--runs-dir", str(store.root)]
+    )
+    assert _txn_dir_names(evidence_dir) == evidence_before
+
+    if outside is not None:
+        assert not (outside / ".commit.lock").exists()
+        assert _outside_names(outside) == outside_before
+
+
+def test_doctor_rejects_run_dir_symlink_before_creating_commit_lock(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    store.root.mkdir(parents=True)
+    outside = tmp_path / "outside-run"
+    outside.mkdir()
+    (outside / "run.json").write_text("{}", encoding="utf-8")
+    run_id = "run-20260101T111901-111901"
+    (store.root / run_id).symlink_to(outside)
+    outside_before = _outside_names(outside)
+    assert ".commit.lock" not in outside_before
+
+    _assert_doctor_marks_corrupt(store, run_id)
+    assert not (outside / ".commit.lock").exists()
+    assert _outside_names(outside) == outside_before
+
+    workspace_fix = run_cli(
+        ["doctor", "--fix", "--runs-dir", str(store.root), "--stream-json"]
+    )
+    assert workspace_fix.exit_code == 1
+    assert "Traceback" not in workspace_fix.stderr
+    assert run_id in json.loads(workspace_fix.stdout)["workspace"]["corrupt_run_dirs"]
+    _assert_corrupt_both(
+        ["doctor", "--fix", "--run", run_id, "--runs-dir", str(store.root)]
+    )
+    assert not (outside / ".commit.lock").exists()
+    assert _outside_names(outside) == outside_before
+
+
+def _prepared_journal(txn_id: str, *, status: str = "prepared") -> dict:
+    return {
+        "txn_id": txn_id,
+        "status": status,
+        "files": [
+            {
+                "kind": "run",
+                "name": "run.json",
+                "digest": _DIGEST,
+                "had_destination": True,
+            }
+        ],
+        "events": [],
+        "backups": [],
+        "replaced": [],
+    }
+
+
+def _plant_missing_journal(run_dir: Path) -> None:
+    (run_dir / ".txn-aaaaaaaaaaaa").mkdir()
+
+
+def _plant_malformed_journal(run_dir: Path) -> None:
+    txn_dir = run_dir / ".txn-bbbbbbbbbbbb"
+    txn_dir.mkdir()
+    (txn_dir / "journal.json").write_text("{not-json", encoding="utf-8")
+
+
+def _plant_txn_id_mismatch(run_dir: Path) -> None:
+    txn_dir = run_dir / ".txn-cccccccccccc"
+    txn_dir.mkdir()
+    (txn_dir / "journal.json").write_text(
+        json.dumps(_prepared_journal("dddddddddddd")),
+        encoding="utf-8",
+    )
+
+
+def _plant_unknown_status(run_dir: Path) -> None:
+    txn_dir = run_dir / ".txn-eeeeeeeeeeee"
+    txn_dir.mkdir()
+    (txn_dir / "journal.json").write_text(
+        json.dumps(_prepared_journal("eeeeeeeeeeee", status="not-a-status")),
+        encoding="utf-8",
+    )
+
+
+def _plant_two_txn_dirs(run_dir: Path) -> None:
+    (run_dir / ".txn-ffffffff0001").mkdir()
+    (run_dir / ".txn-ffffffff0002").mkdir()
+
+
+def _plant_symlinked_txn(run_dir: Path, outside: Path) -> None:
+    target = outside / "txn-target"
+    target.mkdir()
+    (run_dir / ".txn-ffffffffffff").symlink_to(target)
+
+
+def _plant_missing_backup(run_dir: Path) -> None:
+    txn_id = "111111111111"
+    txn_dir = run_dir / f".txn-{txn_id}"
+    txn_dir.mkdir()
+    payload = {
+        "txn_id": txn_id,
+        "status": "replacing",
+        "files": [
+            {
+                "kind": "run",
+                "name": "run.json",
+                "digest": _DIGEST,
+                "had_destination": True,
+            }
+        ],
+        "events": [],
+        "backups": ["run.json"],
+        "replaced": [],
+    }
+    (txn_dir / "journal.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _plant_missing_staged_file(run_dir: Path) -> None:
+    txn_id = "222222222222"
+    txn_dir = run_dir / f".txn-{txn_id}"
+    txn_dir.mkdir()
+    (txn_dir / "journal.json").write_text(
+        json.dumps(_prepared_journal(txn_id)),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    "plant",
+    [
+        _plant_missing_journal,
+        _plant_malformed_journal,
+        _plant_txn_id_mismatch,
+        _plant_unknown_status,
+        _plant_two_txn_dirs,
+        _plant_missing_backup,
+        _plant_missing_staged_file,
+    ],
+)
+def test_doctor_does_not_advertise_malformed_transactions_as_recoverable(
+    tmp_path: Path, plant
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111902-111902"
+    _create_planning_run(store, run_id)
+    run_dir = store.run_dir(run_id)
+    _wipe_txn_dirs(run_dir)
+    plant(run_dir)
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
+
+def test_doctor_treats_symlinked_transaction_dir_as_unrecoverable(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111903-111903"
+    _create_planning_run(store, run_id)
+    run_dir = store.run_dir(run_id)
+    _wipe_txn_dirs(run_dir)
+    outside = tmp_path / "outside-txn"
+    outside.mkdir()
+    _plant_symlinked_txn(run_dir, outside)
+    outside_before = _outside_names(outside)
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+        outside=outside,
+        outside_before=outside_before,
+    )
+

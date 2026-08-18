@@ -40,8 +40,12 @@ from top_down_planning.persistence.commit import (
 )
 from top_down_planning.persistence.snapshot import CanonicalRunSnapshot
 from top_down_planning.persistence.journal_schema import (
+    KNOWN_TXN_STATUSES,
     journal_file_entry_as_dict,
     parse_recovery_journal,
+)
+from top_down_planning.persistence.transaction_inspect import (
+    validate_run_transactions_for_recovery,
 )
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
@@ -107,11 +111,6 @@ _EMPTY_PRODUCTION: dict[str, Any] = {
     "blocker_report": None,
     "sub_tdps": None,
 }
-
-_KNOWN_TXN_STATUSES = frozenset(
-    {"prepared", "replacing", "appending_events", "committed"}
-)
-
 
 def _utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -1233,17 +1232,10 @@ class FileRunStore:
                 raise PersistenceError("retired transaction directory must not be a symlink")
             if retired_dir.is_dir():
                 shutil.rmtree(retired_dir, ignore_errors=True)
-        txn_dirs = [path for path in sorted(run_dir.glob(".txn-*")) if path.is_dir()]
-        if len(txn_dirs) > 1:
-            raise TransactionRecoveryError(
-                "multiple active transaction directories for run",
-                run_id=run_id,
-                txn_id="unknown",
-            )
-        for txn_dir in txn_dirs:
-            if txn_dir.is_symlink():
-                raise PersistenceError("transaction directory must not be a symlink")
-            self._recover_transaction_dir(run_id, run_dir, txn_dir)
+        txn_dir = validate_run_transactions_for_recovery(run_dir, run_id)
+        if txn_dir is None:
+            return
+        self._recover_transaction_dir(run_id, run_dir, txn_dir)
 
     def _recover_transaction_dir(
         self,
@@ -1270,7 +1262,7 @@ class FileRunStore:
         journal = self._read_transaction_journal(journal_path, run_id, txn_id)
         parsed = parse_recovery_journal(journal, run_id=run_id, expected_txn_id=txn_id)
         status = parsed.status
-        if status not in _KNOWN_TXN_STATUSES:
+        if status not in KNOWN_TXN_STATUSES:
             raise TransactionRecoveryError(
                 f"unknown transaction status: {status}",
                 run_id=run_id,

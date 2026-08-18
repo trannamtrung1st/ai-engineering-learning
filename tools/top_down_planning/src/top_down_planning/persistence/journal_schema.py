@@ -21,6 +21,9 @@ _KIND_CANONICAL_NAMES = {
     "invocation": "invocation.json",
 }
 _REQUIRED_JOURNAL_FIELDS = ("status", "files", "events", "backups", "replaced")
+KNOWN_TXN_STATUSES = frozenset(
+    {"prepared", "replacing", "appending_events", "committed"}
+)
 
 
 @dataclass(frozen=True)
