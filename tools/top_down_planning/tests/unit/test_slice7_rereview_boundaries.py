@@ -1150,3 +1150,115 @@ def test_doctor_treats_symlinked_transaction_dir_as_unrecoverable(
         outside_before=outside_before,
     )
 
+
+def _crash_after_committed_before_retire():
+    return patch.object(
+        FileRunStore,
+        "_retire_transaction_dir",
+        side_effect=OSError("simulated crash"),
+    )
+
+
+def _tamper_replaced_plan(run_dir: Path) -> None:
+    plan_path = run_dir / "plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["output_goal"] = "Tampered destination that recovery cannot republish."
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+
+def _tamper_events_prefix(run_dir: Path) -> None:
+    events_path = run_dir / "events.jsonl"
+    data = events_path.read_bytes()
+    events_path.write_bytes(b"x" + data[1:] if data else b"x")
+
+
+@pytest.mark.parametrize(
+    "crash",
+    [
+        lambda: patch(
+            "top_down_planning.persistence.file_store.atomic_write_json",
+            _crash_before_appending_events(),
+        ),
+        _crash_after_committed_before_retire,
+    ],
+)
+@pytest.mark.parametrize("tamper", [_tamper_replaced_plan, _tamper_events_prefix])
+def test_doctor_does_not_advertise_unrecoverable_committed_disk_state(
+    tmp_path: Path, crash, tamper
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111904-111904"
+    _create_planning_run(store, run_id)
+    with crash():
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    assert list(run_dir.glob(".txn-*"))
+    tamper(run_dir)
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
+
+def _leave_prepared_transaction(store: FileRunStore, run_id: str) -> Path:
+    with patch(
+        "top_down_planning.persistence.file_store.atomic_write_json",
+        _crash_on_replacing_status(),
+    ):
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    assert list(run_dir.glob(".txn-*"))
+    return run_dir
+
+
+def test_doctor_reports_prepared_transaction_when_canonical_artifacts_are_healthy(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111905-111905"
+    _create_planning_run(store, run_id)
+    _leave_prepared_transaction(store, run_id)
+    observed = _assert_doctor_not_corrupt(store, run_id)
+    workspace = observed["workspace_payload"]["workspace"]
+    assert run_id in workspace.get("recoverable_transaction_run_ids", [])
+    assert observed["targeted_payload"].get("recoverable_transaction") is True
+    assert observed["targeted"].exit_code == 0
+
+
+def _corrupt_resolved_config_in_place(run_dir: Path) -> None:
+    path = run_dir / "resolved-config.yaml"
+    payload = load_yaml(path.read_text(encoding="utf-8"))
+    payload["planning"]["max_depth"] = "bad"
+    path.write_text(dump_yaml(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "mutate_run_dir",
+    [
+        lambda run_dir: (run_dir / "plan.json").write_text("{not-json", encoding="utf-8"),
+        lambda run_dir: (run_dir / "invocation.json").write_text("[]", encoding="utf-8"),
+        lambda run_dir: (run_dir / "events.jsonl").write_text("{not-json\n", encoding="utf-8"),
+        _corrupt_resolved_config_in_place,
+    ],
+)
+def test_doctor_does_not_hide_canonical_corruption_behind_prepared_transaction(
+    tmp_path: Path, mutate_run_dir
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111906-111906"
+    _create_planning_run(store, run_id)
+    run_dir = _leave_prepared_transaction(store, run_id)
+    mutate_run_dir(run_dir)
+    observed_workspace = json.loads(
+        run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"]).stdout
+    )["workspace"]
+    assert run_id not in observed_workspace.get("recoverable_transaction_run_ids", [])
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+

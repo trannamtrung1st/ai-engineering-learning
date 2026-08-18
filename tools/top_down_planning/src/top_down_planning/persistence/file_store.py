@@ -41,11 +41,15 @@ from top_down_planning.persistence.commit import (
 from top_down_planning.persistence.snapshot import CanonicalRunSnapshot
 from top_down_planning.persistence.journal_schema import (
     KNOWN_TXN_STATUSES,
+    ParsedRecoveryJournal,
     journal_file_entry_as_dict,
     parse_recovery_journal,
 )
 from top_down_planning.persistence.transaction_inspect import (
+    journal_events_suffix_bytes,
+    require_committed_destinations,
     validate_run_transactions_for_recovery,
+    verify_events_append_recoverable,
 )
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
@@ -1305,9 +1309,7 @@ class FileRunStore:
                     self._ensure_events_appended(
                         run_id,
                         txn_id,
-                        journal_events,
-                        events_base_size=parsed.events_base_size,
-                        events_base_digest=parsed.events_base_digest,
+                        parsed,
                     )
                 self._retire_transaction_dir(run_dir, txn_dir)
                 return
@@ -1325,10 +1327,9 @@ class FileRunStore:
             return
 
         if status == "appending_events":
-            self._require_committed_staged_files(
+            require_committed_destinations(
                 run_dir,
-                staged_files,
-                replaced,
+                parsed,
                 run_id=run_id,
                 txn_id=txn_id,
             )
@@ -1336,18 +1337,15 @@ class FileRunStore:
                 self._ensure_events_appended(
                     run_id,
                     txn_id,
-                    journal_events,
-                    events_base_size=parsed.events_base_size,
-                    events_base_digest=parsed.events_base_digest,
+                    parsed,
                 )
             self._retire_transaction_dir(run_dir, txn_dir)
             return
 
         if status == "committed":
-            self._require_committed_staged_files(
+            require_committed_destinations(
                 run_dir,
-                staged_files,
-                replaced,
+                parsed,
                 run_id=run_id,
                 txn_id=txn_id,
             )
@@ -1355,9 +1353,7 @@ class FileRunStore:
                 self._ensure_events_appended(
                     run_id,
                     txn_id,
-                    journal_events,
-                    events_base_size=parsed.events_base_size,
-                    events_base_digest=parsed.events_base_digest,
+                    parsed,
                 )
             self._retire_transaction_dir(run_dir, txn_dir)
             return
@@ -1635,10 +1631,29 @@ class FileRunStore:
                 dest.unlink()
 
     def _journal_events_suffix_bytes(self, events: list[dict[str, Any]]) -> bytes:
-        return b"".join(
-            self._serialize_journal_event_line(dict(event)).encode("utf-8")
-            for event in events
+        return journal_events_suffix_bytes(events)
+
+    def _ensure_events_appended(
+        self,
+        run_id: str,
+        txn_id: str,
+        parsed: ParsedRecoveryJournal,
+    ) -> None:
+        if not parsed.events:
+            return
+
+        verify_events_append_recoverable(
+            self.run_dir(run_id),
+            parsed,
+            run_id=run_id,
+            txn_id=txn_id,
         )
+        events_path = self._events_path(run_id)
+        current = events_path.read_bytes() if events_path.is_file() else b""
+        expected_suffix = journal_events_suffix_bytes(parsed.events)
+        target = current[: parsed.events_base_size] + expected_suffix
+        if current != target:
+            self._atomically_publish_events_bytes(events_path, target)
 
     def _atomically_publish_events_bytes(self, events_path: Path, data: bytes) -> None:
         tmp_path = events_path.with_name(
@@ -1651,44 +1666,6 @@ class FileRunStore:
             tmp_path.replace(events_path)
         finally:
             tmp_path.unlink(missing_ok=True)
-
-    def _ensure_events_appended(
-        self,
-        run_id: str,
-        txn_id: str,
-        journal_events: list[dict[str, Any]],
-        *,
-        events_base_size: int = 0,
-        events_base_digest: str = "",
-    ) -> None:
-        if not journal_events:
-            return
-
-        self._verify_events_journal_boundary(
-            run_id,
-            txn_id,
-            events_base_size=events_base_size,
-            events_base_digest=events_base_digest,
-        )
-
-        events_path = self._events_path(run_id)
-        current = events_path.read_bytes() if events_path.is_file() else b""
-        expected_suffix = self._journal_events_suffix_bytes(journal_events)
-        target = current[:events_base_size] + expected_suffix
-        if len(current) > len(target):
-            raise TransactionRecoveryError(
-                "transaction event suffix exceeds journaled batch",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-        if not target.startswith(current):
-            raise TransactionRecoveryError(
-                "transaction event suffix mismatch",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-        if current != target:
-            self._atomically_publish_events_bytes(events_path, target)
 
     def _require_committed_staged_files(
         self,

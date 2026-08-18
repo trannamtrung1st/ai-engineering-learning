@@ -24,8 +24,7 @@ from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.path_containment import lexical_run_dir
 from top_down_planning.persistence.transaction_inspect import (
-    classify_run_transactions,
-    list_txn_candidate_dirs,
+    inspect_run_transactions,
 )
 
 _RUN_DIR_PATTERN = re.compile(r"^run-\d{8}T\d{6}-[0-9a-f]{6}$")
@@ -261,12 +260,49 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
     return removed
 
 
-def diagnose_canonical_run(run_dir: Path, run_id: str) -> dict[str, Any]:
-    """Non-mutating, commit-lock-aware classification of a run directory."""
+def _canonical_artifact_exceptions() -> tuple[type[BaseException], ...]:
+    return (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        PersistenceError,
+        TypeError,
+        ValueError,
+    )
 
+
+def _diagnose_run_contents(run_dir: Path, run_id: str) -> dict[str, Any]:
     from top_down_planning.persistence.persisted_validation import (
         validate_canonical_run_artifacts,
     )
+
+    try:
+        inspected = inspect_run_transactions(run_dir, run_id)
+    except _canonical_artifact_exceptions():
+        return {"kind": "corrupt"}
+    if inspected is not None:
+        if inspected.parsed.status == "prepared":
+            try:
+                if run_dir.is_symlink() or not run_dir.is_dir():
+                    raise PersistenceError("run directory must not be a symlink")
+                validate_canonical_run_artifacts(run_dir, run_id)
+            except _canonical_artifact_exceptions():
+                return {"kind": "corrupt"}
+        return {
+            "kind": "recoverable",
+            "transaction_dirs": [f"{run_id}/{inspected.txn_dir.name}"],
+        }
+    try:
+        if run_dir.is_symlink() or not run_dir.is_dir():
+            raise PersistenceError("run directory must not be a symlink")
+        run = validate_canonical_run_artifacts(run_dir, run_id)
+    except _canonical_artifact_exceptions():
+        return {"kind": "corrupt"}
+    return {"kind": "ok", "run": run}
+
+
+def diagnose_canonical_run(run_dir: Path, run_id: str) -> dict[str, Any]:
+    """Non-mutating, commit-lock-aware classification of a run directory."""
 
     try:
         lexical_run_dir(run_dir.parent, run_id)
@@ -277,29 +313,7 @@ def diagnose_canonical_run(run_dir: Path, run_id: str) -> dict[str, Any]:
     with try_exclusive_file_lock(lock_path) as acquired:
         if not acquired:
             return {"kind": "busy"}
-        presence = classify_run_transactions(run_dir, run_id)
-        if presence == "recoverable":
-            txn_dirs = list_txn_candidate_dirs(run_dir)
-            return {
-                "kind": "recoverable",
-                "transaction_dirs": [f"{run_id}/{path.name}" for path in txn_dirs],
-            }
-        if presence == "unrecoverable":
-            return {"kind": "corrupt"}
-        try:
-            if run_dir.is_symlink() or not run_dir.is_dir():
-                raise PersistenceError("run directory must not be a symlink")
-            run = validate_canonical_run_artifacts(run_dir, run_id)
-        except (
-            OSError,
-            json.JSONDecodeError,
-            UnicodeDecodeError,
-            PersistenceError,
-            TypeError,
-            ValueError,
-        ):
-            return {"kind": "corrupt"}
-        return {"kind": "ok", "run": run}
+        return _diagnose_run_contents(run_dir, run_id)
 
 
 def recover_abandoned_transactions(store: RunStore) -> list[str]:
@@ -327,8 +341,8 @@ def recover_abandoned_transactions(store: RunStore) -> list[str]:
         with try_exclusive_file_lock(lock_path) as acquired:
             if not acquired:
                 continue
-            presence = classify_run_transactions(lexical, run_id)
-        if presence != "recoverable":
+            presence = _diagnose_run_contents(lexical, run_id)
+        if str(presence.get("kind") or "") != "recoverable":
             continue
         recover(run_id)
         recovered.append(run_id)

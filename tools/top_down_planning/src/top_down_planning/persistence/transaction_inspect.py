@@ -3,21 +3,36 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from core_tools.persistence import PersistenceError, TransactionRecoveryError
+from core_tools.persistence import (
+    PersistenceError,
+    TransactionRecoveryError,
+    digest_bytes,
+    digest_file,
+)
 
 from top_down_planning.persistence.journal_schema import (
     KNOWN_TXN_STATUSES,
+    JournalFileEntry,
+    ParsedRecoveryJournal,
     parse_recovery_journal,
 )
 from top_down_planning.persistence.path_containment import (
+    lexical_run_owned_path,
     lexical_txn_owned_path,
     validate_journal_basename,
 )
 
 TransactionPresence = Literal["none", "recoverable", "unrecoverable"]
+
+
+@dataclass(frozen=True)
+class InspectedRunTransactions:
+    txn_dir: Path
+    parsed: ParsedRecoveryJournal
 
 
 def list_txn_candidate_dirs(run_dir: Path) -> list[Path]:
@@ -50,6 +65,118 @@ def _txn_backup_path(txn_dir: Path, name: str) -> Path:
 def _txn_staged_path(txn_dir: Path, name: str) -> Path:
     validated_name = validate_journal_basename(name, label="staged file name")
     return lexical_txn_owned_path(txn_dir, txn_dir / validated_name)
+
+
+def destination_for_journal_entry(run_dir: Path, entry: JournalFileEntry) -> Path:
+    """Return the canonical destination for a journaled staged file."""
+
+    if entry.kind == "review":
+        return lexical_run_owned_path(
+            run_dir,
+            run_dir / "reviews" / f"{entry.review_id}.json",
+        )
+    if entry.kind == "artifact":
+        return lexical_run_owned_path(
+            run_dir,
+            run_dir / "artifacts" / str(entry.snapshot_id) / str(entry.filename),
+        )
+    return lexical_run_owned_path(run_dir, run_dir / entry.name)
+
+
+def journal_events_suffix_bytes(events: list[dict]) -> bytes:
+    """Serialize journaled events the same way commit recovery appends them."""
+
+    return b"".join(
+        (json.dumps(dict(event), sort_keys=True) + "\n").encode("utf-8")
+        for event in events
+    )
+
+
+def require_committed_destinations(
+    run_dir: Path,
+    parsed: ParsedRecoveryJournal,
+    *,
+    run_id: str,
+    txn_id: str,
+) -> None:
+    """Require every published destination to exist and match its journal digest."""
+
+    names = {entry.name for entry in parsed.files}
+    if set(parsed.replaced) != names:
+        raise TransactionRecoveryError(
+            "transaction journal replaced must include every staged file",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    if not parsed.files:
+        return
+    for entry in parsed.files:
+        dest = destination_for_journal_entry(run_dir, entry)
+        if not dest.is_file() or digest_file(dest) != entry.digest:
+            raise TransactionRecoveryError(
+                "canonical destination digest mismatch for staged transaction file",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+
+
+def verify_events_append_recoverable(
+    run_dir: Path,
+    parsed: ParsedRecoveryJournal,
+    *,
+    run_id: str,
+    txn_id: str,
+) -> None:
+    """Require the current event log to be a recoverable prefix of the journaled batch."""
+
+    if not parsed.events:
+        return
+    events_path = lexical_run_owned_path(run_dir, run_dir / "events.jsonl")
+    events_base_size = parsed.events_base_size
+    events_base_digest = parsed.events_base_digest
+    if events_base_size == 0 and events_base_digest == digest_bytes(b""):
+        if events_path.is_file() and events_path.stat().st_size > 0:
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        current = b""
+    else:
+        if not events_path.is_file():
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        current = events_path.read_bytes()
+        if len(current) < events_base_size:
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        prefix = current[:events_base_size]
+        if digest_bytes(prefix) != events_base_digest:
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+    expected_suffix = journal_events_suffix_bytes(parsed.events)
+    target = current[:events_base_size] + expected_suffix
+    if len(current) > len(target):
+        raise TransactionRecoveryError(
+            "transaction event suffix exceeds journaled batch",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    if not target.startswith(current):
+        raise TransactionRecoveryError(
+            "transaction event suffix mismatch",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
 
 
 def _read_transaction_journal(
@@ -87,8 +214,11 @@ def _read_transaction_journal(
     return payload
 
 
-def validate_run_transactions_for_recovery(run_dir: Path, run_id: str) -> Path | None:
-    """Raise if transaction state is unrecoverable. Return the txn dir or None."""
+def inspect_run_transactions(
+    run_dir: Path,
+    run_id: str,
+) -> InspectedRunTransactions | None:
+    """Return the recoverable transaction, or None. Raise if unrecoverable."""
 
     txn_dirs = list_txn_candidate_dirs(run_dir)
     if not txn_dirs:
@@ -141,14 +271,34 @@ def validate_run_transactions_for_recovery(run_dir: Path, run_id: str) -> Path |
                 run_id=run_id,
                 txn_id=txn_id,
             )
-    return txn_dir
+    if parsed.status in {"appending_events", "committed"}:
+        require_committed_destinations(
+            run_dir,
+            parsed,
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+        verify_events_append_recoverable(
+            run_dir,
+            parsed,
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    return InspectedRunTransactions(txn_dir=txn_dir, parsed=parsed)
+
+
+def validate_run_transactions_for_recovery(run_dir: Path, run_id: str) -> Path | None:
+    """Raise if transaction state is unrecoverable. Return the txn dir or None."""
+
+    inspected = inspect_run_transactions(run_dir, run_id)
+    return None if inspected is None else inspected.txn_dir
 
 
 def classify_run_transactions(run_dir: Path, run_id: str) -> TransactionPresence:
     """Classify incomplete transactions without mutating the run directory."""
 
     try:
-        txn_dir = validate_run_transactions_for_recovery(run_dir, run_id)
+        inspected = inspect_run_transactions(run_dir, run_id)
     except (
         OSError,
         json.JSONDecodeError,
@@ -158,4 +308,4 @@ def classify_run_transactions(run_dir: Path, run_id: str) -> TransactionPresence
         ValueError,
     ):
         return "unrecoverable"
-    return "none" if txn_dir is None else "recoverable"
+    return "none" if inspected is None else "recoverable"
