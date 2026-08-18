@@ -25,7 +25,7 @@ from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.path_containment import lexical_run_dir
 from top_down_planning.persistence.transaction_inspect import (
     inspect_run_transactions,
-    in_flight_relative_paths,
+    materialize_post_recovery_canonical_overlay,
 )
 
 _RUN_DIR_PATTERN = re.compile(r"^run-\d{8}T\d{6}-[0-9a-f]{6}$")
@@ -285,11 +285,8 @@ def _diagnose_run_contents(run_dir: Path, run_id: str) -> dict[str, Any]:
         try:
             if run_dir.is_symlink() or not run_dir.is_dir():
                 raise PersistenceError("run directory must not be a symlink")
-            validate_canonical_run_artifacts(
-                run_dir,
-                run_id,
-                skip_relative_paths=in_flight_relative_paths(run_dir, inspected.parsed),
-            )
+            overlay = materialize_post_recovery_canonical_overlay(run_dir, inspected)
+            validate_canonical_run_artifacts(run_dir, run_id, overlay=overlay)
         except _canonical_artifact_exceptions():
             return {"kind": "corrupt"}
         return {

@@ -202,23 +202,143 @@ def recovery_commits_forward(run_dir: Path, parsed: ParsedRecoveryJournal) -> bo
     return parsed.status == "replacing" and replaced_destinations_match(run_dir, parsed)
 
 
-def in_flight_relative_paths(run_dir: Path, parsed: ParsedRecoveryJournal) -> frozenset[str]:
-    """Canonical paths whose on-disk state is explained by the pending transaction."""
+_CORE_CANONICAL_RELATIVES = (
+    "run.json",
+    "plan.json",
+    "production.json",
+    "resolved-config.yaml",
+    "invocation.json",
+)
 
-    skipped: set[str] = set()
-    if parsed.status != "prepared":
-        replaced = set(parsed.replaced)
-        for entry in parsed.files:
-            dest = destination_for_journal_entry(run_dir, entry)
-            relative = dest.relative_to(run_dir).as_posix()
-            if entry.name in replaced:
-                skipped.add(relative)
-                continue
-            if dest.is_file() and digest_file(dest) == entry.digest:
-                skipped.add(relative)
-    if recovery_commits_forward(run_dir, parsed):
-        skipped.add("events.jsonl")
-    return frozenset(skipped)
+
+def _rollback_journal_names(run_dir: Path, parsed: ParsedRecoveryJournal) -> set[str]:
+    names = {str(name) for name in parsed.replaced}
+    for entry in parsed.files:
+        dest = destination_for_journal_entry(run_dir, entry)
+        if dest.is_file() and digest_file(dest) == entry.digest:
+            names.add(entry.name)
+    return names
+
+
+def _read_contained_file_bytes(run_dir: Path, relative: str) -> bytes | None:
+    dest = lexical_run_owned_path(run_dir, run_dir / relative)
+    if dest.is_symlink():
+        raise PersistenceError(f"{relative} must not be a symlink")
+    if not dest.is_file():
+        return None
+    return dest.read_bytes()
+
+
+def _bytes_for_journal_entry(
+    run_dir: Path,
+    txn_dir: Path,
+    entry: JournalFileEntry,
+    *,
+    commit_forward: bool,
+    rollback_names: set[str],
+) -> bytes | None:
+    dest = destination_for_journal_entry(run_dir, entry)
+    if commit_forward:
+        if dest.is_file() and digest_file(dest) == entry.digest:
+            return dest.read_bytes()
+        staged = _txn_staged_path(txn_dir, entry.name)
+        if staged.is_file():
+            return staged.read_bytes()
+        raise PersistenceError(f"transaction staged file missing: {entry.name}")
+    if entry.name in rollback_names:
+        backup = _txn_backup_path(txn_dir, entry.name)
+        if backup.is_file():
+            return backup.read_bytes()
+        return None
+    return dest.read_bytes() if dest.is_file() else None
+
+
+def _post_recovery_events_bytes(
+    run_dir: Path,
+    parsed: ParsedRecoveryJournal,
+    *,
+    commit_forward: bool,
+) -> bytes | None:
+    events_path = lexical_run_owned_path(run_dir, run_dir / "events.jsonl")
+    if events_path.is_symlink():
+        raise PersistenceError("events.jsonl must not be a symlink")
+    if commit_forward and parsed.events:
+        current = events_path.read_bytes() if events_path.is_file() else b""
+        prefix = current[: parsed.events_base_size]
+        return prefix + journal_events_suffix_bytes(parsed.events)
+    if not events_path.is_file():
+        return None
+    return events_path.read_bytes()
+
+
+def materialize_post_recovery_canonical_overlay(
+    run_dir: Path,
+    inspected: InspectedRunTransactions,
+) -> dict[str, bytes]:
+    """Return the canonical bytes recovery would leave, without mutating the run."""
+
+    parsed = inspected.parsed
+    txn_dir = inspected.txn_dir
+    commit_forward = recovery_commits_forward(run_dir, parsed)
+    rollback_names = set() if commit_forward else _rollback_journal_names(run_dir, parsed)
+    entry_by_relative: dict[str, JournalFileEntry] = {}
+    for entry in parsed.files:
+        dest = destination_for_journal_entry(run_dir, entry)
+        entry_by_relative[dest.relative_to(run_dir).as_posix()] = entry
+
+    overlay: dict[str, bytes] = {}
+    for relative in _CORE_CANONICAL_RELATIVES:
+        entry = entry_by_relative.get(relative)
+        data = (
+            _bytes_for_journal_entry(
+                run_dir,
+                txn_dir,
+                entry,
+                commit_forward=commit_forward,
+                rollback_names=rollback_names,
+            )
+            if entry is not None
+            else _read_contained_file_bytes(run_dir, relative)
+        )
+        if data is not None:
+            overlay[relative] = data
+
+    events_bytes = _post_recovery_events_bytes(
+        run_dir,
+        parsed,
+        commit_forward=commit_forward,
+    )
+    if events_bytes is not None:
+        overlay["events.jsonl"] = events_bytes
+
+    review_relatives: set[str] = set()
+    reviews_dir = lexical_run_owned_path(run_dir, run_dir / "reviews")
+    if reviews_dir.exists():
+        if reviews_dir.is_symlink():
+            raise PersistenceError("reviews must not be a symlink")
+        if not reviews_dir.is_dir():
+            raise PersistenceError("reviews must be a directory")
+        for review_path in reviews_dir.glob("*.json"):
+            review_relatives.add(review_path.relative_to(run_dir).as_posix())
+    for relative, entry in entry_by_relative.items():
+        if entry.kind == "review":
+            review_relatives.add(relative)
+    for relative in review_relatives:
+        entry = entry_by_relative.get(relative)
+        data = (
+            _bytes_for_journal_entry(
+                run_dir,
+                txn_dir,
+                entry,
+                commit_forward=commit_forward,
+                rollback_names=rollback_names,
+            )
+            if entry is not None
+            else _read_contained_file_bytes(run_dir, relative)
+        )
+        if data is not None:
+            overlay[relative] = data
+    return overlay
 
 
 def _read_transaction_journal(

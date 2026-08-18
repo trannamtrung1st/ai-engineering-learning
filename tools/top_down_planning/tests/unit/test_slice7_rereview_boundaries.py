@@ -17,6 +17,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.package.digests import compute_package_digest
 from top_down_planning.persistence import FileRunStore, PersistenceError
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
     compute_config_execution_digest,
@@ -27,6 +28,7 @@ from tests.helpers import create_run_kwargs, minimal_resolved_config, write_conf
 from tests.unit.test_commit_crash_recovery import (
     _crash_after_dest_replace_count,
     _crash_before_appending_events,
+    _crash_before_dest_replace_count,
     _crash_on_appending_events_journal_write,
     _multi_file_commit,
 )
@@ -1370,4 +1372,140 @@ def test_doctor_does_not_hide_unrelated_corruption_behind_in_flight_transaction(
         run_id,
         evidence_dir=run_dir,
     )
+
+
+def _mutate_unbound_config_max_depth(run_dir: Path) -> None:
+    path = run_dir / "resolved-config.yaml"
+    payload = load_yaml(path.read_text(encoding="utf-8"))
+    current = payload["planning"]["max_depth"]
+    payload["planning"]["max_depth"] = 9 if current != 9 else 3
+    path.write_text(dump_yaml(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize("status, crash", _in_flight_transaction_crashes())
+def test_doctor_does_not_hide_unbound_config_digest_behind_in_flight_transaction(
+    tmp_path: Path, status, crash
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111910-111910"
+    _create_planning_run(store, run_id)
+    with crash():
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    journal = json.loads(
+        next(run_dir.glob(".txn-*")).joinpath("journal.json").read_text(encoding="utf-8")
+    )
+    assert journal["status"] == status
+    staged_names = [entry["name"] for entry in journal["files"]]
+    assert "run.json" in staged_names
+    assert "plan.json" in staged_names
+    assert "resolved-config.yaml" not in staged_names
+    _mutate_unbound_config_max_depth(run_dir)
+    observed_workspace = json.loads(
+        run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"]).stdout
+    )["workspace"]
+    assert run_id not in observed_workspace.get("recoverable_transaction_run_ids", [])
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
+
+def _run_plan_invocation_commit(store: FileRunStore, run_id: str) -> None:
+    from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_plan_update
+
+    run = store.load_run(run_id)
+    plan = store.load_plan(run_id)
+    invocation = dict(store.load_invocation(run_id))
+    run_expected = int(run["revision"])
+    plan_expected = int(plan["revision"])
+    plan = dict(plan)
+    plan["revision"] = plan_expected + 1
+    run = bind_run_digests_for_plan_update(
+        {**dict(run), "revision": run_expected + 1},
+        plan,
+    )
+    invocation["stream_json"] = not bool(invocation.get("stream_json"))
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=run_expected,
+            plan=plan,
+            plan_expected_revision=plan_expected,
+            invocation=invocation,
+            events=[{"type": "test_commit", "run_id": run_id}],
+        ),
+    )
+
+
+def _leave_partial_replacing_run_plan_before_invocation(
+    store: FileRunStore, run_id: str
+) -> Path:
+    with patch.object(Path, "replace", _crash_before_dest_replace_count(3)):
+        with pytest.raises(OSError, match="simulated crash"):
+            _run_plan_invocation_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    txn_dirs = list(run_dir.glob(".txn-*"))
+    assert txn_dirs
+    journal = json.loads((txn_dirs[0] / "journal.json").read_text(encoding="utf-8"))
+    assert journal["status"] == "replacing"
+    staged_names = [entry["name"] for entry in journal["files"]]
+    assert staged_names == ["run.json", "plan.json", "invocation.json"]
+    assert journal["replaced"] == ["run.json", "plan.json"]
+    return run_dir
+
+
+def test_doctor_treats_rollback_txn_as_recoverable_when_in_flight_plan_is_malformed(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111911-111911"
+    _create_planning_run(store, run_id)
+    prior_plan = json.loads(
+        (store.run_dir(run_id) / "plan.json").read_text(encoding="utf-8")
+    )
+    run_dir = _leave_partial_replacing_run_plan_before_invocation(store, run_id)
+    (run_dir / "plan.json").write_text("{not-json", encoding="utf-8")
+
+    clone_root = tmp_path / "clone-runs"
+    shutil.copytree(store.root, clone_root)
+    clone_store = FileRunStore(clone_root)
+    clone_store.recover_incomplete_transactions(run_id)
+    clone_dir = clone_store.run_dir(run_id)
+    restored = json.loads((clone_dir / "plan.json").read_text(encoding="utf-8"))
+    assert restored == prior_plan
+    assert not list(clone_dir.glob(".txn-*"))
+
+    observed = _assert_doctor_not_corrupt(store, run_id)
+    workspace = observed["workspace_payload"]["workspace"]
+    assert run_id in workspace.get("recoverable_transaction_run_ids", [])
+    assert observed["targeted_payload"].get("recoverable_transaction") is True
+    assert observed["targeted"].exit_code == 0
+    assert list(run_dir.glob(".txn-*"))
+
+    fixed = run_cli(
+        ["doctor", "--fix", "--runs-dir", str(store.root), "--stream-json"]
+    )
+    assert fixed.exit_code == 0
+    assert "Traceback" not in fixed.stderr
+    assert run_id not in json.loads(fixed.stdout)["workspace"]["corrupt_run_dirs"]
+    assert not list(run_dir.glob(".txn-*"))
+    targeted_fix = run_cli(
+        [
+            "doctor",
+            "--fix",
+            "--run",
+            run_id,
+            "--runs-dir",
+            str(store.root),
+            "--stream-json",
+        ]
+    )
+    assert targeted_fix.exit_code == 0
+    assert json.loads(targeted_fix.stdout).get("error", {}).get("code") != "corrupt_run"
+    _assert_doctor_run_healthy(store, run_id)
+    assert json.loads((run_dir / "plan.json").read_text(encoding="utf-8")) == prior_plan
 
