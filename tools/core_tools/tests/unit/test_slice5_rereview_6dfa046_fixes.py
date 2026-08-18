@@ -61,6 +61,26 @@ def _assistant(text: str) -> str:
     )
 
 
+def _wait_until_complete_lines(
+    iterator: _SubprocessStdoutIterator,
+    count: int,
+    *,
+    timeout: float = 2.0,
+) -> None:
+    """Block until ``count`` newline-terminated records are in the stdout buffer.
+
+    ``wait_readable`` returns as soon as *one* complete line exists, so a follow-up
+    ``wait_readable(0.0)`` can miss later pipe chunks still in flight (Darwin).
+    """
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if iterator._stdout_buf.count(b"\n") >= count:
+            return
+        iterator._fill_stdout_buffer(0.05)
+    assert iterator._stdout_buf.count(b"\n") >= count
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 @pytest.mark.parametrize("size", [4095, 4096, 4097, 8192, 16384])
 def test_zero_budget_drains_all_readable_bytes(tmp_path: Path, size: int) -> None:
@@ -74,10 +94,7 @@ def test_zero_budget_drains_all_readable_bytes(tmp_path: Path, size: int) -> Non
     )
     iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
     try:
-        deadline = time.monotonic() + 1.0
-        while time.monotonic() < deadline:
-            if iterator.wait_readable(0.05):
-                break
+        _wait_until_complete_lines(iterator, 2)
         assert iterator.wait_readable(0.0) is True
         first = iterator._pop_complete_line()
         assert first is not None
@@ -124,9 +141,7 @@ def test_zero_budget_preserves_multiple_buffered_lines(tmp_path: Path) -> None:
     )
     iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
     try:
-        deadline = time.monotonic() + 1.0
-        while time.monotonic() < deadline and not iterator.wait_readable(0.05):
-            pass
+        _wait_until_complete_lines(iterator, 3)
         popped = []
         for _ in range(3):
             assert iterator.wait_readable(0.0) is True
