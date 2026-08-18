@@ -34,6 +34,16 @@ def validate_resolved_config_against_package(
 ) -> None:
     """Reject semantic config drift before creating prepared execution runs."""
 
+    from top_down_planning.config import ConfigError, validate_persisted_resolved_config
+
+    try:
+        validate_persisted_resolved_config(resolved)
+    except ConfigError as exc:
+        raise ExecutionPackageError(
+            str(exc),
+            code="package_config_invalid",
+        ) from exc
+
     context = package.manifest.get("context")
     if not isinstance(context, dict):
         raise ExecutionPackageError(
@@ -111,12 +121,20 @@ def _load_package_snapshot_binding(package: LoadedExecutionPackage) -> dict[str,
         )
     try:
         stored_binding = json.loads(binding_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ExecutionPackageError(
             f"context_snapshot_binding file unreadable: {binding_rel}",
             code="package_context_incomplete",
         ) from exc
-    validate_context_snapshot_binding(stored_binding)
+    from core_tools.persistence import PersistenceError
+
+    try:
+        validate_context_snapshot_binding(stored_binding)
+    except PersistenceError as exc:
+        raise ExecutionPackageError(
+            str(exc),
+            code="package_snapshot_binding_invalid",
+        ) from exc
     expected_snapshot = str(context.get("context_snapshot_digest") or "")
     stored_digest = compute_context_snapshot_digest_from_payload(stored_binding)
     if expected_snapshot and stored_digest != expected_snapshot:

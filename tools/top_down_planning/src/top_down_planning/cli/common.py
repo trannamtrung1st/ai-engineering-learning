@@ -273,6 +273,8 @@ def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
             stream_json=stream_json,
             code="corrupt_run",
         )
+    if isinstance(exc, OSError):
+        emit_operational_error(exc, stream_json=stream_json)
     raise exc
 
 

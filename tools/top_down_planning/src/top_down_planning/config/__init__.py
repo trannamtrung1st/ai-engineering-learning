@@ -67,6 +67,7 @@ from top_down_planning.config.resolve import (
     is_presentation_config_path,
     resolve_config,
     resolve_output_goal_text,
+    validate_persisted_resolved_config,
     validate_presentation_config,
     validate_resolved_config_schema,
 )
@@ -187,6 +188,7 @@ __all__ = [
     "is_allowed_presentation_override_path",
     "is_presentation_config_path",
     "validate_guidance_for_binding",
+    "validate_persisted_resolved_config",
     "validate_presentation_config",
     "validate_resolved_config_schema",
 ]

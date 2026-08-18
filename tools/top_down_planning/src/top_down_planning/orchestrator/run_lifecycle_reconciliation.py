@@ -260,7 +260,9 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
     """Summarize workspace-level run store hygiene issues."""
 
     from core_tools.persistence import PersistenceError
-    from top_down_planning.persistence.persisted_validation import validate_canonical_run
+    from top_down_planning.persistence.persisted_validation import (
+        validate_canonical_run_artifacts,
+    )
 
     incomplete_run_dirs = list_incomplete_run_dirs(store)
     staging_run_dirs = list_staging_run_dirs(store)
@@ -274,17 +276,16 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
         root_path = Path(root)
         if root_path.is_dir():
             for entry in sorted(root_path.iterdir()):
-                run_json = entry / "run.json"
-                if not entry.is_dir() or not run_json.is_file():
-                    continue
                 run_id = entry.name
                 if not _RUN_DIR_PATTERN.match(run_id):
                     continue
                 try:
-                    run = json.loads(run_json.read_text(encoding="utf-8"))
-                    if not isinstance(run, dict):
-                        raise PersistenceError("run.json must contain a JSON object")
-                    validate_canonical_run(run_id, run)
+                    if entry.is_symlink() or not entry.is_dir():
+                        raise PersistenceError("run directory must not be a symlink")
+                    run_json = entry / "run.json"
+                    if not run_json.is_file() and not run_json.is_symlink():
+                        continue
+                    run = validate_canonical_run_artifacts(entry, run_id)
                 except (
                     OSError,
                     json.JSONDecodeError,

@@ -239,6 +239,13 @@ def _handle_doctor_command(args: Namespace, store) -> None:
         return
 
     run_id = str(args.run)
+    from top_down_planning.persistence.persisted_validation import (
+        validate_canonical_run_artifacts,
+    )
+
+    lexical_run_dir = store.root / run_id
+    if lexical_run_dir.exists() or lexical_run_dir.is_symlink():
+        validate_canonical_run_artifacts(lexical_run_dir, run_id)
     repair_refused: str | None = None
     reconciled = False
     repair_incomplete = False

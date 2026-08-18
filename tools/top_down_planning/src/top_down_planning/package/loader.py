@@ -78,6 +78,63 @@ def _load_json(path: Path) -> Any:
             f"invalid JSON in {path.name}: {exc}",
             code="package_json_invalid",
         ) from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ExecutionPackageError(
+            f"unreadable package file {path.name}: {exc}",
+            code="package_json_invalid",
+        ) from exc
+
+
+def _require_package_int(value: Any, *, field: str) -> int:
+    try:
+        if isinstance(value, bool) or value is None:
+            raise ValueError(field)
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ExecutionPackageError(
+            f"{field} must be an integer",
+            code="package_field_invalid",
+        ) from exc
+
+
+def load_package_context_snapshot_binding(
+    package_dir: Path, context: dict[str, Any]
+) -> dict[str, Any]:
+    """Load and schema-validate the package snapshot binding file."""
+
+    from core_tools.persistence import PersistenceError
+    from top_down_planning.config.binding_validation import (
+        validate_context_snapshot_binding,
+    )
+
+    binding_rel = str(context.get("context_snapshot_binding_file") or "").strip()
+    if not binding_rel:
+        raise ExecutionPackageError(
+            "prepared package missing context_snapshot_binding_file",
+            code="package_context_incomplete",
+        )
+    binding_path = _contained_package_path(
+        package_dir, binding_rel, label="context snapshot binding"
+    )
+    if not binding_path.is_file():
+        raise ExecutionPackageError(
+            f"context_snapshot_binding file missing: {binding_rel}",
+            code="package_context_incomplete",
+        )
+    stored_binding = _load_json(binding_path)
+    try:
+        validate_context_snapshot_binding(stored_binding)
+    except PersistenceError as exc:
+        raise ExecutionPackageError(
+            str(exc),
+            code="package_snapshot_binding_invalid",
+        ) from exc
+    if not isinstance(stored_binding, dict):
+        raise ExecutionPackageError(
+            "context_snapshot_binding must be an object",
+            code="package_snapshot_binding_invalid",
+        )
+    return stored_binding
 
 
 class ExecutionPackageLoader:
@@ -118,7 +175,9 @@ class ExecutionPackageLoader:
         manifest = _load_json(manifest_path)
         if not isinstance(manifest, dict):
             raise ExecutionPackageError("manifest.json must be an object")
-        if int(manifest.get("schema_version") or 0) != 1:
+        if _require_package_int(
+            manifest.get("schema_version") or 0, field="schema_version"
+        ) != 1:
             raise ExecutionPackageError(
                 "unsupported package schema_version",
                 code="package_schema_unsupported",
@@ -177,7 +236,9 @@ class ExecutionPackageLoader:
                 raise ExecutionPackageError("unit_id must be non-empty")
             if unit_id in units:
                 raise ExecutionPackageError(f"duplicate unit_id: {unit_id!r}")
-            ordinal = int(raw_unit.get("ordinal") or 0)
+            ordinal = _require_package_int(
+                raw_unit.get("ordinal") or 0, field=f"unit {unit_id} ordinal"
+            )
             if ordinal in seen_ordinals:
                 raise ExecutionPackageError(f"duplicate unit ordinal: {ordinal}")
             seen_ordinals.add(ordinal)
@@ -287,6 +348,15 @@ class ExecutionPackageLoader:
         loaded_config = _load_json(config_path)
         if not isinstance(loaded_config, dict):
             raise ExecutionPackageError("execution resolved_config must be an object")
+        from top_down_planning.config import ConfigError, validate_persisted_resolved_config
+
+        try:
+            validate_persisted_resolved_config(loaded_config)
+        except ConfigError as exc:
+            raise ExecutionPackageError(
+                str(exc),
+                code="package_config_invalid",
+            ) from exc
         resolved_config = loaded_config
 
         planning_run = manifest.get("planning_run")
@@ -366,7 +436,12 @@ class ExecutionPackageLoader:
         if (
             approved_plan_revision is not None
             and target_revision is not None
-            and int(target_revision) != int(approved_plan_revision)
+            and _require_package_int(
+                target_revision, field="inherited_plan_approval.target_revision"
+            )
+            != _require_package_int(
+                approved_plan_revision, field="planning_run.approved_plan_revision"
+            )
         ):
             raise ExecutionPackageError(
                 "inherited_plan_approval target_revision mismatch",
@@ -376,6 +451,7 @@ class ExecutionPackageLoader:
         context = manifest.get("context")
         if not isinstance(context, dict):
             raise ExecutionPackageError("manifest.context is required")
+        load_package_context_snapshot_binding(package_dir, context)
         input_refs = context.get("input_refs")
         if not isinstance(input_refs, dict) or not isinstance(
             input_refs.get("refs"), list

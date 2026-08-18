@@ -37,6 +37,7 @@ __all__ = [
     "is_presentation_config_path",
     "resolve_config",
     "resolve_output_goal_text",
+    "validate_persisted_resolved_config",
     "validate_presentation_config",
     "validate_resolved_config_schema",
 ]
@@ -367,6 +368,20 @@ def _validate_revise_at_config(config: dict[str, Any]) -> None:
             section.get("revise_at"),
             path=f"review.{review_type}.revise_at",
         )
+
+
+def validate_persisted_resolved_config(config: dict[str, Any]) -> None:
+    """Validate stored resolved config without mutating or normalizing it."""
+
+    if not isinstance(config, dict):
+        raise ConfigError("resolved config must be a mapping")
+    snapshot = copy.deepcopy(config)
+    _validate_agent_context_roles(snapshot)
+    _validate_context_snapshot(snapshot)
+    _validate_revise_at_config(snapshot)
+    validate_presentation_config(snapshot)
+    validate_execution_config(snapshot)
+    validate_resolved_config_schema(snapshot)
 
 
 def finalize_resolved_config(

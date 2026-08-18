@@ -252,88 +252,91 @@ def handle_execute_command(args: Namespace) -> None:
         )
         return
 
-    run_id = run_factory.create_parent_run(
-        store,
-        package,
-        resolved_config=resolved,
-        invocation=invocation_dict,
-    )
-    parent_run = store.load_run(run_id)
-    binding = parent_run.get("package_binding") or {}
-    persisted_manifest = str(binding.get("manifest_path") or package.manifest_path)
-    production = store.load_production(run_id)
-    state = initial_sub_tdp_state_from_package(
-        package.manifest,
-        manifest_path=persisted_manifest,
-        units=[
-            SubTdpUnit(
-                plan_item_id=unit.unit_id,
-                title=unit.title,
-                outcome="",
-                directory=unit.plan_file.parent.name,
-                ordinal=unit.ordinal,
-            )
-            for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
-        ],
-        package_units=package.units,
-    )
-    merged = merge_sub_tdp_state_into_production(production, state)
-    expected_revision = int(production["revision"])
-    merged["revision"] = expected_revision + 1
-    store.save_production(run_id, merged, expected_revision)
-
-    if parent_only:
-        # Enter sub_tdps without driving children so attach can bind independently
-        # executed units. Pause the parent to prevent concurrent orchestration writes.
-        from top_down_planning.domain.run_lifecycle import StopRecord
-        from top_down_planning.orchestrator.phases import SUB_TDPS
-        from top_down_planning.orchestrator.run_transitions import pause_run
-
-        run = store.load_run(run_id)
-        expected_run = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_run + 1
-        run["phase"] = SUB_TDPS
-        store.save_run(run_id, run, expected_run)
-        store.append_event(
-            run_id,
-            {
-                "type": "sub_tdps_phase_entered",
-                "run_id": run_id,
-                "parent_only": True,
-            },
-        )
-        pause_run(
+    try:
+        run_id = run_factory.create_parent_run(
             store,
-            run_id,
-            stop=StopRecord(
-                code="sub_tdps_awaiting_children",
-                category="operational",
-                phase=SUB_TDPS,
-                message="parent-only: waiting for independently executed children",
-            ),
-            revoke_phase=SUB_TDPS,
-            event_type="sub_tdps_awaiting_children",
+            package,
+            resolved_config=resolved,
+            invocation=invocation_dict,
         )
-        paused = store.load_run(run_id)
-        payload = {
-            "ok": True,
-            "run_id": run_id,
-            "phase": SUB_TDPS,
-            "status": paused.get("status"),
-            "parent_only": True,
-            "package_id": package.manifest.get("package_id"),
-            "runs_dir": str(resolved_runs.path),
-        }
-        emit_command_result(
-            payload,
-            human_message=(
-                f"Created parent-only run {run_id} "
-                f"(phase={SUB_TDPS}, status={paused.get('status')})."
-            ),
-            stream_json=args.stream_json,
+        parent_run = store.load_run(run_id)
+        binding = parent_run.get("package_binding") or {}
+        persisted_manifest = str(binding.get("manifest_path") or package.manifest_path)
+        production = store.load_production(run_id)
+        state = initial_sub_tdp_state_from_package(
+            package.manifest,
+            manifest_path=persisted_manifest,
+            units=[
+                SubTdpUnit(
+                    plan_item_id=unit.unit_id,
+                    title=unit.title,
+                    outcome="",
+                    directory=unit.plan_file.parent.name,
+                    ordinal=unit.ordinal,
+                )
+                for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
+            ],
+            package_units=package.units,
         )
-        return
+        merged = merge_sub_tdp_state_into_production(production, state)
+        expected_revision = int(production["revision"])
+        merged["revision"] = expected_revision + 1
+        store.save_production(run_id, merged, expected_revision)
+
+        if parent_only:
+            # Enter sub_tdps without driving children so attach can bind independently
+            # executed units. Pause the parent to prevent concurrent orchestration writes.
+            from top_down_planning.domain.run_lifecycle import StopRecord
+            from top_down_planning.orchestrator.phases import SUB_TDPS
+            from top_down_planning.orchestrator.run_transitions import pause_run
+
+            run = store.load_run(run_id)
+            expected_run = int(run["revision"])
+            run = dict(run)
+            run["revision"] = expected_run + 1
+            run["phase"] = SUB_TDPS
+            store.save_run(run_id, run, expected_run)
+            store.append_event(
+                run_id,
+                {
+                    "type": "sub_tdps_phase_entered",
+                    "run_id": run_id,
+                    "parent_only": True,
+                },
+            )
+            pause_run(
+                store,
+                run_id,
+                stop=StopRecord(
+                    code="sub_tdps_awaiting_children",
+                    category="operational",
+                    phase=SUB_TDPS,
+                    message="parent-only: waiting for independently executed children",
+                ),
+                revoke_phase=SUB_TDPS,
+                event_type="sub_tdps_awaiting_children",
+            )
+            paused = store.load_run(run_id)
+            payload = {
+                "ok": True,
+                "run_id": run_id,
+                "phase": SUB_TDPS,
+                "status": paused.get("status"),
+                "parent_only": True,
+                "package_id": package.manifest.get("package_id"),
+                "runs_dir": str(resolved_runs.path),
+            }
+            emit_command_result(
+                payload,
+                human_message=(
+                    f"Created parent-only run {run_id} "
+                    f"(phase={SUB_TDPS}, status={paused.get('status')})."
+                ),
+                stream_json=args.stream_json,
+            )
+            return
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     _drive_execution_run(
         args,
@@ -439,6 +442,8 @@ def _execute_unit(
             stream_json=args.stream_json,
             code=getattr(exc, "code", "package_invalid"),
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     observability = build_observability_context(
         options=invocation_opts.observability,

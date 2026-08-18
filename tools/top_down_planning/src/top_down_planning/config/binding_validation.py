@@ -29,8 +29,7 @@ def _require_relative_binding_path(path: object, *, field: str) -> str:
         raise InvalidSnapshotBindingError(
             f"{field} rejects absolute or non-POSIX binding path: {path!r}"
         )
-    first, _, _rest = path.partition("/")
-    if len(first) >= 2 and first[1] == ":":
+    if re.match(r"^[A-Za-z]:(?:/|\\|$)", path):
         raise InvalidSnapshotBindingError(
             f"{field} rejects non-canonical binding path: {path!r}"
         )

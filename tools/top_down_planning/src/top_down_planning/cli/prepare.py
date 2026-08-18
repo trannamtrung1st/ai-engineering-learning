@@ -121,23 +121,26 @@ def handle_prepare_command(args: Namespace) -> None:
     invocation_dict["command"] = "prepare"
     invocation_dict["until"] = "validated"
 
-    store.create_run(
-        run_id,
-        plan=plan,
-        resolved_config=resolved,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_spec_digest=context_spec_digest,
-        context_snapshot_digest=context_snapshot_digest,
-        context_snapshot_binding=binding,
-        workspace=str(workspace),
-        invocation=invocation_dict,
-        run_extras={"run_kind": RUN_KIND_PLANNING},
-    )
-    store.append_event(
-        run_id,
-        {"type": "context_snapshot_collected", **snapshot_diag.to_event_fields()},
-    )
+    try:
+        store.create_run(
+            run_id,
+            plan=plan,
+            resolved_config=resolved,
+            input_digest=input_digest,
+            output_goal_digest=output_goal_digest,
+            context_spec_digest=context_spec_digest,
+            context_snapshot_digest=context_snapshot_digest,
+            context_snapshot_binding=binding,
+            workspace=str(workspace),
+            invocation=invocation_dict,
+            run_extras={"run_kind": RUN_KIND_PLANNING},
+        )
+        store.append_event(
+            run_id,
+            {"type": "context_snapshot_collected", **snapshot_diag.to_event_fields()},
+        )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     diagnostics = run_startup_diagnostics_payload(
         cwd=cwd,

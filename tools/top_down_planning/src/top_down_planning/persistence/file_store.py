@@ -966,6 +966,14 @@ class FileRunStore:
             raise PersistenceError(f"failed to load resolved-config.yaml: {exc}") from exc
         if not isinstance(payload, dict):
             raise PersistenceError("resolved-config.yaml must contain a mapping")
+        from top_down_planning.config import ConfigError, validate_persisted_resolved_config
+
+        try:
+            validate_persisted_resolved_config(payload)
+        except ConfigError as exc:
+            raise PersistenceError(
+                f"resolved-config.yaml is invalid: {exc}"
+            ) from exc
         return payload
 
     def save_invocation(self, run_id: str, invocation: dict[str, Any]) -> None:
