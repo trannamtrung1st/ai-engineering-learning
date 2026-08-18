@@ -1531,22 +1531,15 @@ def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, An
                 f"resolved-config.yaml is invalid: {exc}"
             ) from exc
         from top_down_planning.persistence.snapshot_bindings import (
-            validate_snapshot_digest_bindings,
+            validate_persisted_artifact_digest_bindings,
         )
 
-        workspace = Path(str(run_payload.get("workspace") or "")).resolve()
-        try:
-            validate_snapshot_digest_bindings(
-                run_payload,
-                plan=plan,
-                production=production_payload,
-                resolved_config=config_payload,
-                workspace=workspace,
-            )
-        except ConfigError as exc:
-            raise PersistenceError(
-                f"canonical snapshot digests are inconsistent: {exc}"
-            ) from exc
+        validate_persisted_artifact_digest_bindings(
+            run_payload,
+            plan=plan,
+            production=production_payload,
+            resolved_config=config_payload,
+        )
         reviews_dir = run_dir / "reviews"
         if reviews_dir.exists():
             if reviews_dir.is_symlink():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,7 +20,7 @@ from top_down_planning.persistence.digests import (
     compute_config_execution_digest,
 )
 from tests.conftest import run_cli
-from tests.helpers import create_run_kwargs, write_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config, write_config
 from tests.unit.test_prepared_runs import _built_package
 from tests.unit.test_slice7_rereview_cli_schema import (
     _create_planning_run,
@@ -595,3 +596,99 @@ def test_doctor_reports_valid_but_digest_inconsistent_snapshots(tmp_path: Path) 
     )
     _wipe_txn_dirs(store.run_dir(review_id))
     _assert_doctor_marks_corrupt(store, review_id)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda manifest: manifest.__setitem__("workspace", 1),
+        lambda manifest: manifest.__setitem__("parent", True),
+        lambda manifest: manifest.__setitem__("units", 7),
+        lambda manifest: manifest["units"][0].__setitem__("assigned_item_ids", 3),
+        lambda manifest: manifest["units"][0].__setitem__("depends_on", 3),
+        lambda manifest: manifest["units"][0].__setitem__(
+            "external_prerequisites", 3
+        ),
+        lambda manifest: manifest["units"][0].__setitem__(
+            "required_upstream_outputs", 3
+        ),
+    ],
+)
+def test_package_wrong_container_types_are_package_errors(
+    tmp_path: Path, mutate
+) -> None:
+    def mutate_package(package) -> None:
+        manifest = json.loads(package.manifest_path.read_text(encoding="utf-8"))
+        mutate(manifest)
+        package.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    _execute_and_attach_package_error(tmp_path, mutate_package)
+
+
+def _create_workspace_backed_planning_run(tmp_path: Path, run_id: str) -> FileRunStore:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "input.md").write_text("original input\n", encoding="utf-8")
+    (workspace / "goal.md").write_text("Ship the product.\n", encoding="utf-8")
+    (workspace / "docs").mkdir()
+    (workspace / "docs" / "ok.md").write_text("ok\n", encoding="utf-8")
+    config = minimal_resolved_config()
+    config["run"]["input_refs"] = ["input.md"]
+    config["run"].pop("output_goal", None)
+    config["run"]["output_goal_file"] = "goal.md"
+    config["agent_context"]["roles"]["producer"]["resources"] = ["docs/*.md"]
+    store = FileRunStore(tmp_path / "runs")
+    store.create_run(
+        run_id,
+        plan=Plan(
+            id="plan-workspace",
+            revision=0,
+            output_goal="Goal.",
+            items={
+                "item-root": PlanItem(
+                    id="item-root",
+                    parent_id=None,
+                    order_key="0000000000",
+                    title="Root",
+                    kind="aggregate",
+                )
+            },
+        ),
+        phase=PLANNING,
+        **create_run_kwargs(workspace, resolved_config=config),
+    )
+    return store
+
+
+def _assert_doctor_run_healthy(store: FileRunStore, run_id: str) -> None:
+    structured = run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"])
+    payload = json.loads(structured.stdout)
+    assert run_id not in payload["workspace"]["corrupt_run_dirs"]
+    targeted = run_cli(
+        ["doctor", "--run", run_id, "--runs-dir", str(store.root), "--stream-json"]
+    )
+    assert targeted.exit_code == 0
+    assert json.loads(targeted.stdout).get("ok") is True
+    assert "Traceback" not in structured.stderr
+    assert "Traceback" not in targeted.stderr
+
+
+def test_doctor_does_not_treat_live_workspace_drift_as_corrupt_run(
+    tmp_path: Path,
+) -> None:
+    run_id = "run-20260101T111601-111601"
+    store = _create_workspace_backed_planning_run(tmp_path, run_id)
+    workspace = tmp_path / "ws"
+    _assert_doctor_run_healthy(store, run_id)
+
+    (workspace / "input.md").write_text("changed input\n", encoding="utf-8")
+    _assert_doctor_run_healthy(store, run_id)
+
+    (workspace / "goal.md").write_text("A different goal.\n", encoding="utf-8")
+    _assert_doctor_run_healthy(store, run_id)
+
+    (workspace / "docs" / "ok.md").unlink()
+    _assert_doctor_run_healthy(store, run_id)
+
+    shutil.rmtree(workspace)
+    _assert_doctor_run_healthy(store, run_id)

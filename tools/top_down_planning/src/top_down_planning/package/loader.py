@@ -85,6 +85,28 @@ def _load_json(path: Path) -> Any:
         ) from exc
 
 
+def _require_mapping(value: Any, *, field: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ExecutionPackageError(
+            f"{field} must be an object",
+            code="package_field_invalid",
+        )
+    return value
+
+
+def _require_list(value: Any, *, field: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ExecutionPackageError(
+            f"{field} must be a list",
+            code="package_field_invalid",
+        )
+    return value
+
+
 def _require_package_int(value: Any, *, field: str) -> int:
     if type(value) is not int:
         raise ExecutionPackageError(
@@ -209,12 +231,12 @@ class ExecutionPackageLoader:
                 code="package_id_invalid",
             ) from exc
 
-        workspace_info = manifest.get("workspace") or {}
+        workspace_info = _require_mapping(manifest.get("workspace"), field="workspace")
         workspace_path = Path(str(workspace_info.get("path") or "")).resolve()
         if verify_workspace and not workspace_path.is_dir():
             raise ExecutionPackageError(f"workspace path missing: {workspace_path}")
 
-        parent_info = manifest.get("parent") or {}
+        parent_info = _require_mapping(manifest.get("parent"), field="parent")
         parent_plan_rel = str(parent_info.get("plan_file") or "")
         parent_plan_path = _contained_package_path(
             package_dir, parent_plan_rel, label="parent plan"
@@ -241,7 +263,7 @@ class ExecutionPackageLoader:
         seen_plan_files: set[str] = set()
         unit_deps: dict[str, list[str]] = {}
 
-        for raw_unit in manifest.get("units") or []:
+        for raw_unit in _require_list(manifest.get("units"), field="units"):
             if not isinstance(raw_unit, dict):
                 raise ExecutionPackageError("each manifest unit must be an object")
             unit_id = str(raw_unit.get("unit_id") or "").strip()
@@ -270,7 +292,13 @@ class ExecutionPackageLoader:
             if unit_digest != expected_unit_digest:
                 raise ExecutionPackageError(f"unit {unit_id} plan digest mismatch")
             unit_plan_digests.append(unit_digest)
-            assigned_ids = [str(item) for item in (raw_unit.get("assigned_item_ids") or [])]
+            assigned_ids = [
+                str(item)
+                for item in _require_list(
+                    raw_unit.get("assigned_item_ids"),
+                    field=f"unit {unit_id} assigned_item_ids",
+                )
+            ]
             try:
                 unit_plan = Plan.from_dict(_load_json(unit_plan_path))
             except (TypeError, ValueError, KeyError) as exc:
@@ -303,7 +331,13 @@ class ExecutionPackageLoader:
                     f"unit {unit_id} assigned_subtree_digest mismatch"
                 )
 
-            depends_on = [str(dep) for dep in (raw_unit.get("depends_on") or [])]
+            depends_on = [
+                str(dep)
+                for dep in _require_list(
+                    raw_unit.get("depends_on"),
+                    field=f"unit {unit_id} depends_on",
+                )
+            ]
             if unit_id in depends_on:
                 raise ExecutionPackageError(f"unit {unit_id} has self-dependency")
             unit_deps[unit_id] = depends_on
@@ -318,11 +352,13 @@ class ExecutionPackageLoader:
                 assigned_subtree_digest=expected_subtree,
                 depends_on=depends_on,
                 plan=unit_plan,
-                external_prerequisites=list(
-                    raw_unit.get("external_prerequisites") or []
+                external_prerequisites=_require_list(
+                    raw_unit.get("external_prerequisites"),
+                    field=f"unit {unit_id} external_prerequisites",
                 ),
-                required_upstream_outputs=list(
-                    raw_unit.get("required_upstream_outputs") or []
+                required_upstream_outputs=_require_list(
+                    raw_unit.get("required_upstream_outputs"),
+                    field=f"unit {unit_id} required_upstream_outputs",
                 ),
             )
 

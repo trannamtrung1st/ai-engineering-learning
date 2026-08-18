@@ -46,28 +46,13 @@ def validate_snapshot_digest_bindings(
 ) -> None:
     """Require run digest fields to match the prospective canonical snapshots."""
 
-    digests = run.get("digests")
-    if not isinstance(digests, dict):
-        raise PersistenceError("run.digests must be an object")
-
-    expected_plan = str(digests.get("plan") or "").strip()
-    actual_plan = compute_plan_digest(plan)
-    if not expected_plan or actual_plan != expected_plan:
-        raise PersistenceError("run.digests.plan does not match plan snapshot")
-
-    expected_contract = str(digests.get("config_contract") or "").strip()
-    actual_contract = compute_config_contract_digest(resolved_config)
-    if not expected_contract or actual_contract != expected_contract:
-        raise PersistenceError(
-            "run.digests.config_contract does not match resolved-config snapshot"
-        )
-
-    expected_execution = str(digests.get("config_execution") or "").strip()
-    actual_execution = compute_config_execution_digest(resolved_config)
-    if not expected_execution or actual_execution != expected_execution:
-        raise PersistenceError(
-            "run.digests.config_execution does not match resolved-config snapshot"
-        )
+    validate_persisted_artifact_digest_bindings(
+        run,
+        plan=plan,
+        production=production,
+        resolved_config=resolved_config,
+    )
+    digests = run["digests"]
 
     expected_input = str(digests.get("input") or "").strip()
     actual_input = compute_input_digest(resolved_config, base_dir=workspace)
@@ -94,6 +79,39 @@ def validate_snapshot_digest_bindings(
     if not expected_context_spec or actual_context_spec != expected_context_spec:
         raise PersistenceError(
             "run.digests.context_spec does not match resolved-config snapshot"
+        )
+
+
+def validate_persisted_artifact_digest_bindings(
+    run: dict[str, Any],
+    *,
+    plan: dict[str, Any],
+    production: dict[str, Any],
+    resolved_config: dict[str, Any],
+) -> None:
+    """Require persisted run digests to match durable artifacts, not live workspace bytes."""
+
+    digests = run.get("digests")
+    if not isinstance(digests, dict):
+        raise PersistenceError("run.digests must be an object")
+
+    expected_plan = str(digests.get("plan") or "").strip()
+    actual_plan = compute_plan_digest(plan)
+    if not expected_plan or actual_plan != expected_plan:
+        raise PersistenceError("run.digests.plan does not match plan snapshot")
+
+    expected_contract = str(digests.get("config_contract") or "").strip()
+    actual_contract = compute_config_contract_digest(resolved_config)
+    if not expected_contract or actual_contract != expected_contract:
+        raise PersistenceError(
+            "run.digests.config_contract does not match resolved-config snapshot"
+        )
+
+    expected_execution = str(digests.get("config_execution") or "").strip()
+    actual_execution = compute_config_execution_digest(resolved_config)
+    if not expected_execution or actual_execution != expected_execution:
+        raise PersistenceError(
+            "run.digests.config_execution does not match resolved-config snapshot"
         )
 
     binding = run.get("context_snapshot_binding")
