@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -342,11 +343,12 @@ run:
     assert resolve_output_goal_text(resolved, base_dir=workspace) == "Goal from file."
 
 
-def test_cli_result_json_returns_last_object_when_stdout_has_multiple() -> None:
+def test_cli_result_json_rejects_multiple_top_level_objects() -> None:
     result = CliResult(
         exit_code=0,
         stdout='{"first": true}\n{"run_id": "run-1", "status": "running"}\n',
         stderr="",
     )
 
-    assert result.json() == {"run_id": "run-1", "status": "running"}
+    with pytest.raises(json.JSONDecodeError):
+        result.json()

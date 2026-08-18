@@ -95,9 +95,7 @@ def test_execute_cli_creates_no_planner_sessions(tmp_path: Path) -> None:
     config_path = tmp_path / "project.yaml"
     write_config(
         config_path,
-        f"project:\n  workspace: {tmp_path}\n"
-        "runtime:\n  runs_dir: runs\nprovider:\n  name: stub\n"
-        "run:\n  output_goal: Goal.\n",
+        "runtime:\n  runs_dir: runs\n",
     )
     manifest = tmp_path / "execution" / "manifest.json"
     captured: dict[str, str] = {}

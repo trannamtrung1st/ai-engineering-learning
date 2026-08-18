@@ -6,9 +6,10 @@ from argparse import Namespace
 from pathlib import Path
 
 from top_down_planning.cli.common import (
+    emit_command_result,
     emit_error_message,
-    emit_payload,
-    open_run_store,
+    emit_run_access_error,
+    open_run_store_for_cli,
 )
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
@@ -43,10 +44,13 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
     parent_run_id = str(args.parent).strip()
     child_run_id = str(args.child).strip()
 
-    # Attach needs only the run store locator — not a product YAML config.
-    store, resolved_runs = open_run_store(args, resolved_config=None)
+    store, resolved_runs = open_run_store_for_cli(args, resolved_config=None)
 
-    parent_run_dir = resolve_run_dir(store, parent_run_id)
+    try:
+        parent_run_dir = resolve_run_dir(store, parent_run_id)
+        child_run_dir = resolve_run_dir(store, child_run_id)
+    except Exception as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     if parent_run_dir is None:
         emit_error_message(
             f"parent run directory not found for {parent_run_id!r}",
@@ -54,8 +58,6 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
         )
-
-    child_run_dir = resolve_run_dir(store, child_run_id)
     if child_run_dir is None:
         emit_error_message(
             f"child run directory not found for {child_run_id!r}",
@@ -81,6 +83,8 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
         )
+    except Exception as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
 
 
 def _attach_child_under_ownership(
@@ -357,16 +361,22 @@ def _attach_child_under_ownership(
         ),
     )
 
-    emit_payload(
-        {
-            "ok": True,
-            "parent_run_id": parent_run_id,
-            "plan_item_id": plan_item_id,
-            "child_run_id": child_run_id,
-            "unit_status": unit_record["status"],
-            "accepted_result_digest": unit_record["accepted_result_digest"],
-            "runs_dir": str(resolved_runs.path),
-        },
+    payload = {
+        "ok": True,
+        "parent_run_id": parent_run_id,
+        "plan_item_id": plan_item_id,
+        "child_run_id": child_run_id,
+        "unit_status": unit_record["status"],
+        "accepted_result_digest": unit_record["accepted_result_digest"],
+        "runs_dir": str(resolved_runs.path),
+    }
+    emit_command_result(
+        payload,
+        human_message=(
+            f"Attached child {child_run_id} to parent {parent_run_id} "
+            f"as unit {plan_item_id} (status={unit_record['status']})."
+        ),
+        stream_json=args.stream_json,
     )
 
 

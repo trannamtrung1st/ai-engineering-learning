@@ -85,7 +85,7 @@ def test_execute_upstream_without_unit_rejected(tmp_path: Path) -> None:
     manifest_path = binding["manifest_path"]
     config_path = tmp_path / "project.yaml"
     config_path.write_text(
-        "runtime:\n  runs_dir: runs\nprovider:\n  name: stub\n",
+        "runtime:\n  runs_dir: runs\n",
         encoding="utf-8",
     )
     result = run_cli(

@@ -12,12 +12,11 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_active_view, build_audit_view
 from top_down_planning.cli.common import (
-    RunsStoreNotFoundError,
     emit_error_message,
     emit_message,
     emit_payload,
     format_run_startup_diagnostics,
-    open_run_store,
+    open_run_store_for_cli,
     provider_extra_env,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
@@ -214,22 +213,9 @@ def _open_run_store_for_command(
     resolved_config: dict[str, Any] | None = None,
     create: bool = False,
 ) -> tuple[FileRunStore, Any]:
-    try:
-        return open_run_store(args, resolved_config=resolved_config, create=create)
-    except ConfigError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=2,
-            stream_json=args.stream_json,
-            code="config_error",
-        )
-    except RunsStoreNotFoundError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="runs_store_not_found",
-        )
+    return open_run_store_for_cli(
+        args, resolved_config=resolved_config, create=create
+    )
 
 
 def _create_provider_for_run(
@@ -658,10 +644,8 @@ def handle_resume_command(args: Namespace) -> None:
             emit_message(format_resume_plan_summary_text(plan_summary))
         return
 
-    if args.stream_json:
-        json.dump({**plan_summary, "check_only": False}, sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n")
-    else:
+    plan_summary["check_only"] = False
+    if not args.stream_json:
         summary_text = format_resume_plan_summary_text(plan_summary)
         sys.stdout.write(summary_text)
         if not summary_text.endswith("\n"):
@@ -770,6 +754,7 @@ def handle_resume_command(args: Namespace) -> None:
         payload["reason"] = continuation.reason
     if until:
         payload["until"] = until
+    payload["resume_plan"] = plan_summary
 
     exit_code = 0 if continuation.ok else 1
     if args.stream_json:

@@ -8,7 +8,11 @@ from typing import Any
 
 import os
 
-from top_down_planning.cli.common import emit_payload, open_run_store
+from top_down_planning.cli.common import (
+    emit_payload,
+    emit_run_access_error,
+    open_run_store_for_cli,
+)
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
     is_run_orchestrator_alive,
@@ -35,6 +39,16 @@ class DestructiveRunRepairResult:
     reconciled: bool
     refusal: str | None = None
     failed_pids: tuple[int, ...] = ()
+
+
+def _emit_doctor_result(args: Namespace, payload: dict[str, Any], lines: list[str]) -> None:
+    exit_code = 0 if payload.get("ok", True) else 1
+    if args.stream_json:
+        emit_payload(payload, exit_code=exit_code)
+        return
+    print("\n".join(lines))
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 def _destructive_fix_blocked(
@@ -100,7 +114,14 @@ def _repair_candidate_run_ids(diagnostics: dict[str, Any]) -> list[str]:
 
 
 def handle_doctor_command(args: Namespace) -> None:
-    store, _resolved = open_run_store(args)
+    store, _resolved = open_run_store_for_cli(args)
+    try:
+        _handle_doctor_command(args, store)
+    except Exception as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
+
+
+def _handle_doctor_command(args: Namespace, store) -> None:
     fix = bool(getattr(args, "fix", False))
     removed_staging_dirs: list[str] = []
     if fix:
@@ -133,7 +154,7 @@ def handle_doctor_command(args: Namespace) -> None:
             "removed_staging_dirs": removed_staging_dirs,
         }
         if args.stream_json:
-            emit_payload(payload)
+            _emit_doctor_result(args, payload, [])
             return
 
         lines = ["Workspace diagnostics:"]
@@ -183,7 +204,7 @@ def handle_doctor_command(args: Namespace) -> None:
             lines.append(
                 "  removed staging dirs: " + ", ".join(removed_staging_dirs)
             )
-        print("\n".join(lines))
+        _emit_doctor_result(args, payload, lines)
         return
 
     run_id = str(args.run)
@@ -222,7 +243,7 @@ def handle_doctor_command(args: Namespace) -> None:
         "orphan_agent_pids": orphan_pids,
     }
     if args.stream_json:
-        emit_payload(payload)
+        emit_payload(payload, exit_code=0 if payload["ok"] else 1)
         return
 
     lines = [f"run {run_id}: status={run.get('status')}"]
@@ -246,7 +267,7 @@ def handle_doctor_command(args: Namespace) -> None:
         )
     else:
         lines.append("  no orphan agent processes detected")
-    print("\n".join(lines))
+    _emit_doctor_result(args, payload, lines)
 
 
 __all__ = ["DestructiveRunRepairResult", "handle_doctor_command"]

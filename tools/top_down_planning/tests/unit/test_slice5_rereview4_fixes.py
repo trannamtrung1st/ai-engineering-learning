@@ -391,19 +391,21 @@ def test_doctor_fix_refuses_destructive_repair_for_live_owned_running_run(
         with patch(
             "top_down_planning.cli.doctor.kill_orphan_agents",
         ) as kill_mock:
-            handle_doctor_command(
-                type(
-                    "Args",
-                    (),
-                    {
-                        "run": run_id,
-                        "fix": True,
-                        "stream_json": False,
-                        "runs_dir": str(store.root),
-                        "config": None,
-                    },
-                )()
-            )
+            with pytest.raises(SystemExit) as exit_info:
+                handle_doctor_command(
+                    type(
+                        "Args",
+                        (),
+                        {
+                            "run": run_id,
+                            "fix": True,
+                            "stream_json": False,
+                            "runs_dir": str(store.root),
+                            "config": None,
+                        },
+                    )()
+                )
+            assert exit_info.value.code == 1
 
     kill_mock.assert_not_called()
     output = capsys.readouterr().out

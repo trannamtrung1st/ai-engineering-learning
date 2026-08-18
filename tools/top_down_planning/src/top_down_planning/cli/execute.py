@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -10,8 +11,8 @@ from core_tools.observability import ConsoleEvent
 
 from top_down_planning.cli.common import (
     ResolvedRunsDir,
+    emit_command_result,
     emit_error_message,
-    emit_payload,
     format_run_startup_diagnostics,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
@@ -21,8 +22,8 @@ from top_down_planning.cli.user import (
     _exit_for_cancel,
     _handle_blocking_run_interrupt,
 )
-from top_down_planning.config import ConfigError, resolve_config
-from top_down_planning.config.resume_policy import RESUME_PRESENTATION_ALLOWLIST
+from top_down_planning.config import ConfigError, is_presentation_config_path, validate_presentation_config
+from core_tools.config import apply_cli_overrides, collect_leaf_paths, deep_merge, load_yaml_config
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.invocation import invocation_options_from_args, invocation_to_dict
 from top_down_planning.notifications import NotificationContext
@@ -86,12 +87,7 @@ def parse_baseline_run_ids(raw: list[str] | None) -> list[str]:
 
 
 def _is_execute_presentation_path(path: str) -> bool:
-    if path in RESUME_PRESENTATION_ALLOWLIST:
-        return True
-    return any(
-        path.startswith(prefix.rstrip("."))
-        for prefix in RESUME_PRESENTATION_ALLOWLIST
-    )
+    return is_presentation_config_path(path)
 
 
 def _validate_execute_presentation_sets(set_overrides: list[str] | None) -> list[str]:
@@ -100,12 +96,7 @@ def _validate_execute_presentation_sets(set_overrides: list[str] | None) -> list
     kept: list[str] = []
     for item in set_overrides or []:
         path = item.split("=", 1)[0].strip()
-        if (
-            _is_execute_presentation_path(path)
-            or path.startswith("observability.")
-            or path.startswith("notifications.")
-            or path == "runtime.runs_dir"
-        ):
+        if _is_execute_presentation_path(path):
             kept.append(item)
             continue
         raise ConfigError(
@@ -121,32 +112,36 @@ def _presentation_sets(set_overrides: list[str] | None) -> list[str]:
     return _validate_execute_presentation_sets(set_overrides)
 
 
+def _load_execute_presentation_overlay(config_path: Path) -> dict[str, Any]:
+    overlay = load_yaml_config(config_path)
+    for path in sorted(collect_leaf_paths(overlay)):
+        if not _is_execute_presentation_path(path):
+            raise ConfigError(
+                f"execute --config path {path!r} is not allowed; "
+                "semantic config is fixed by the execution package",
+                path=path,
+            )
+    return overlay
+
+
 def _resolved_config_for_execute(args: Namespace, package) -> dict[str, Any]:
     """Load semantic config from the package; optional YAML only for presentation."""
 
-    base = dict(package.resolved_config)
-    presentation_sets = _presentation_sets(getattr(args, "set", None))
-    config_path = getattr(args, "config", None)
-    if config_path or presentation_sets:
-        # Optional presentation overlay — never required.
-        if config_path:
-            overlay = resolve_config(
-                Path(config_path).resolve(),
-                presentation_sets,
-            )
-        else:
-            # Apply presentation --set onto package config without reading cwd YAML.
-            from core_tools.config import apply_cli_overrides
-            from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS
+    from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS
 
-            overlay = apply_cli_overrides(
-                base,
-                presentation_sets,
-                allowed_paths=ALLOWED_OVERRIDE_PATHS,
-            )
-        for section in ("observability", "notifications", "runtime"):
-            if section in overlay:
-                base[section] = overlay[section]
+    base = copy.deepcopy(dict(package.resolved_config))
+    config_path = getattr(args, "config", None)
+    if config_path:
+        overlay = _load_execute_presentation_overlay(Path(config_path).resolve())
+        base = deep_merge(base, overlay)
+    presentation_sets = _presentation_sets(getattr(args, "set", None))
+    if presentation_sets:
+        base = apply_cli_overrides(
+            base,
+            presentation_sets,
+            allowed_paths=ALLOWED_OVERRIDE_PATHS,
+        )
+    validate_presentation_config(base)
     return base
 
 
@@ -305,16 +300,22 @@ def handle_execute_command(args: Namespace) -> None:
             event_type="sub_tdps_awaiting_children",
         )
         paused = store.load_run(run_id)
-        emit_payload(
-            {
-                "ok": True,
-                "run_id": run_id,
-                "phase": SUB_TDPS,
-                "status": paused.get("status"),
-                "parent_only": True,
-                "package_id": package.manifest.get("package_id"),
-                "runs_dir": str(resolved_runs.path),
-            }
+        payload = {
+            "ok": True,
+            "run_id": run_id,
+            "phase": SUB_TDPS,
+            "status": paused.get("status"),
+            "parent_only": True,
+            "package_id": package.manifest.get("package_id"),
+            "runs_dir": str(resolved_runs.path),
+        }
+        emit_command_result(
+            payload,
+            human_message=(
+                f"Created parent-only run {run_id} "
+                f"(phase={SUB_TDPS}, status={paused.get('status')})."
+            ),
+            stream_json=args.stream_json,
         )
         return
 
@@ -369,24 +370,33 @@ def _execute_unit(
     baseline_run_ids: list[str] = []
     try:
         upstream_bindings = parse_upstream_bindings(upstream_raw)
-        if upstream_bindings:
-            validate_explicit_upstream_bindings(package, unit_id, upstream_bindings)
-        baseline_run_ids = parse_baseline_run_ids(
-            list(getattr(args, "baseline", None) or [])
-        )
     except ValueError as exc:
         emit_error_message(
             str(exc),
-            exit_code=1,
+            exit_code=2,
             stream_json=args.stream_json,
             code="sub_tdp_upstream_invalid",
         )
+    try:
+        if upstream_bindings:
+            validate_explicit_upstream_bindings(package, unit_id, upstream_bindings)
     except ExecutionPackageError as exc:
         emit_error_message(
             str(exc),
             exit_code=1,
             stream_json=args.stream_json,
             code=getattr(exc, "code", "sub_tdp_upstream_invalid"),
+        )
+    try:
+        baseline_run_ids = parse_baseline_run_ids(
+            list(getattr(args, "baseline", None) or [])
+        )
+    except ValueError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="sub_tdp_baseline_invalid",
         )
     try:
         child_run_id = executor.create_or_load_child_run(
@@ -491,7 +501,15 @@ def _execute_unit(
             payload["reason"] = stop.get("message") or stop.get("code")
         else:
             payload["reason"] = "unit execution did not complete successfully"
-    emit_payload(payload, exit_code=0 if ok else 1)
+    emit_command_result(
+        payload,
+        human_message=(
+            f"Executed unit {unit_id} as run {child_run_id} "
+            f"(status={child_run.get('status')}, outcome={child_run.get('outcome')})."
+        ),
+        stream_json=args.stream_json,
+        exit_code=0 if ok else 1,
+    )
 
 
 def _drive_execution_run(
@@ -556,15 +574,21 @@ def _drive_execution_run(
         _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
-    emit_payload(
-        {
-            "ok": continuation.ok,
-            "run_id": run_id,
-            "phase": continuation.phase,
-            "status": continuation.status,
-            "package_id": package.manifest.get("package_id"),
-            "run_kind": run_record.get("run_kind"),
-        },
+    payload = {
+        "ok": continuation.ok,
+        "run_id": run_id,
+        "phase": continuation.phase,
+        "status": continuation.status,
+        "package_id": package.manifest.get("package_id"),
+        "run_kind": run_record.get("run_kind"),
+    }
+    emit_command_result(
+        payload,
+        human_message=(
+            f"Executed package {package.manifest.get('package_id')} as run {run_id} "
+            f"(phase={continuation.phase}, status={continuation.status})."
+        ),
+        stream_json=args.stream_json,
         exit_code=0 if continuation.ok else 1,
     )
 

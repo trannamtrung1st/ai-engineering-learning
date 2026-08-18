@@ -182,31 +182,10 @@ class CliResult:
         text = self.stdout.strip()
         if not text:
             raise json.JSONDecodeError("empty stdout", text, 0)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        decoder = json.JSONDecoder()
-        last: dict | None = None
-        idx = 0
-        while idx < len(text):
-            while idx < len(text) and text[idx] not in "{[":
-                idx += 1
-            if idx >= len(text):
-                break
-            try:
-                value, end = decoder.raw_decode(text, idx)
-            except json.JSONDecodeError:
-                idx += 1
-                continue
-            if isinstance(value, dict):
-                last = value
-            idx = end
-
-        if last is not None:
-            return last
-        raise json.JSONDecodeError("no JSON object in stdout", text, 0)
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise json.JSONDecodeError("stdout JSON must be an object", text, 0)
+        return payload
 
 
 def run_cli(argv: list[str]) -> CliResult:

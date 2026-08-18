@@ -167,19 +167,21 @@ def test_doctor_fix_refuses_when_run_ownership_cannot_be_acquired(
             "top_down_planning.cli.doctor.kill_orphan_agents",
             return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
         ) as kill_mock:
-            handle_doctor_command(
-                type(
-                    "Args",
-                    (),
-                    {
-                        "run": run_id,
-                        "fix": True,
-                        "stream_json": False,
-                        "runs_dir": str(store.root),
-                        "config": None,
-                    },
-                )()
-            )
+            with pytest.raises(SystemExit) as exit_info:
+                handle_doctor_command(
+                    type(
+                        "Args",
+                        (),
+                        {
+                            "run": run_id,
+                            "fix": True,
+                            "stream_json": False,
+                            "runs_dir": str(store.root),
+                            "config": None,
+                        },
+                    )()
+                )
+            assert exit_info.value.code == 1
 
     kill_mock.assert_not_called()
     assert "refusing destructive repair" in capsys.readouterr().out.lower()

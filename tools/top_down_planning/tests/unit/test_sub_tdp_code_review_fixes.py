@@ -359,7 +359,7 @@ def test_execute_manifest_requires_manifest_json_filename(tmp_path: Path) -> Non
     sibling.write_text("{}", encoding="utf-8")
     config_path = tmp_path / "project.yaml"
     config_path.write_text(
-        "runtime:\n  runs_dir: runs\nprovider:\n  name: stub\n",
+        "runtime:\n  runs_dir: runs\n",
         encoding="utf-8",
     )
     result = run_cli(

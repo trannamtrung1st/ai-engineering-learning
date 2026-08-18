@@ -31,6 +31,11 @@ RUNS_DIR_HELP = (
     "runtime.runs_dir in --config > ./runs)."
 )
 
+RUNS_DIR_REQUIRED_HELP = (
+    "Run store root directory (required; precedence: --runs-dir > $TDP_RUNS_DIR > "
+    "runtime.runs_dir in --config). This command does not fall back to ./runs."
+)
+
 AGENT_RUNS_DIR_HELP = (
     "Run store root directory (precedence: --runs-dir > $TDP_RUNS_DIR > ./runs). "
     "Orchestrator subprocesses receive TDP_RUNS_DIR automatically."
@@ -188,6 +193,70 @@ def format_run_startup_diagnostics(payload: Mapping[str, str]) -> str:
     )
 
 
+def emit_command_result(
+    payload: dict[str, Any],
+    *,
+    human_message: str,
+    stream_json: bool,
+    exit_code: int = 0,
+) -> None:
+    """Emit exactly one stdout payload: JSON when requested, otherwise human text."""
+
+    if stream_json:
+        emit_payload(payload, exit_code=exit_code)
+    emit_message(human_message, exit_code=exit_code)
+
+
+def open_run_store_for_cli(
+    args: Namespace,
+    *,
+    resolved_config: dict[str, Any] | None = None,
+    create: bool = False,
+) -> tuple[FileRunStore, ResolvedRunsDir]:
+    """Open a run store and convert config/store locator failures into CLI errors."""
+
+    from top_down_planning.config import ConfigError
+
+    try:
+        return open_run_store(args, resolved_config=resolved_config, create=create)
+    except ConfigError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=bool(getattr(args, "stream_json", False)),
+            code="config_error",
+        )
+    except RunsStoreNotFoundError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=bool(getattr(args, "stream_json", False)),
+            code="runs_store_not_found",
+        )
+
+
+def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
+    """Normalize missing/malformed run identifiers for user-facing commands."""
+
+    from core_tools.persistence import PersistenceError, RunNotFoundError
+
+    if isinstance(exc, RunNotFoundError):
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=stream_json,
+            code="run_not_found",
+        )
+    if isinstance(exc, PersistenceError):
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=stream_json,
+            code="invalid_run_id",
+        )
+    raise exc
+
+
 __all__ = [
     "AGENT_REQUESTS_DIR_ENV_VAR",
     "AGENT_RUNS_DIR_HELP",
@@ -195,15 +264,19 @@ __all__ = [
     "RUN_ID_ENV_VAR",
     "RUNS_DIR_ENV_VAR",
     "RUNS_DIR_HELP",
+    "RUNS_DIR_REQUIRED_HELP",
     "ResolvedRunsDir",
     "RunsDirSource",
     "RunsStoreNotFoundError",
+    "emit_command_result",
     "emit_error_message",
     "emit_message",
     "emit_payload",
+    "emit_run_access_error",
     "format_run_startup_diagnostics",
     "load_config_for_runs_dir",
     "open_run_store",
+    "open_run_store_for_cli",
     "provider_extra_env",
     "resolve_runs_dir",
     "resolve_runs_dir_from_args",

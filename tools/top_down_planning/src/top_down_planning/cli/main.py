@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from top_down_planning import __version__
-from top_down_planning.cli.common import RUNS_DIR_HELP
+from top_down_planning.cli.common import (
+    RUNS_DIR_HELP,
+    RUNS_DIR_REQUIRED_HELP,
+    emit_error_message,
+)
 from top_down_planning.cli.agent import add_agent_subparsers, handle_agent_command
 from top_down_planning.cli.user import (
     handle_inspect_command,
@@ -20,8 +25,41 @@ from top_down_planning.cli.execute import handle_execute_command
 from top_down_planning.cli.sub_tdp import handle_sub_tdp_attach_command
 
 
-def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--runs-dir", help=RUNS_DIR_HELP)
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value, 10)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid integer: {value!r}") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer (>= 1)")
+    return parsed
+
+
+class TdpArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that honors ``--stream-json`` for usage/type errors."""
+
+    def parse_known_args(self, args=None, namespace=None):
+        self._tdp_argv = list(sys.argv[1:] if args is None else args)
+        return super().parse_known_args(args, namespace)
+
+    def error(self, message: str) -> None:
+        argv = getattr(self, "_tdp_argv", [])
+        if "--stream-json" in argv:
+            emit_error_message(
+                message,
+                exit_code=2,
+                stream_json=True,
+                code="usage_error",
+            )
+        super().error(message)
+
+
+def _add_operational_flags(
+    parser: argparse.ArgumentParser,
+    *,
+    runs_dir_help: str = RUNS_DIR_HELP,
+) -> None:
+    parser.add_argument("--runs-dir", help=runs_dir_help)
     parser.add_argument(
         "--stream-json",
         action="store_true",
@@ -70,7 +108,7 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--max-message-length",
-        type=int,
+        type=_positive_int,
         default=None,
         metavar="N",
         help=(
@@ -80,7 +118,7 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--max-tool-summary-length",
-        type=int,
+        type=_positive_int,
         default=None,
         metavar="N",
         help=(
@@ -100,7 +138,7 @@ def _add_notification_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = TdpArgumentParser(
         prog="tdp",
         description=(
             "Top Down Planning — orchestrate high-level planning and production "
@@ -171,7 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH=VALUE",
         help="Resolved-config override (repeatable).",
     )
-    _add_operational_flags(prepare_parser)
+    _add_operational_flags(prepare_parser, runs_dir_help=RUNS_DIR_REQUIRED_HELP)
     _add_notification_flags(prepare_parser)
 
     execute_parser = subparsers.add_parser(
@@ -224,7 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH=VALUE",
         help="Resolved-config override (repeatable).",
     )
-    _add_operational_flags(execute_parser)
+    _add_operational_flags(execute_parser, runs_dir_help=RUNS_DIR_REQUIRED_HELP)
     _add_notification_flags(execute_parser)
 
     resume_parser = subparsers.add_parser("resume", help="Resume an interrupted run.")
@@ -363,6 +401,20 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         return
 
+    from top_down_planning.config import ConfigError
+
+    try:
+        _dispatch_command(args, parser)
+    except ConfigError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=bool(getattr(args, "stream_json", False)),
+            code="config_error",
+        )
+
+
+def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.command == "agent":
         handle_agent_command(args)
         return

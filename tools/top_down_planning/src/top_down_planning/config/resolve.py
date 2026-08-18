@@ -33,8 +33,10 @@ __all__ = [
     "compute_output_goal_digest",
     "compute_unit_output_goal_digest",
     "finalize_resolved_config",
+    "is_presentation_config_path",
     "resolve_config",
     "resolve_output_goal_text",
+    "validate_presentation_config",
 ]
 
 _AGENT_CONTEXT_OVERLAY_FIELDS = frozenset({"model", "guidance", "resources", "skills"})
@@ -203,6 +205,89 @@ def _validate_context_snapshot(config: dict[str, Any]) -> None:
         )
 
 
+_LOG_LEVELS = frozenset({"quiet", "normal", "verbose", "trace"})
+_LOG_FORMATS = frozenset({"console", "jsonl"})
+_COLOR_MODES = frozenset({"auto", "always", "never"})
+
+
+def _require_mapping(value: Any, *, path: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ConfigError(f"{path} must be a mapping", path=path)
+    return value
+
+
+def _require_bool(value: Any, *, path: str) -> None:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{path} must be a boolean", path=path)
+
+
+def _require_enum(value: Any, *, path: str, allowed: frozenset[str]) -> None:
+    if not isinstance(value, str) or value not in allowed:
+        raise ConfigError(
+            f"{path} must be one of: " + ", ".join(sorted(allowed)),
+            path=path,
+        )
+
+
+def _require_optional_positive_int(value: Any, *, path: str) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{path} must be a positive integer or null", path=path)
+    if value < 1:
+        raise ConfigError(f"{path} must be >= 1 when set", path=path)
+
+
+def validate_presentation_config(config: dict[str, Any]) -> None:
+    """Type-check public observability and notification leaves."""
+
+    observability = config.get("observability")
+    if observability is not None:
+        section = _require_mapping(observability, path="observability")
+        if "log_level" in section:
+            _require_enum(
+                section["log_level"],
+                path="observability.log_level",
+                allowed=_LOG_LEVELS,
+            )
+        if "log_format" in section:
+            _require_enum(
+                section["log_format"],
+                path="observability.log_format",
+                allowed=_LOG_FORMATS,
+            )
+        if "color" in section:
+            _require_enum(
+                section["color"],
+                path="observability.color",
+                allowed=_COLOR_MODES,
+            )
+        for field in ("show_agent_text", "show_timestamps", "agent_transcript"):
+            if field in section:
+                _require_bool(section[field], path=f"observability.{field}")
+        for field in ("max_message_length", "max_tool_summary_length"):
+            if field in section:
+                _require_optional_positive_int(
+                    section[field],
+                    path=f"observability.{field}",
+                )
+
+    notifications = config.get("notifications")
+    if notifications is not None:
+        section = _require_mapping(notifications, path="notifications")
+        for field in ("enabled", "terminal", "phase", "progress"):
+            if field in section:
+                _require_bool(section[field], path=f"notifications.{field}")
+
+
+def is_presentation_config_path(path: str) -> bool:
+    return (
+        path.startswith("observability.")
+        or path.startswith("notifications.")
+        or path == "runtime.runs_dir"
+    )
+
+
 def _validate_revise_at_value(value: Any, *, path: str) -> None:
     if value is None:
         return
@@ -258,6 +343,7 @@ def finalize_resolved_config(
     _validate_agent_context_roles(finalized)
     _validate_context_snapshot(finalized)
     _validate_revise_at_config(finalized)
+    validate_presentation_config(finalized)
     validate_execution_config(finalized)
 
     workspace = resolve_workspace(finalized, cwd=cwd)

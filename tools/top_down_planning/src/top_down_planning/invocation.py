@@ -9,6 +9,7 @@ from typing import Any
 
 from core_tools.cli import ResolvedRunsDir
 
+from top_down_planning.config import ConfigError
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.notifications.options import NotificationOptions
 from top_down_planning.observability import ObservabilityOptions
@@ -183,14 +184,17 @@ def invocation_options_from_args(
     resolved_config: dict[str, Any] | None = None,
     resolved_runs: ResolvedRunsDir | None = None,
 ) -> InvocationOptions:
-    observability = observability_options_from_args_and_config(
-        args,
-        resolved_config=resolved_config,
-    )
-    notifications = notification_options_from_args_and_config(
-        args,
-        resolved_config=resolved_config,
-    )
+    try:
+        observability = observability_options_from_args_and_config(
+            args,
+            resolved_config=resolved_config,
+        )
+        notifications = notification_options_from_args_and_config(
+            args,
+            resolved_config=resolved_config,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
     runs_path = ""
     runs_source = ""
     if resolved_runs is not None:

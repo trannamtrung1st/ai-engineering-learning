@@ -102,7 +102,9 @@ def test_explicit_doctor_repair_fails_closed_when_orphan_cleanup_fails(
             with patch(
                 "top_down_planning.cli.doctor.reconcile_stale_running_run_under_ownership",
             ) as reconcile_mock:
-                handle_doctor_command(_doctor_args(store, run_id=run_id))
+                with pytest.raises(SystemExit) as exit_info:
+                    handle_doctor_command(_doctor_args(store, run_id=run_id))
+                assert exit_info.value.code == 1
 
     reconcile_mock.assert_not_called()
     stored = store.load_run(run_id)
@@ -165,7 +167,9 @@ def test_workspace_doctor_keeps_surviving_orphan_visible_after_refresh(
                     "top_down_planning.cli.doctor.kill_orphan_agents",
                     return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=(9999,)),
                 ):
-                    handle_doctor_command(_doctor_args(store, run_id=None))
+                    with pytest.raises(SystemExit) as exit_info:
+                        handle_doctor_command(_doctor_args(store, run_id=None))
+                    assert exit_info.value.code == 1
 
     output = capsys.readouterr().out
     assert run_id in output

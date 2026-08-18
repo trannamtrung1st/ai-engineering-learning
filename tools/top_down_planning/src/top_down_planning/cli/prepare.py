@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.cli.common import (
+    emit_command_result,
     emit_error_message,
-    emit_payload,
     format_run_startup_diagnostics,
     provider_extra_env,
     resolve_runs_dir_from_args,
@@ -210,7 +210,14 @@ def handle_prepare_command(args: Namespace) -> None:
         "plan_revision": store.load_plan(run_id).get("revision"),
         "plan_digest": digests.get("plan"),
     }
-    emit_payload(payload)
+    emit_command_result(
+        payload,
+        human_message=(
+            f"Prepared package {built.package_id} from planning run {run_id} "
+            f"(manifest: {built.manifest_path})."
+        ),
+        stream_json=args.stream_json,
+    )
 
 
 __all__ = ["handle_prepare_command"]
