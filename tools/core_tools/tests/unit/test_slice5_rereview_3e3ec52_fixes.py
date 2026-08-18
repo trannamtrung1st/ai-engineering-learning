@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -215,15 +216,17 @@ def test_second_stream_line_arrives_before_slow_identity(tmp_path: Path) -> None
         "time.sleep(0.3)\n"
     )
 
+    identity_hold = threading.Event()
+
     def runner(argv: list[str], cwd: Path):
         del argv
         return _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
 
     def slow_identity(pid, run_id=None, command=None, timeout=None):
         del pid, run_id, command
-        time.sleep(0.2)
         if timeout is not None and timeout == 0:
             return None
+        identity_hold.wait(timeout=2.0)
         return ProcessIdentity(pid=424242, start_time="synthetic-test")
 
     agent = tmp_path / "agent"
@@ -243,15 +246,18 @@ def test_second_stream_line_arrives_before_slow_identity(tmp_path: Path) -> None
         "core_tools.provider.cursor.capture_process_group_identities",
         return_value=None,
     ):
+        stream = provider.stream_events(session_id)
+        next(stream)
         started = time.monotonic()
         got_assistant = False
-        for event in provider.stream_events(session_id):
+        for event in stream:
             if event.get("type") == "assistant":
                 got_assistant = True
                 elapsed = time.monotonic() - started
                 break
         else:
             elapsed = time.monotonic() - started
+        identity_hold.set()
         provider.terminate_session(session_id)
     assert got_assistant
-    assert elapsed < 0.2
+    assert elapsed < 0.15

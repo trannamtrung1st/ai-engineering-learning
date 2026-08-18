@@ -168,6 +168,7 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
         f"print({init!r}, flush=True)\n"
         f"print({payload!r}, flush=True)\n"
     )
+    identity_hold = threading.Event()
 
     def runner(argv: list[str], cwd: Path):
         del argv
@@ -175,7 +176,7 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
 
     def slow_identity(pid, run_id=None, command=None, timeout=None):
         del pid, run_id, command, timeout
-        time.sleep(0.2)
+        identity_hold.wait(timeout=2.0)
         return ProcessIdentity(pid=424242, start_time="synthetic-test")
 
     provider = _provider(tmp_path, runner)
@@ -187,12 +188,14 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
         return_value=True,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
-        started = time.monotonic()
         stream = provider.stream_events(session_id)
         first = next(stream)
-        first_event_at = time.monotonic() - started
-        events = [first, *list(stream)]
-    assert first_event_at < 0.2
+        after_first = time.monotonic()
+        second = next(stream)
+        second_waited = time.monotonic() - after_first
+        identity_hold.set()
+        events = [first, second, *list(stream)]
+    assert second_waited < 0.15
     texts = [str(event.get("text") or "") for event in events]
     assert any("ready" in text for text in texts)
 
