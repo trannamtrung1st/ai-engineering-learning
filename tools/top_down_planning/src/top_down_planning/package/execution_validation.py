@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Callable
 
 from core_tools.persistence import digest_file
 
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
-from top_down_planning.config.binding_validation import validate_context_snapshot_binding
-from top_down_planning.config.context import (
-    compute_context_snapshot_digest_from_payload,
-    compute_context_spec_digest_from_config,
-)
+from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.config.context_digests import (
     build_initial_context_snapshot_binding_with_diagnostics,
     diff_snapshot_binding_paths,
     split_unauthorized_snapshot_paths,
 )
-from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
+from top_down_planning.package.loader import (
+    ExecutionPackageError,
+    LoadedExecutionPackage,
+    load_package_context_snapshot_binding,
+)
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
     compute_config_execution_digest,
@@ -99,51 +98,7 @@ def _load_package_snapshot_binding(package: LoadedExecutionPackage) -> dict[str,
             "package context block missing",
             code="package_context_missing",
         )
-    binding_rel = str(context.get("context_snapshot_binding_file") or "").strip()
-    if not binding_rel:
-        raise ExecutionPackageError(
-            "prepared package missing context_snapshot_binding_file",
-            code="package_context_incomplete",
-        )
-    binding_path = (package.manifest_path.parent / binding_rel).resolve()
-    package_root = package.manifest_path.parent.resolve()
-    try:
-        binding_path.relative_to(package_root)
-    except ValueError as exc:
-        raise ExecutionPackageError(
-            f"context_snapshot_binding_file escapes package: {binding_rel}",
-            code="package_path_escape",
-        ) from exc
-    if not binding_path.is_file():
-        raise ExecutionPackageError(
-            f"context_snapshot_binding file missing: {binding_rel}",
-            code="package_context_incomplete",
-        )
-    try:
-        stored_binding = json.loads(binding_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise ExecutionPackageError(
-            f"context_snapshot_binding file unreadable: {binding_rel}",
-            code="package_context_incomplete",
-        ) from exc
-    from core_tools.persistence import PersistenceError
-
-    try:
-        validate_context_snapshot_binding(stored_binding)
-    except PersistenceError as exc:
-        raise ExecutionPackageError(
-            str(exc),
-            code="package_snapshot_binding_invalid",
-        ) from exc
-    expected_snapshot = str(context.get("context_snapshot_digest") or "")
-    stored_digest = compute_context_snapshot_digest_from_payload(stored_binding)
-    if expected_snapshot and stored_digest != expected_snapshot:
-        raise ExecutionPackageError(
-            f"context_snapshot_binding digest mismatch: expected {expected_snapshot}, "
-            f"got {stored_digest}",
-            code="package_context_drift",
-        )
-    return stored_binding
+    return load_package_context_snapshot_binding(package.manifest_path.parent, context)
 
 
 def verify_package_immutable_contract(package: LoadedExecutionPackage) -> None:

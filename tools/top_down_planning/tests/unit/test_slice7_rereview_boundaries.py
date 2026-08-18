@@ -293,7 +293,12 @@ def test_attach_save_oserror_is_operational(tmp_path: Path) -> None:
 
 
 def _execute_and_attach_package_error(tmp_path: Path, mutate_package) -> None:
+    from dataclasses import replace
+
     store, parent_id, package, config = _parent_with_orchestration(tmp_path)
+    binding = store.load_run(parent_id).get("package_binding") or {}
+    bound_manifest = Path(str(binding.get("manifest_path") or package.manifest_path))
+    package = replace(package, manifest_path=bound_manifest)
     mutate_package(package)
     exec_argv = [
         "execute",
@@ -301,7 +306,7 @@ def _execute_and_attach_package_error(tmp_path: Path, mutate_package) -> None:
         str(package.manifest_path),
         "--parent-only",
         "--runs-dir",
-        str(tmp_path / "runs"),
+        str(tmp_path / "execute-runs"),
     ]
     structured = run_cli([*exec_argv, "--stream-json"])
     human = run_cli(exec_argv)
@@ -329,6 +334,8 @@ def _execute_and_attach_package_error(tmp_path: Path, mutate_package) -> None:
     assert attach_structured.exit_code == 1
     assert attach_human.exit_code == 1
     assert json.loads(attach_structured.stdout)["error"]["code"] == "sub_tdp_attach_rejected"
+    attach_message = json.loads(attach_structured.stdout)["error"]["message"]
+    assert "child run must" not in attach_message
     assert "Traceback" not in attach_structured.stderr
     assert "Traceback" not in attach_human.stderr
 
@@ -460,3 +467,131 @@ def test_workspace_doctor_reports_symlink_and_canonical_artifact_corruption(
         corrupt_cfg_id,
     ):
         _assert_corrupt_both(["doctor", "--run", run_id, "--runs-dir", str(store.root)])
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda manifest: manifest.__setitem__("schema_version", "1"),
+        lambda manifest: manifest.__setitem__("schema_version", 1.5),
+        lambda manifest: manifest["units"][0].__setitem__(
+            "ordinal", str(manifest["units"][0]["ordinal"])
+        ),
+        lambda manifest: manifest["units"][0].__setitem__(
+            "ordinal", float(manifest["units"][0]["ordinal"]) + 0.5
+        ),
+        lambda manifest: manifest["planning_run"].__setitem__(
+            "approved_plan_revision",
+            str(manifest["planning_run"]["approved_plan_revision"]),
+        ),
+        lambda manifest: manifest["planning_run"].__setitem__(
+            "approved_plan_revision",
+            float(manifest["planning_run"]["approved_plan_revision"]) + 0.5,
+        ),
+        lambda manifest: manifest["planning_run"]["inherited_plan_approval"].__setitem__(
+            "target_revision",
+            str(manifest["planning_run"]["inherited_plan_approval"]["target_revision"]),
+        ),
+        lambda manifest: manifest["planning_run"]["inherited_plan_approval"].__setitem__(
+            "target_revision",
+            float(manifest["planning_run"]["inherited_plan_approval"]["target_revision"])
+            + 0.5,
+        ),
+    ],
+)
+def test_package_coercible_integers_are_rejected(tmp_path: Path, mutate) -> None:
+    from top_down_planning.package.builder import digest_review_record
+
+    def mutate_package(package) -> None:
+        manifest = json.loads(package.manifest_path.read_text(encoding="utf-8"))
+        mutate(manifest)
+        attestation = manifest["planning_run"]["inherited_plan_approval"]
+        approval_path = (
+            package.manifest_path.parent / "parent" / "inherited_plan_approval.json"
+        )
+        approval_path.write_text(json.dumps(attestation), encoding="utf-8")
+        manifest["planning_run"]["whole_plan_review_digest"] = digest_review_record(
+            attestation
+        )
+        _recompute_package_digest(manifest)
+        package.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    _execute_and_attach_package_error(tmp_path, mutate_package)
+
+
+def test_structurally_valid_snapshot_binding_digest_mismatch_is_package_error(
+    tmp_path: Path,
+) -> None:
+    def mutate(package) -> None:
+        binding_path = (
+            package.manifest_path.parent / "execution" / "context_snapshot_binding.json"
+        )
+        binding = json.loads(binding_path.read_text(encoding="utf-8"))
+        resources = binding.setdefault("resource_digests", {})
+        if resources:
+            first_path = next(iter(resources))
+            current = resources[first_path]
+            resources[first_path] = "b" * 64 if current != "b" * 64 else "c" * 64
+        else:
+            resources["extra.md"] = "a" * 64
+        binding_path.write_text(json.dumps(binding), encoding="utf-8")
+
+    _execute_and_attach_package_error(tmp_path, mutate)
+
+
+def _assert_doctor_marks_corrupt(store: FileRunStore, run_id: str) -> None:
+    structured = run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"])
+    assert structured.exit_code == 1
+    assert run_id in json.loads(structured.stdout)["workspace"]["corrupt_run_dirs"]
+    _assert_corrupt_both(["doctor", "--run", run_id, "--runs-dir", str(store.root)])
+
+
+def test_doctor_reports_valid_but_digest_inconsistent_snapshots(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+
+    plan_id = _create_planning_run(store, "run-20260101T111501-111501")
+    plan_path = store.run_dir(plan_id) / "plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["output_goal"] = "A different but valid goal."
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    _wipe_txn_dirs(store.run_dir(plan_id))
+    _assert_doctor_marks_corrupt(store, plan_id)
+
+    cfg_id = _create_planning_run(store, "run-20260101T111502-111502")
+    _rewrite_resolved_config_yaml(
+        store.run_dir(cfg_id),
+        lambda cfg: cfg["planning"].__setitem__("max_depth", 9),
+    )
+    _assert_doctor_marks_corrupt(store, cfg_id)
+
+    binding_id = _create_planning_run(store, "run-20260101T111503-111503")
+    run_path = store.run_dir(binding_id) / "run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    resources = run["context_snapshot_binding"].setdefault("resource_digests", {})
+    if resources:
+        first_path = next(iter(resources))
+        current = resources[first_path]
+        resources[first_path] = "b" * 64 if current != "b" * 64 else "c" * 64
+    else:
+        resources["extra.md"] = "a" * 64
+    run_path.write_text(json.dumps(run), encoding="utf-8")
+    _wipe_txn_dirs(store.run_dir(binding_id))
+    _assert_doctor_marks_corrupt(store, binding_id)
+
+    output_id = _create_planning_run(store, "run-20260101T111504-111504")
+    run_path = store.run_dir(output_id) / "run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run["digests"]["output"] = "b" * 64
+    run_path.write_text(json.dumps(run), encoding="utf-8")
+    _wipe_txn_dirs(store.run_dir(output_id))
+    _assert_doctor_marks_corrupt(store, output_id)
+
+    review_id = _create_planning_run(store, "run-20260101T111505-111505")
+    reviews_dir = store.run_dir(review_id) / "reviews"
+    reviews_dir.mkdir(exist_ok=True)
+    (reviews_dir / "review-corrupt-01.json").write_text(
+        json.dumps({"id": "review-corrupt-01", "status": "not-a-status"}),
+        encoding="utf-8",
+    )
+    _wipe_txn_dirs(store.run_dir(review_id))
+    _assert_doctor_marks_corrupt(store, review_id)

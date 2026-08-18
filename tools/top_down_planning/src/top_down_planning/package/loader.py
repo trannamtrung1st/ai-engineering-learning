@@ -86,15 +86,12 @@ def _load_json(path: Path) -> Any:
 
 
 def _require_package_int(value: Any, *, field: str) -> int:
-    try:
-        if isinstance(value, bool) or value is None:
-            raise ValueError(field)
-        return int(value)
-    except (TypeError, ValueError) as exc:
+    if type(value) is not int:
         raise ExecutionPackageError(
             f"{field} must be an integer",
             code="package_field_invalid",
-        ) from exc
+        )
+    return value
 
 
 def load_package_context_snapshot_binding(
@@ -105,6 +102,9 @@ def load_package_context_snapshot_binding(
     from core_tools.persistence import PersistenceError
     from top_down_planning.config.binding_validation import (
         validate_context_snapshot_binding,
+    )
+    from top_down_planning.config.context import (
+        compute_context_snapshot_digest_from_payload,
     )
 
     binding_rel = str(context.get("context_snapshot_binding_file") or "").strip()
@@ -133,6 +133,19 @@ def load_package_context_snapshot_binding(
         raise ExecutionPackageError(
             "context_snapshot_binding must be an object",
             code="package_snapshot_binding_invalid",
+        )
+    expected_snapshot = str(context.get("context_snapshot_digest") or "")
+    stored_digest = compute_context_snapshot_digest_from_payload(stored_binding)
+    if not expected_snapshot:
+        raise ExecutionPackageError(
+            "prepared package missing context_snapshot_digest",
+            code="package_context_incomplete",
+        )
+    if stored_digest != expected_snapshot:
+        raise ExecutionPackageError(
+            f"context_snapshot_binding digest mismatch: expected {expected_snapshot}, "
+            f"got {stored_digest}",
+            code="package_context_drift",
         )
     return stored_binding
 
@@ -176,7 +189,7 @@ class ExecutionPackageLoader:
         if not isinstance(manifest, dict):
             raise ExecutionPackageError("manifest.json must be an object")
         if _require_package_int(
-            manifest.get("schema_version") or 0, field="schema_version"
+            manifest.get("schema_version"), field="schema_version"
         ) != 1:
             raise ExecutionPackageError(
                 "unsupported package schema_version",
@@ -237,7 +250,7 @@ class ExecutionPackageLoader:
             if unit_id in units:
                 raise ExecutionPackageError(f"duplicate unit_id: {unit_id!r}")
             ordinal = _require_package_int(
-                raw_unit.get("ordinal") or 0, field=f"unit {unit_id} ordinal"
+                raw_unit.get("ordinal"), field=f"unit {unit_id} ordinal"
             )
             if ordinal in seen_ordinals:
                 raise ExecutionPackageError(f"duplicate unit ordinal: {ordinal}")
@@ -634,4 +647,5 @@ __all__ = [
     "ExecutionPackageLoader",
     "LoadedExecutionPackage",
     "LoadedUnit",
+    "load_package_context_snapshot_binding",
 ]
