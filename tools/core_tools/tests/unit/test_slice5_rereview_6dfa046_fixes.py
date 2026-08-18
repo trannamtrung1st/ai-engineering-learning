@@ -114,7 +114,8 @@ def test_zero_budget_drains_all_readable_bytes(tmp_path: Path, size: int) -> Non
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 def test_exited_process_preserves_64kib_final_line(tmp_path: Path) -> None:
     blob = "y" * 65536
-    payload = _complete_line_payloads(_system_init("chat-64k"), _assistant(blob))
+    payload = (_system_init("chat-64k") + "\n" + _assistant(blob)).encode("utf-8")
+    assert not payload.endswith(b"\n")
     iterator, fake_readable, fake_read = _scripted_chunk_iterator(
         tmp_path, payload, chunk_size=65536
     )
@@ -129,7 +130,8 @@ def test_exited_process_preserves_64kib_final_line(tmp_path: Path) -> None:
             assert iterator.wait_readable(0.0) is True
             second = iterator._pop_complete_line()
         assert second is not None
-        assert blob[:32] in second
+        record = json.loads(second)
+        assert record["message"]["content"][0]["text"] == blob
     finally:
         terminate_process_tree(iterator._proc)
         iterator.close()
