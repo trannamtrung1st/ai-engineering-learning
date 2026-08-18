@@ -263,6 +263,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
         self._finished = False
+        self._finalized = False
         self._stdout_buf = bytearray()
         self._stdout_eof = False
 
@@ -337,7 +338,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             pass
 
     def close(self) -> None:
-        """Idempotently close status, stdio, and thread resources."""
+        """Idempotently close status, stdio, and thread resources without waiting."""
 
         self._close_status_fd()
         self._close_started_fd()
@@ -565,7 +566,10 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 return None
             line = self._pop_complete_line()
             if line is None:
-                if self._stdout_eof or self._finished:
+                if self._stdout_eof:
+                    self._finalize()
+                    raise StopIteration
+                if self._finished:
                     raise StopIteration
                 continue
             stripped = line.strip()
@@ -573,9 +577,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 return stripped
 
     def _finalize(self) -> None:
-        if self._finished:
+        if self._finalized:
             return
-        self._finished = True
+        self._finalized = True
         try:
             self._stderr_done.wait(timeout=5)
             stderr = self._stderr_tail.decode("utf-8", errors="replace")
