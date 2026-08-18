@@ -25,7 +25,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.process_identity import ProcessIdentity
-from tests.conftest import close_and_reap_iterator, tracked_turn_proc, wait_published_pid
+from tests.conftest import tracked_turn_proc, wait_published_pid
 
 
 def _idle_config(idle: float) -> dict:
@@ -66,20 +66,22 @@ def _complete_line_payloads(*records: str) -> bytes:
 
 
 def _scripted_chunk_iterator(tmp_path: Path, payload: bytes, *, chunk_size: int = 4096):
-    chunks = [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
     iterator = _SubprocessStdoutIterator(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         tmp_path,
     )
-    remaining = list(chunks)
+    remaining = bytearray(payload)
 
     def fake_readable(*_args, **_kwargs) -> bool:
         return bool(remaining)
 
-    def fake_read(_fd: int, _n: int) -> bytes:
+    def fake_read(_fd: int, n: int) -> bytes:
         if not remaining:
             return b""
-        return remaining.pop(0)
+        take = min(max(1, n), chunk_size, len(remaining))
+        chunk = bytes(remaining[:take])
+        del remaining[:take]
+        return chunk
 
     return iterator, fake_readable, fake_read
 
@@ -112,23 +114,25 @@ def test_zero_budget_drains_all_readable_bytes(tmp_path: Path, size: int) -> Non
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 def test_exited_process_preserves_64kib_final_line(tmp_path: Path) -> None:
     blob = "y" * 65536
-    payload = _assistant(blob)
-    script = (
-        "import sys\n"
-        f"sys.stdout.write({_system_init('chat-64k')!r} + '\\n' + {payload!r})\n"
-        "sys.stdout.flush()\n"
+    payload = _complete_line_payloads(_system_init("chat-64k"), _assistant(blob))
+    iterator, fake_readable, fake_read = _scripted_chunk_iterator(
+        tmp_path, payload, chunk_size=65536
     )
-    iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
     try:
-        iterator._proc.wait(timeout=2)
-        assert iterator.wait_readable(0.0) is True
-        iterator._pop_complete_line()
-        assert iterator.wait_readable(0.0) is True
-        second = iterator._pop_complete_line()
+        iterator.wait_agent_started(timeout=2.0)
+        with patch.object(iterator._proc, "poll", return_value=0), patch(
+            "core_tools.provider.cursor._stdout_fd_readable",
+            side_effect=fake_readable,
+        ), patch("core_tools.provider.cursor.os.read", side_effect=fake_read):
+            assert iterator.wait_readable(0.0) is True
+            iterator._pop_complete_line()
+            assert iterator.wait_readable(0.0) is True
+            second = iterator._pop_complete_line()
         assert second is not None
         assert blob[:32] in second
     finally:
-        close_and_reap_iterator(iterator)
+        terminate_process_tree(iterator._proc)
+        iterator.close()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
