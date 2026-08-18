@@ -27,6 +27,7 @@ from tests.helpers import create_run_kwargs, minimal_resolved_config, write_conf
 from tests.unit.test_commit_crash_recovery import (
     _crash_after_dest_replace_count,
     _crash_before_appending_events,
+    _crash_on_appending_events_journal_write,
     _multi_file_commit,
 )
 from tests.unit.test_prepared_runs import _built_package
@@ -1252,6 +1253,114 @@ def test_doctor_does_not_hide_canonical_corruption_behind_prepared_transaction(
     _create_planning_run(store, run_id)
     run_dir = _leave_prepared_transaction(store, run_id)
     mutate_run_dir(run_dir)
+    observed_workspace = json.loads(
+        run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"]).stdout
+    )["workspace"]
+    assert run_id not in observed_workspace.get("recoverable_transaction_run_ids", [])
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
+
+def _leave_fully_replaced_replacing_transaction(store: FileRunStore, run_id: str) -> Path:
+    with patch(
+        "top_down_planning.persistence.file_store.atomic_write_json",
+        _crash_on_appending_events_journal_write(),
+    ):
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    txn_dirs = list(run_dir.glob(".txn-*"))
+    assert txn_dirs
+    journal = json.loads((txn_dirs[0] / "journal.json").read_text(encoding="utf-8"))
+    assert journal["status"] == "replacing"
+    replaced = list(journal["replaced"])
+    staged_names = [entry["name"] for entry in journal["files"]]
+    assert replaced == staged_names
+    assert staged_names
+    return run_dir
+
+
+def test_doctor_does_not_advertise_unrecoverable_fully_replaced_replacing_events(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111907-111907"
+    _create_planning_run(store, run_id)
+    run_dir = _leave_fully_replaced_replacing_transaction(store, run_id)
+    _tamper_events_prefix(run_dir)
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
+
+def _corrupt_invocation(run_dir: Path) -> None:
+    (run_dir / "invocation.json").write_text("[]", encoding="utf-8")
+
+
+def _in_flight_transaction_crashes():
+    return [
+        (
+            "replacing",
+            lambda: patch(
+                "top_down_planning.persistence.file_store.atomic_write_json",
+                _crash_on_appending_events_journal_write(),
+            ),
+        ),
+        (
+            "appending_events",
+            lambda: patch(
+                "top_down_planning.persistence.file_store.atomic_write_json",
+                _crash_before_appending_events(),
+            ),
+        ),
+        ("committed", _crash_after_committed_before_retire),
+    ]
+
+
+@pytest.mark.parametrize("status, crash", _in_flight_transaction_crashes())
+def test_doctor_reports_in_flight_transaction_when_unaffected_artifacts_are_healthy(
+    tmp_path: Path, status, crash
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111908-111908"
+    _create_planning_run(store, run_id)
+    with crash():
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    journal = json.loads(
+        next(run_dir.glob(".txn-*")).joinpath("journal.json").read_text(encoding="utf-8")
+    )
+    assert journal["status"] == status
+    observed = _assert_doctor_not_corrupt(store, run_id)
+    workspace = observed["workspace_payload"]["workspace"]
+    assert run_id in workspace.get("recoverable_transaction_run_ids", [])
+    assert observed["targeted_payload"].get("recoverable_transaction") is True
+    assert observed["targeted"].exit_code == 0
+
+
+@pytest.mark.parametrize("status, crash", _in_flight_transaction_crashes())
+def test_doctor_does_not_hide_unrelated_corruption_behind_in_flight_transaction(
+    tmp_path: Path, status, crash
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111909-111909"
+    _create_planning_run(store, run_id)
+    with crash():
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, run_id)
+    run_dir = store.run_dir(run_id)
+    journal = json.loads(
+        next(run_dir.glob(".txn-*")).joinpath("journal.json").read_text(encoding="utf-8")
+    )
+    assert journal["status"] == status
+    assert "invocation.json" not in [entry["name"] for entry in journal["files"]]
+    _corrupt_invocation(run_dir)
     observed_workspace = json.loads(
         run_cli(["doctor", "--runs-dir", str(store.root), "--stream-json"]).stdout
     )["workspace"]

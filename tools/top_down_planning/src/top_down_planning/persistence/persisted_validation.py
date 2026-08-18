@@ -1655,10 +1655,17 @@ def validate_canonical_invocation(run_dir: Path) -> dict[str, Any]:
     return validate_persisted_invocation(payload)
 
 
-def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, Any]:
+def validate_canonical_run_artifacts(
+    run_dir: Path,
+    run_id: str,
+    *,
+    skip_relative_paths: frozenset[str] | set[str] = frozenset(),
+) -> dict[str, Any]:
     """Read-only canonical artifact checks for doctor and CLI corrupt-run mapping.
 
     Does not recover transactions or mutate the run directory.
+    ``skip_relative_paths`` omits artifacts whose on-disk state is explained by a
+    pending transaction.
     """
 
     from core_tools.persistence import load_yaml
@@ -1667,49 +1674,77 @@ def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, An
         require_non_symlink_run_boundary,
     )
 
+    skip = {Path(path).as_posix() for path in skip_relative_paths}
+
+    def skipped(relative: str) -> bool:
+        return relative in skip
+
     try:
         require_non_symlink_run_boundary(run_dir)
         run_path = run_dir / "run.json"
         plan_path = run_dir / "plan.json"
         production_path = run_dir / "production.json"
         config_path = run_dir / "resolved-config.yaml"
-        if not run_path.is_file():
-            raise PersistenceError("run.json missing")
-        run_payload = json.loads(run_path.read_text(encoding="utf-8"))
-        if not isinstance(run_payload, dict):
-            raise PersistenceError("run.json must contain a JSON object")
-        validate_canonical_run(run_id, run_payload)
-        if not plan_path.is_file():
-            raise PersistenceError("plan.json missing")
-        plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
-        plan = canonicalize_persisted_plan(plan_payload)
-        if not production_path.is_file():
-            raise PersistenceError("production.json missing")
-        production_payload = json.loads(production_path.read_text(encoding="utf-8"))
-        validate_persisted_production(production_payload, plan=plan)
-        if not config_path.is_file():
-            raise PersistenceError("resolved-config.yaml missing")
-        config_payload = load_yaml(config_path.read_text(encoding="utf-8"))
-        if not isinstance(config_payload, dict):
-            raise PersistenceError("resolved-config.yaml must contain a mapping")
-        try:
-            validate_persisted_resolved_config(config_payload)
-        except ConfigError as exc:
-            raise PersistenceError(
-                f"resolved-config.yaml is invalid: {exc}"
-            ) from exc
-        from top_down_planning.persistence.snapshot_bindings import (
-            validate_persisted_artifact_digest_bindings,
+        run_payload: dict[str, Any] | None = None
+        plan = None
+        production_payload = None
+        config_payload = None
+        if not skipped("run.json"):
+            if not run_path.is_file():
+                raise PersistenceError("run.json missing")
+            run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+            if not isinstance(run_payload, dict):
+                raise PersistenceError("run.json must contain a JSON object")
+            validate_canonical_run(run_id, run_payload)
+        if not skipped("plan.json"):
+            if not plan_path.is_file():
+                raise PersistenceError("plan.json missing")
+            plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan = canonicalize_persisted_plan(plan_payload)
+        if not skipped("production.json"):
+            if not production_path.is_file():
+                raise PersistenceError("production.json missing")
+            production_payload = json.loads(production_path.read_text(encoding="utf-8"))
+            if plan is None:
+                if not plan_path.is_file():
+                    raise PersistenceError("plan.json missing")
+                plan = canonicalize_persisted_plan(
+                    json.loads(plan_path.read_text(encoding="utf-8"))
+                )
+            validate_persisted_production(production_payload, plan=plan)
+        if not skipped("resolved-config.yaml"):
+            if not config_path.is_file():
+                raise PersistenceError("resolved-config.yaml missing")
+            config_payload = load_yaml(config_path.read_text(encoding="utf-8"))
+            if not isinstance(config_payload, dict):
+                raise PersistenceError("resolved-config.yaml must contain a mapping")
+            try:
+                validate_persisted_resolved_config(config_payload)
+            except ConfigError as exc:
+                raise PersistenceError(
+                    f"resolved-config.yaml is invalid: {exc}"
+                ) from exc
+        binding_inputs = (
+            "run.json",
+            "plan.json",
+            "production.json",
+            "resolved-config.yaml",
         )
+        if not any(skipped(name) for name in binding_inputs):
+            from top_down_planning.persistence.snapshot_bindings import (
+                validate_persisted_artifact_digest_bindings,
+            )
 
-        validate_persisted_artifact_digest_bindings(
-            run_payload,
-            plan=plan,
-            production=production_payload,
-            resolved_config=config_payload,
-        )
-        validate_canonical_event_journal(run_dir, run_id)
-        validate_canonical_invocation(run_dir)
+            validate_persisted_artifact_digest_bindings(
+                run_payload,
+                plan=plan,
+                production=production_payload,
+                resolved_config=config_payload,
+            )
+        if not skipped("events.jsonl"):
+            validate_canonical_event_journal(run_dir, run_id)
+        if not skipped("invocation.json"):
+            validate_canonical_invocation(run_dir)
         reviews_dir = run_dir / "reviews"
         if reviews_dir.exists():
             if reviews_dir.is_symlink():
@@ -1717,6 +1752,9 @@ def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, An
             if not reviews_dir.is_dir():
                 raise PersistenceError("reviews must be a directory")
             for review_path in sorted(reviews_dir.glob("*.json")):
+                relative = review_path.relative_to(run_dir).as_posix()
+                if skipped(relative):
+                    continue
                 if review_path.is_symlink():
                     raise PersistenceError(
                         f"review path {review_path.name} must not be a symlink"
@@ -1725,6 +1763,12 @@ def validate_canonical_run_artifacts(run_dir: Path, run_id: str) -> dict[str, An
                 canonicalize_persisted_review(review_path.stem, review_payload)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise PersistenceError(f"canonical run artifacts are unreadable: {exc}") from exc
+    if run_payload is None:
+        if not run_path.is_file():
+            raise PersistenceError("run.json missing")
+        run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+        if not isinstance(run_payload, dict):
+            raise PersistenceError("run.json must contain a JSON object")
     return run_payload
 
 

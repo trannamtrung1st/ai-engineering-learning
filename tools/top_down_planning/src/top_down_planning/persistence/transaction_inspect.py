@@ -179,6 +179,48 @@ def verify_events_append_recoverable(
         )
 
 
+def replaced_destinations_match(run_dir: Path, parsed: ParsedRecoveryJournal) -> bool:
+    """Return True when every staged file is replaced and matches its journal digest."""
+
+    names = {entry.name for entry in parsed.files}
+    if set(parsed.replaced) != names:
+        return False
+    if not parsed.files:
+        return True
+    for entry in parsed.files:
+        dest = destination_for_journal_entry(run_dir, entry)
+        if not dest.is_file() or digest_file(dest) != entry.digest:
+            return False
+    return True
+
+
+def recovery_commits_forward(run_dir: Path, parsed: ParsedRecoveryJournal) -> bool:
+    """Return True when recovery will append events and retire instead of rolling back."""
+
+    if parsed.status in {"appending_events", "committed"}:
+        return True
+    return parsed.status == "replacing" and replaced_destinations_match(run_dir, parsed)
+
+
+def in_flight_relative_paths(run_dir: Path, parsed: ParsedRecoveryJournal) -> frozenset[str]:
+    """Canonical paths whose on-disk state is explained by the pending transaction."""
+
+    skipped: set[str] = set()
+    if parsed.status != "prepared":
+        replaced = set(parsed.replaced)
+        for entry in parsed.files:
+            dest = destination_for_journal_entry(run_dir, entry)
+            relative = dest.relative_to(run_dir).as_posix()
+            if entry.name in replaced:
+                skipped.add(relative)
+                continue
+            if dest.is_file() and digest_file(dest) == entry.digest:
+                skipped.add(relative)
+    if recovery_commits_forward(run_dir, parsed):
+        skipped.add("events.jsonl")
+    return frozenset(skipped)
+
+
 def _read_transaction_journal(
     journal_path: Path,
     run_id: str,
@@ -278,6 +320,13 @@ def inspect_run_transactions(
             run_id=run_id,
             txn_id=txn_id,
         )
+        verify_events_append_recoverable(
+            run_dir,
+            parsed,
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    elif recovery_commits_forward(run_dir, parsed):
         verify_events_append_recoverable(
             run_dir,
             parsed,

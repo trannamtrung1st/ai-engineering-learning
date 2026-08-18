@@ -47,6 +47,7 @@ from top_down_planning.persistence.journal_schema import (
 )
 from top_down_planning.persistence.transaction_inspect import (
     journal_events_suffix_bytes,
+    replaced_destinations_match,
     require_committed_destinations,
     validate_run_transactions_for_recovery,
     verify_events_append_recoverable,
@@ -1291,20 +1292,7 @@ class FileRunStore:
                 )
 
         if status in {"prepared", "replacing"}:
-            all_names = {str(entry.get("name") or "") for entry in staged_files}
-            replaced_names = {str(name) for name in replaced}
-            if (
-                status == "replacing"
-                and replaced_names == all_names
-                and (
-                    not all_names
-                    or self._verify_replaced_files_match_staged(
-                        run_dir,
-                        staged_files,
-                        replaced,
-                    )
-                )
-            ):
+            if status == "replacing" and replaced_destinations_match(run_dir, parsed):
                 if txn_id and journal_events:
                     self._ensure_events_appended(
                         run_id,
