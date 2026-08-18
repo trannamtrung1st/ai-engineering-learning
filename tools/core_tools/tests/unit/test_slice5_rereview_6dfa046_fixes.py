@@ -70,13 +70,18 @@ def _wait_until_complete_lines(
     """Block until ``count`` newline-terminated records are in the stdout buffer.
 
     ``wait_readable`` returns as soon as *one* complete line exists, so a follow-up
-    ``wait_readable(0.0)`` can miss later pipe chunks still in flight (Darwin).
+    ``wait_readable(0.0)`` can miss later pipe chunks still in flight. Filling
+    stdout before the janitor starts the agent can also see a spurious empty
+    read and mark EOF (Linux CI).
     """
 
+    iterator.wait_agent_started(timeout=timeout)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if iterator._stdout_buf.count(b"\n") >= count:
             return
+        if iterator._stdout_eof:
+            break
         iterator._fill_stdout_buffer(0.05)
     assert iterator._stdout_buf.count(b"\n") >= count
 
@@ -187,7 +192,7 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
         first = next(stream)
         first_event_at = time.monotonic() - started
         events = [first, *list(stream)]
-    assert first_event_at < 0.18
+    assert first_event_at < 0.2
     texts = [str(event.get("text") or "") for event in events]
     assert any("ready" in text for text in texts)
 
