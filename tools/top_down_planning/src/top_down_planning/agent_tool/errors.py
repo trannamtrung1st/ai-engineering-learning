@@ -46,6 +46,8 @@ class RequestError(AgentToolError):
 
 
 class RevisionConflictError(AgentToolError):
+    """Stale caller freshness token. ``expected`` is the caller revision; ``actual`` is current store."""
+
     code = "revision_conflict"
 
     def __init__(

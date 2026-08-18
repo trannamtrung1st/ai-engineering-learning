@@ -92,13 +92,13 @@ _REVIEW_FRESHNESS_ACTION = (
 def _artifact_revision_conflict(
     message: str,
     *,
-    expected: int | None = None,
-    actual: int | None = None,
+    caller_revision: int | None = None,
+    current_revision: int | None = None,
 ) -> RevisionConflictError:
     return RevisionConflictError(
         message,
-        expected=expected,
-        actual=actual,
+        expected=caller_revision,
+        actual=current_revision,
         action=_REVIEW_FRESHNESS_ACTION,
     )
 
@@ -630,16 +630,18 @@ class ReviewAgentService:
             current_revision = int(self._store.load_plan(self._run_id)["revision"])
             revision_label = "plan"
         if target_revision != current_revision:
-            raise RequestError(
+            raise _artifact_revision_conflict(
                 f"target_revision {target_revision} does not match current {revision_label} "
-                f"revision {current_revision}"
+                f"revision {current_revision}",
+                caller_revision=target_revision,
+                current_revision=current_revision,
             )
         if loop.target_revision != target_revision:
             raise _artifact_revision_conflict(
                 f"target_revision {target_revision} does not match loop target "
                 f"{loop.target_revision}",
-                expected=int(loop.target_revision),
-                actual=int(target_revision),
+                caller_revision=int(target_revision),
+                current_revision=int(loop.target_revision),
             )
 
         approved_digests: dict[str, str] | None = None
@@ -961,8 +963,8 @@ class ReviewAgentService:
                 raise _artifact_revision_conflict(
                     f"target_revision {requested_revision} does not match current "
                     f"revision {current_artifact_revision}",
-                    expected=current_artifact_revision,
-                    actual=requested_revision,
+                    caller_revision=requested_revision,
+                    current_revision=current_artifact_revision,
                 )
             artifact_revision = requested_revision
         else:

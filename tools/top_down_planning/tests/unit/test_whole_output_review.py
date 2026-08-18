@@ -10,7 +10,7 @@ import pytest
 
 from core_tools.persistence import PersistenceError, atomic_write_json
 from core_tools.provider import StubProvider
-from top_down_planning.agent_tool import RequestError, ReviewAgentService
+from top_down_planning.agent_tool import ReviewAgentService, RevisionConflictError
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.finding_families import FindingFamily, compute_family_fingerprint
 from top_down_planning.domain.models import Plan, PlanItem
@@ -604,7 +604,7 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
         session_id="stub-session-reviewer",
         loop_id="review-whole-output-01",
     )
-    with pytest.raises(RequestError, match="does not match current output revision"):
+    with pytest.raises(RevisionConflictError) as excinfo:
         service.respond(
             _review_respond_request(
                 decision="approved",
@@ -614,6 +614,11 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
             ),
             capability_token=token,
         )
+    assert excinfo.value.code == "revision_conflict"
+    assert excinfo.value.expected == 0
+    assert excinfo.value.actual == int(
+        store.load_production("run-20260101T000801-000801")["output_revision"]
+    )
 
 
 def test_whole_output_review_resumes_interrupted_producer_revision(

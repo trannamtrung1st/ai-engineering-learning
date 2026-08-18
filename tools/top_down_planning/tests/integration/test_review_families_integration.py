@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.agent_tool import PlanAgentService, ReviewAgentService
+from top_down_planning.agent_tool import (
+    PlanAgentService,
+    ReviewAgentService,
+    RevisionConflictError,
+)
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.artifact_refs import digest_field_value
 from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
@@ -606,7 +610,6 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
 
 
 def test_record_family_fix_rejects_stale_target_digest(tmp_path: Path) -> None:
-    from top_down_planning.agent_tool.errors import RequestError
     from tests.helpers import make_review_loop, save_review_payload
 
     store = FileRunStore(tmp_path / "runs")
@@ -667,7 +670,7 @@ def test_record_family_fix_rejects_stale_target_digest(tmp_path: Path) -> None:
         ).to_dict(),
     )
 
-    with pytest.raises(RequestError, match="target_digest does not match current plan digest"):
+    with pytest.raises(RevisionConflictError) as excinfo:
         ReviewAgentService(store, run_id).record_finding_actions(
             {
                 "loop_id": loop_id,
@@ -696,6 +699,8 @@ def test_record_family_fix_rejects_stale_target_digest(tmp_path: Path) -> None:
                 store, run_id, role="planner", phase=PLANNING
             ),
         )
+    assert excinfo.value.code == "revision_conflict"
+    assert excinfo.value.action
 
 
 def test_record_family_fix_rebinds_owner_sweep_without_duplicate_actions(

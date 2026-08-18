@@ -9,7 +9,7 @@ import pytest
 
 from top_down_planning.persistence.session_bindings import update_primary_binding
 
-from top_down_planning.agent_tool import RequestError, ReviewAgentService
+from top_down_planning.agent_tool import ReviewAgentService, RevisionConflictError
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProviderRunError, WholePlanReviewOrchestrator
@@ -304,7 +304,7 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
     plan.revision = 1
     store.save_plan_model("run-20260101T000301-000301", plan, 0)
 
-    with pytest.raises(RequestError, match="does not match current plan revision"):
+    with pytest.raises(RevisionConflictError) as excinfo:
         service.respond(
             _review_respond_request(
                 decision="approved",
@@ -314,6 +314,9 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
             ),
             capability_token=token,
         )
+    assert excinfo.value.code == "revision_conflict"
+    assert excinfo.value.expected == 0
+    assert excinfo.value.actual == 1
 
 
 from tests.unit.test_mandatory_whole_review_driver import _FakeAdapter, _create_driver_run
