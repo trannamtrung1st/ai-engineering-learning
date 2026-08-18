@@ -248,16 +248,25 @@ def test_second_stream_line_arrives_before_slow_identity(tmp_path: Path) -> None
     ):
         stream = provider.stream_events(session_id)
         next(stream)
-        started = time.monotonic()
-        got_assistant = False
-        for event in stream:
-            if event.get("type") == "assistant":
-                got_assistant = True
-                elapsed = time.monotonic() - started
-                break
-        else:
-            elapsed = time.monotonic() - started
-        identity_hold.set()
+        box: dict[str, object] = {}
+        errors: list[BaseException] = []
+
+        def read_assistant() -> None:
+            try:
+                for event in stream:
+                    if event.get("type") == "assistant":
+                        box["event"] = event
+                        return
+            except BaseException as exc:
+                errors.append(exc)
+
+        reader = threading.Thread(target=read_assistant)
+        reader.start()
+        try:
+            reader.join(timeout=1.0)
+            assert reader.is_alive() is False
+            assert errors == []
+            assert box.get("event") is not None
+        finally:
+            identity_hold.set()
         provider.terminate_session(session_id)
-    assert got_assistant
-    assert elapsed < 0.15

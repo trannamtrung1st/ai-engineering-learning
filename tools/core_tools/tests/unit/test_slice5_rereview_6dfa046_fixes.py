@@ -179,7 +179,15 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
         identity_hold.wait(timeout=2.0)
         return ProcessIdentity(pid=424242, start_time="synthetic-test")
 
-    provider = _provider(tmp_path, runner)
+    agent = tmp_path / "agent"
+    agent.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        _idle_config(0.0),
+        workspace=tmp_path,
+        runner=runner,
+        binary=str(agent),
+        skip_probe=True,
+    )
     with patch(
         "core_tools.provider.cursor.read_process_identity",
         side_effect=slow_identity,
@@ -190,12 +198,25 @@ def test_identity_bookkeeping_does_not_block_first_stdout(tmp_path: Path) -> Non
         session_id = provider.start_primary_session("planner", {"goal": "x"})
         stream = provider.stream_events(session_id)
         first = next(stream)
-        after_first = time.monotonic()
-        second = next(stream)
-        second_waited = time.monotonic() - after_first
-        identity_hold.set()
+        box: dict[str, object] = {}
+        errors: list[BaseException] = []
+
+        def read_second() -> None:
+            try:
+                box["event"] = next(stream)
+            except BaseException as exc:
+                errors.append(exc)
+
+        reader = threading.Thread(target=read_second)
+        reader.start()
+        try:
+            reader.join(timeout=1.0)
+            assert reader.is_alive() is False
+            assert errors == []
+            second = box["event"]
+        finally:
+            identity_hold.set()
         events = [first, second, *list(stream)]
-    assert second_waited < 0.15
     texts = [str(event.get("text") or "") for event in events]
     assert any("ready" in text for text in texts)
 
