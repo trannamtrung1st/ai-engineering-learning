@@ -84,6 +84,25 @@ def _reject_non_family_mandatory_loop(loop: ReviewLoop) -> None:
     )
 
 
+_REVIEW_FRESHNESS_ACTION = (
+    "Refresh the artifact snapshot and retry with the current revision and digest."
+)
+
+
+def _artifact_revision_conflict(
+    message: str,
+    *,
+    expected: int | None = None,
+    actual: int | None = None,
+) -> RevisionConflictError:
+    return RevisionConflictError(
+        message,
+        expected=expected,
+        actual=actual,
+        action=_REVIEW_FRESHNESS_ACTION,
+    )
+
+
 def _current_focused_artifact_digest(store: RunStore, run_id: str, loop_type: str) -> str:
     from top_down_planning.persistence.digests import (
         compute_output_digest,
@@ -121,7 +140,7 @@ def _resolve_focused_artifact_digest(
     if requested:
         if requested != current:
             label = "output" if loop.type == "focused_output" else "plan"
-            raise RequestError(
+            raise _artifact_revision_conflict(
                 f"target_digest does not match current {label} digest"
             )
         return requested
@@ -151,10 +170,7 @@ def _value_error_as_request_error(exc: ValueError) -> RequestError:
             "target_revision and target_digest."
         )
     elif "target_digest does not match current" in message:
-        hint = (
-            "Set target_digest from the delivered review package or production "
-            "snapshot at the current artifact revision."
-        )
+        return _artifact_revision_conflict(message)
     return RequestError(message, hint=hint)
 
 
@@ -619,9 +635,11 @@ class ReviewAgentService:
                 f"revision {current_revision}"
             )
         if loop.target_revision != target_revision:
-            raise RequestError(
+            raise _artifact_revision_conflict(
                 f"target_revision {target_revision} does not match loop target "
-                f"{loop.target_revision}"
+                f"{loop.target_revision}",
+                expected=int(loop.target_revision),
+                actual=int(target_revision),
             )
 
         approved_digests: dict[str, str] | None = None
@@ -664,7 +682,7 @@ class ReviewAgentService:
                     )
                 if artifact_digest is not None and request_digest != artifact_digest:
                     artifact_key = "plan" if loop.type == "whole_plan" else "output"
-                    raise RequestError(
+                    raise _artifact_revision_conflict(
                         f"target_digest does not match current {artifact_key} digest"
                     )
             if decision == "approved":
@@ -678,7 +696,7 @@ class ReviewAgentService:
                     )
                 if artifact_digest is not None and request_digest != artifact_digest:
                     artifact_key = "plan" if loop.type == "whole_plan" else "output"
-                    raise RequestError(
+                    raise _artifact_revision_conflict(
                         f"target_digest does not match current {artifact_key} digest"
                     )
 
@@ -940,13 +958,38 @@ class ReviewAgentService:
             except (TypeError, ValueError) as exc:
                 raise RequestError("target_revision must be an integer") from exc
             if requested_revision != current_artifact_revision:
-                raise RequestError(
+                raise _artifact_revision_conflict(
                     f"target_revision {requested_revision} does not match current "
-                    f"revision {current_artifact_revision}"
+                    f"revision {current_artifact_revision}",
+                    expected=current_artifact_revision,
+                    actual=requested_revision,
                 )
             artifact_revision = requested_revision
         else:
             artifact_revision = current_artifact_revision
+
+        requested_digest = str(request.get("target_digest") or "").strip()
+        if requested_digest:
+            if loop.type in {"whole_output", "focused_output"}:
+                current_digest = _current_focused_artifact_digest(
+                    self._store, self._run_id, "focused_output"
+                ) if loop.type == "focused_output" else _current_mandatory_artifact_digest(
+                    self._store, self._run_id, loop.type
+                )
+            else:
+                current_digest = (
+                    _current_focused_artifact_digest(
+                        self._store, self._run_id, "focused_plan"
+                    )
+                    if loop.type == "focused_plan"
+                    else _current_mandatory_artifact_digest(
+                        self._store, self._run_id, loop.type
+                    )
+                )
+            if requested_digest != current_digest:
+                raise _artifact_revision_conflict(
+                    "target_digest does not match current artifact digest"
+                )
 
         family_events: list[dict[str, Any]] = []
         try:
@@ -965,7 +1008,7 @@ class ReviewAgentService:
                 )
                 if target_digest != current_digest:
                     label = "output" if loop.type == "whole_output" else "plan"
-                    raise RequestError(
+                    raise _artifact_revision_conflict(
                         f"target_digest does not match current {label} digest"
                     )
                 updated, parsed, family_events = apply_family_fixes(

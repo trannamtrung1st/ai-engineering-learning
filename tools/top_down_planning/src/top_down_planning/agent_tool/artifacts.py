@@ -21,18 +21,12 @@ def _guess_media_type(path: Path) -> str:
     return media_type or "application/octet-stream"
 
 
-def capture_output_artifact(
-    store: RunStore,
-    run_id: str,
+def prepare_output_artifact(
     *,
     workspace: Path,
     ref: str,
-) -> dict[str, str | int]:
-    """Resolve, hash, and snapshot a workspace artifact into the run store.
-
-    Evidence refs are canonicalized to workspace-relative POSIX paths. Absolute
-    refs, unresolved ``..``, and symlink escapes fail validation explicitly.
-    """
+) -> dict[str, str | int | bytes]:
+    """Resolve and hash a workspace artifact without writing store bytes."""
 
     from top_down_planning.config.snapshot_policy import (
         CanonicalPathError,
@@ -55,19 +49,47 @@ def capture_output_artifact(
     sha256 = hashlib.sha256(data).hexdigest()
     filename = artifact_path.name
     snapshot_id = uuid.uuid4().hex
-    snapshot_ref = store.write_artifact_bytes(
-        run_id,
-        snapshot_id,
-        filename,
-        data,
-    )
+    snapshot_ref = str(Path("artifacts") / snapshot_id / filename)
     return {
         "ref": canonical_ref,
+        "snapshot_id": snapshot_id,
+        "filename": filename,
         "snapshot_ref": snapshot_ref,
         "sha256": sha256,
         "size": len(data),
         "media_type": _guess_media_type(artifact_path),
         "captured_at": _utc_now(),
+        "data": data,
+    }
+
+
+def capture_output_artifact(
+    store: RunStore,
+    run_id: str,
+    *,
+    workspace: Path,
+    ref: str,
+) -> dict[str, str | int]:
+    """Resolve, hash, and snapshot a workspace artifact into the run store.
+
+    Evidence refs are canonicalized to workspace-relative POSIX paths. Absolute
+    refs, unresolved ``..``, and symlink escapes fail validation explicitly.
+    """
+
+    prepared = prepare_output_artifact(workspace=workspace, ref=ref)
+    snapshot_ref = store.write_artifact_bytes(
+        run_id,
+        str(prepared["snapshot_id"]),
+        str(prepared["filename"]),
+        bytes(prepared["data"]),
+    )
+    return {
+        "ref": str(prepared["ref"]),
+        "snapshot_ref": snapshot_ref,
+        "sha256": str(prepared["sha256"]),
+        "size": int(prepared["size"]),
+        "media_type": str(prepared["media_type"]),
+        "captured_at": str(prepared["captured_at"]),
     }
 
 

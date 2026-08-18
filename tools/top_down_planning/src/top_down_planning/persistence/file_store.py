@@ -21,6 +21,7 @@ from core_tools.persistence import (
     assert_next_revision,
     atomic_write_json,
     atomic_write_text,
+    atomic_write_bytes,
     digest_bytes,
     digest_file,
     dump_yaml,
@@ -665,6 +666,7 @@ class FileRunStore:
                     self,
                     validated_run_id,
                     prospective_production,
+                    staged_artifacts=spec.artifacts,
                 )
             validate_context_snapshot_transition(
                 current_run,
@@ -716,6 +718,28 @@ class FileRunStore:
         try:
             stage_dir.mkdir()
             backups_dir.mkdir()
+            for artifact in spec.artifacts:
+                snapshot_id = validate_store_id(artifact.snapshot_id, label="snapshot_id")
+                filename = validate_store_id(artifact.filename, label="artifact_filename")
+                staged_name = f"artifact__{snapshot_id}__{filename}"
+                staged_path = stage_dir / staged_name
+                dest = self.artifacts_dir(validated_run_id) / snapshot_id / filename
+                if dest.exists():
+                    raise PersistenceError(
+                        f"artifact snapshot already exists: {snapshot_id}/{filename}"
+                    )
+                atomic_write_bytes(staged_path, artifact.data)
+                staged_files.append(
+                    {
+                        "kind": "artifact",
+                        "name": staged_name,
+                        "snapshot_id": snapshot_id,
+                        "filename": filename,
+                        "digest": digest_file(staged_path),
+                        "had_destination": False,
+                    }
+                )
+
             if run_payload is not None:
                 staged_path = stage_dir / "run.json"
                 dest = run_dir / "run.json"
@@ -823,14 +847,15 @@ class FileRunStore:
 
             for entry in staged_files:
                 staged_path = self._txn_staged_path(txn_dir, entry["name"])
-                if entry["kind"] == "review":
-                    reviews_dir = self.reviews_dir(validated_run_id)
-                    reviews_dir.mkdir(parents=True, exist_ok=True)
-                    dest = reviews_dir / f"{entry['review_id']}.json"
-                else:
-                    dest = run_dir / entry["name"]
+                dest = self._destination_for_staged_entry(run_dir, entry)
+                dest.parent.mkdir(parents=True, exist_ok=True)
                 self._assert_run_contained(run_dir, dest)
                 if dest.exists():
+                    if entry["kind"] == "artifact":
+                        raise PersistenceError(
+                            "artifact snapshot already exists: "
+                            f"{entry.get('snapshot_id')}/{entry.get('filename')}"
+                        )
                     backup_path = self._txn_backup_path(txn_dir, entry["name"])
                     shutil.copy2(dest, backup_path)
                     journal["backups"].append(entry["name"])
@@ -1602,6 +1627,13 @@ class FileRunStore:
                 run_dir,
                 run_dir / "reviews" / f"{review_id}.json",
             )
+        if entry.get("kind") == "artifact":
+            snapshot_id = str(entry.get("snapshot_id") or "")
+            filename = str(entry.get("filename") or "")
+            return self._assert_run_contained(
+                run_dir,
+                run_dir / "artifacts" / snapshot_id / filename,
+            )
         return self._assert_run_contained(run_dir, run_dir / str(entry.get("name") or ""))
 
     def _verify_replaced_files_match_staged(
@@ -1656,6 +1688,22 @@ class FileRunStore:
                 continue
             dest = self._destination_for_staged_entry(run_dir, entry)
             backup_path = self._txn_backup_path(txn_dir, name)
+            if entry.get("kind") == "artifact":
+                snapshot_dir = dest.parent
+                if snapshot_dir.is_dir():
+                    quarantine = lexical_txn_owned_path(
+                        txn_dir,
+                        txn_dir / f"rolled-back-artifact-{entry.get('snapshot_id')}",
+                    )
+                    try:
+                        if dest.exists():
+                            dest.unlink()
+                        if snapshot_dir.is_dir() and not any(snapshot_dir.iterdir()):
+                            snapshot_dir.rmdir()
+                    except OSError:
+                        if snapshot_dir.exists():
+                            snapshot_dir.rename(quarantine)
+                continue
             if backup_path.is_file():
                 shutil.copy2(backup_path, dest)
             elif dest.exists():

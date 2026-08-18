@@ -33,3 +33,13 @@ class CommitSpec:
     review_expected_revisions: dict[str, int] = field(default_factory=dict)
     authorized_capability_id: str | None = None
     authorized_phase: str | None = None
+    artifacts: list[StagedArtifact] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StagedArtifact:
+    """Artifact bytes promoted only when the journaled transaction commits."""
+
+    snapshot_id: str
+    filename: str
+    data: bytes

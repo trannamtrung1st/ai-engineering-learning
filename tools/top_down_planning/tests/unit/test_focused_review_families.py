@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.agent_tool import RequestError, ReviewAgentService
+from top_down_planning.agent_tool import RequestError, ReviewAgentService, RevisionConflictError
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, grant_capability, respond_review, save_review_payload
@@ -144,7 +144,7 @@ def test_focused_family_discovery_rejects_stale_target_digest(
         _focused_plan_request(["item-api"]),
     )()
 
-    with pytest.raises(RequestError, match="target_digest does not match"):
+    with pytest.raises(RevisionConflictError, match="target_digest does not match"):
         respond_review(
             store,
             run_id,
@@ -302,7 +302,7 @@ def test_focused_verification_rejects_stale_target_digest(tmp_path: Path) -> Non
     )
     save_review_payload(store, run_id, loop.to_dict())
 
-    with pytest.raises(RequestError, match="target_digest does not match"):
+    with pytest.raises(RevisionConflictError, match="target_digest does not match"):
         respond_review(
             store,
             run_id,

@@ -70,8 +70,7 @@ class PlanAgentService:
         dispositions = self._dispositions_from(canonical.production)
         reviews = canonical.reviews
         review_state, digests = plan_approval_validation_context(
-            self._store,
-            self._run_id,
+            canonical,
             plan,
             mode,
         )
@@ -112,6 +111,7 @@ class PlanAgentService:
         payload["ok"] = validation.ok
         payload["issues"] = validation_issues(validation)
         payload["warnings"] = validation_warnings(validation)
+        payload["plan_digest"] = compute_plan_digest(plan)
         return payload
 
     def apply(
@@ -243,8 +243,7 @@ class PlanAgentService:
         dispositions = self._dispositions_from(canonical.production)
         reviews = canonical.reviews
         review_state, digests = plan_approval_validation_context(
-            self._store,
-            self._run_id,
+            canonical,
             plan,
             mode,
         )
@@ -261,6 +260,7 @@ class PlanAgentService:
             "ok": validation.ok,
             "mode": mode,
             "revision": plan.revision,
+            "plan_digest": compute_plan_digest(plan),
             "issues": validation_issues(validation),
             "warnings": validation_warnings(validation),
         }

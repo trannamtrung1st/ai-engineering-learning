@@ -7,7 +7,7 @@ from typing import Any
 
 from pathlib import Path
 
-from top_down_planning.agent_tool.artifacts import capture_output_artifact
+from top_down_planning.agent_tool.artifacts import prepare_output_artifact
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.commit import commit_authorized
 from top_down_planning.agent_tool.config import planning_limits_from_config
@@ -71,7 +71,8 @@ from top_down_planning.domain.production import (
 from top_down_planning.domain.readiness import is_applicable_item
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.validators import validate_plan
-from top_down_planning.persistence.commit import CommitSpec
+from top_down_planning.persistence.commit import CommitSpec, StagedArtifact
+from top_down_planning.persistence.digests import compute_output_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 
 _PRODUCTION_SNAPSHOT_ACTION = (
@@ -138,6 +139,8 @@ class ProductionAgentService:
         payload["warnings"] = validation_warnings(validation)
         payload["production_revision"] = int(production["revision"])
         payload["output_revision"] = int(production["output_revision"])
+        payload["output_digest"] = compute_output_digest(production)
+        payload["plan_digest"] = compute_plan_digest(plan)
         payload["batch_count"] = len(production["batches"])
         return payload
 
@@ -340,8 +343,9 @@ class ProductionAgentService:
             candidate["completion_claim"] = None
         self._validate_apply_snapshot_evidence(candidate, current_revision=current_revision)
         outputs: list[OutputEvidence] = []
+        staged_artifacts: list[StagedArtifact] = []
         try:
-            outputs = _capture_output_specs(self._store, self._run_id, workspace, output_specs)
+            outputs, staged_artifacts = _prepare_output_specs(workspace, output_specs)
             batch = ProductionBatch(
                 id=batch_id,
                 plan_items=batch.plan_items,
@@ -368,6 +372,7 @@ class ProductionAgentService:
                 CommitSpec(
                     production=updated,
                     production_expected_revision=current_revision,
+                    artifacts=staged_artifacts,
                     events=[
                         apply_request_audit_fields(
                             {
@@ -417,6 +422,7 @@ class ProductionAgentService:
             "revision": plan.revision,
             "production_revision": int(production["revision"]),
             "output_revision": int(production["output_revision"]),
+            "output_digest": compute_output_digest(production),
             "all_applicable_items_processed": all_applicable_items_processed(
                 plan,
                 dispositions,
@@ -922,32 +928,50 @@ def _parse_output_specs(
     return specs
 
 
+def _prepare_output_specs(
+    workspace: Path,
+    specs: list[OutputSpec],
+) -> tuple[list[OutputEvidence], list[StagedArtifact]]:
+    outputs: list[OutputEvidence] = []
+    artifacts: list[StagedArtifact] = []
+    for spec in specs:
+        captured = prepare_output_artifact(workspace=workspace, ref=spec.ref)
+        artifacts.append(
+            StagedArtifact(
+                snapshot_id=str(captured["snapshot_id"]),
+                filename=str(captured["filename"]),
+                data=bytes(captured["data"]),
+            )
+        )
+        outputs.append(
+            OutputEvidence(
+                id=spec.id,
+                type=spec.type,
+                ref=str(captured["ref"]),
+                sha256=str(captured["sha256"]),
+                size=int(captured["size"]),
+                media_type=str(captured["media_type"]),
+                captured_at=str(captured["captured_at"]),
+                snapshot_ref=str(captured["snapshot_ref"]),
+            )
+        )
+    return outputs, artifacts
+
+
 def _capture_output_specs(
     store: RunStore,
     run_id: str,
     workspace: Path,
     specs: list[OutputSpec],
 ) -> list[OutputEvidence]:
-    outputs: list[OutputEvidence] = []
+    outputs, artifacts = _prepare_output_specs(workspace, specs)
     try:
-        for spec in specs:
-            captured = capture_output_artifact(
-                store,  # type: ignore[arg-type]
+        for artifact in artifacts:
+            store.write_artifact_bytes(
                 run_id,
-                workspace=workspace,
-                ref=spec.ref,
-            )
-            outputs.append(
-                OutputEvidence(
-                    id=spec.id,
-                    type=spec.type,
-                    ref=str(captured["ref"]),
-                    sha256=str(captured["sha256"]),
-                    size=int(captured["size"]),
-                    media_type=str(captured["media_type"]),
-                    captured_at=str(captured["captured_at"]),
-                    snapshot_ref=str(captured["snapshot_ref"]),
-                )
+                artifact.snapshot_id,
+                artifact.filename,
+                artifact.data,
             )
     except Exception:
         _discard_captured_outputs(store, run_id, outputs)

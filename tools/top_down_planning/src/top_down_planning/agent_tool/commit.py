@@ -40,6 +40,7 @@ def commit_authorized(
         review_expected_revisions=spec.review_expected_revisions,
         authorized_capability_id=auth.capability_id,
         authorized_phase=auth.phase,
+        artifacts=list(spec.artifacts),
     )
     try:
         return store.commit(run_id, bound)

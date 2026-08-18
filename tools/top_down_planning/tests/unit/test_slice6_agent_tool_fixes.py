@@ -17,6 +17,7 @@ from top_down_planning.agent_tool import (
     RevisionConflictError,
     RunAgentService,
 )
+from top_down_planning.agent_tool.artifacts import prepare_output_artifact
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.agent_tool.request_schema import validate_agent_request
@@ -351,15 +352,18 @@ def test_second_artifact_capture_failure_leaves_no_unreferenced_snapshot(
     service = ProductionAgentService(store, run_id)
 
     captured = {"count": 0}
-    real_write = store.write_artifact_bytes
+    real_prepare = prepare_output_artifact
 
-    def fail_on_second(*args: Any, **kwargs: Any) -> str:
+    def fail_on_second(*, workspace: Path, ref: str) -> dict[str, str | int | bytes]:
         captured["count"] += 1
         if captured["count"] == 2:
             raise OSError("simulated second capture failure")
-        return real_write(*args, **kwargs)
+        return real_prepare(workspace=workspace, ref=ref)
 
-    with patch.object(store, "write_artifact_bytes", side_effect=fail_on_second):
+    with patch(
+        "top_down_planning.agent_tool.production_service.prepare_output_artifact",
+        side_effect=fail_on_second,
+    ):
         with pytest.raises(OSError, match="second capture"):
             service.apply(
                 _batch_apply_request(

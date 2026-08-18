@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.agent_tool import RequestError, ReviewAgentService
+from top_down_planning.agent_tool import RequestError, ReviewAgentService, RevisionConflictError
 from top_down_planning.domain.reviews import (
     FindingVerificationEntry,
     FindingVerificationResult,
@@ -597,7 +597,7 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
     )
     from tests.helpers import enrich_whole_plan_review_respond_payload
 
-    with pytest.raises(RequestError, match="target_digest does not match current plan digest"):
+    with pytest.raises(RevisionConflictError, match="target_digest does not match current plan digest"):
         ReviewAgentService(store, run_id).respond(
             enrich_whole_plan_review_respond_payload(
                 store,

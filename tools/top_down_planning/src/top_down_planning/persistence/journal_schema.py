@@ -11,7 +11,7 @@ from top_down_planning.persistence.path_containment import validate_journal_base
 from top_down_planning.persistence.path_ids import validate_store_id
 
 _KNOWN_FILE_KINDS = frozenset(
-    {"run", "plan", "production", "resolved_config", "invocation", "review"}
+    {"run", "plan", "production", "resolved_config", "invocation", "review", "artifact"}
 )
 _KIND_CANONICAL_NAMES = {
     "run": "run.json",
@@ -30,6 +30,8 @@ class JournalFileEntry:
     digest: str
     had_destination: bool
     review_id: str | None = None
+    snapshot_id: str | None = None
+    filename: str | None = None
 
 
 @dataclass(frozen=True)
@@ -147,10 +149,25 @@ def _parse_file_entries(
                 txn_id=txn_id,
             )
         review_id: str | None = None
+        snapshot_id: str | None = None
+        filename: str | None = None
         if kind == "review":
             review_id = _journal_store_id(
                 str(entry.get("review_id") or "").strip(),
                 label="review_id",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        if kind == "artifact":
+            snapshot_id = _journal_store_id(
+                str(entry.get("snapshot_id") or "").strip(),
+                label="snapshot_id",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+            filename = _journal_store_id(
+                str(entry.get("filename") or "").strip(),
+                label="artifact_filename",
                 run_id=run_id,
                 txn_id=txn_id,
             )
@@ -161,6 +178,8 @@ def _parse_file_entries(
                 digest=digest,
                 had_destination=had_destination,
                 review_id=review_id,
+                snapshot_id=snapshot_id,
+                filename=filename,
             )
         )
     return parsed
@@ -254,6 +273,14 @@ def validate_parsed_recovery_journal_invariants(
             if entry.name != expected_name:
                 raise _recovery_error(
                     f"transaction journal files[{index}] review name must be {expected_name!r}",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+        elif entry.kind == "artifact":
+            expected_name = f"artifact__{entry.snapshot_id}__{entry.filename}"
+            if entry.name != expected_name:
+                raise _recovery_error(
+                    f"transaction journal files[{index}] artifact name must be {expected_name!r}",
                     run_id=run_id,
                     txn_id=txn_id,
                 )
@@ -453,4 +480,8 @@ def journal_file_entry_as_dict(entry: JournalFileEntry) -> dict[str, Any]:
     }
     if entry.review_id is not None:
         payload["review_id"] = entry.review_id
+    if entry.snapshot_id is not None:
+        payload["snapshot_id"] = entry.snapshot_id
+    if entry.filename is not None:
+        payload["filename"] = entry.filename
     return payload
