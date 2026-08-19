@@ -682,6 +682,26 @@ def verify_accepted_result_matches_live_delivery(
     return live
 
 
+def load_canonical_child_delivery(
+    store: Any,
+    child_run_id: str,
+    *,
+    verify_evidence: bool = True,
+):
+    """Load one locked child snapshot and validate accepted delivery against it."""
+
+    snapshot = store.load_canonical_snapshot(child_run_id)
+    validate_accepted_child_delivery(
+        store=store,
+        child_run_id=child_run_id,
+        child_run=snapshot.run,
+        child_production=snapshot.production,
+        child_reviews=snapshot.reviews,
+        verify_evidence=verify_evidence,
+    )
+    return snapshot
+
+
 def verify_wrapper_delivery_integrity(
     store: Any,
     wrapper: dict[str, Any],
@@ -693,15 +713,7 @@ def verify_wrapper_delivery_integrity(
     child_run_id = str(accepted.get("child_run_id") or "").strip()
     if not child_run_id:
         raise ValueError("accepted_result missing child_run_id")
-    child_run = store.load_run(child_run_id)
-    child_production = store.load_production(child_run_id)
-    validate_accepted_child_delivery(
-        store=store,
-        child_run_id=child_run_id,
-        child_run=child_run,
-        child_production=child_production,
-        verify_evidence=True,
-    )
+    snapshot = load_canonical_child_delivery(store, child_run_id, verify_evidence=True)
     return verify_accepted_result_matches_live_delivery(
         {
             "plan_item_id": str(accepted.get("unit_id") or ""),
@@ -710,8 +722,8 @@ def verify_wrapper_delivery_integrity(
             "accepted_result": accepted,
             "accepted_result_digest": str(wrapper.get("accepted_result_digest") or ""),
         },
-        child_run=child_run,
-        child_production=child_production,
+        child_run=snapshot.run,
+        child_production=snapshot.production,
     )
 
 
@@ -1131,6 +1143,7 @@ __all__ = [
     "upstream_accepted_result_binding",
     "validate_attach_dependency_consistency",
     "validate_child_package_bindings",
+    "load_canonical_child_delivery",
     "validate_accepted_child_delivery",
     "revalidate_terminal_child_delivery",
     "verify_accepted_result_attestation",

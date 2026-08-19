@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from core_tools.persistence import RunNotFoundError
 from top_down_planning.config import resolve_config
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
@@ -180,7 +181,7 @@ def test_explicit_upstream_rejects_wrong_unit_run(tmp_path: Path) -> None:
 def test_explicit_upstream_rejects_nonexistent_run(tmp_path: Path) -> None:
     store, output_dir, _ = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
-    with pytest.raises(ExecutionPackageError, match="upstream") as exc_info:
+    with pytest.raises(RunNotFoundError):
         PreparedUnitExecutor().create_or_load_child_run(
             store,
             package,
@@ -190,7 +191,6 @@ def test_explicit_upstream_rejects_nonexistent_run(tmp_path: Path) -> None:
             explicit_upstream={"item-a": "run-20260101T120000-000001"},
             explicit_upstream_only=True,
         )
-    assert exc_info.value.code == "sub_tdp_upstream_invalid"
 
 
 def test_attach_rejects_child_built_against_different_upstream_result(tmp_path: Path) -> None:

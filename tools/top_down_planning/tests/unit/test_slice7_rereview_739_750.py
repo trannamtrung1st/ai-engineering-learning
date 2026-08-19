@@ -336,10 +336,7 @@ def test_guidance_file_invalid_utf8_is_config_error(tmp_path: Path, command: str
     _assert_no_traceback(human)
 
 
-@pytest.mark.parametrize("method", ["load_run", "load_production", "load_plan_model"])
-def test_explicit_upstream_permission_error_is_operational(
-    tmp_path: Path, method: str
-) -> None:
+def test_explicit_upstream_permission_error_is_operational(tmp_path: Path) -> None:
     store, output_dir, _ = _dependent_build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
     unit_a = package.units["item-a"]
@@ -350,7 +347,7 @@ def test_explicit_upstream_permission_error_is_operational(
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
     )
-    real = getattr(FileRunStore, method)
+    real = FileRunStore.load_canonical_snapshot
 
     def wrapper(self, run_id, *args, **kwargs):
         if run_id == dep_id:
@@ -358,7 +355,7 @@ def test_explicit_upstream_permission_error_is_operational(
         return real(self, run_id, *args, **kwargs)
 
     argv = _execute_item_b_argv(package, store, ["--upstream", f"item-a={dep_id}"])
-    with patch.object(FileRunStore, method, wrapper):
+    with patch.object(FileRunStore, "load_canonical_snapshot", wrapper):
         structured = run_cli(argv)
         human = run_cli(argv[:-1])
     _assert_operational_without_traceback(structured)
@@ -376,7 +373,7 @@ def test_explicit_baseline_permission_error_is_operational(tmp_path: Path) -> No
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
     )
-    real_load = FileRunStore.load_run
+    real_load = FileRunStore.load_canonical_snapshot
 
     def wrapper(self, run_id):
         if run_id == baseline_id:
@@ -388,7 +385,7 @@ def test_explicit_baseline_permission_error_is_operational(tmp_path: Path) -> No
         store,
         ["--upstream", f"item-a={baseline_id}", "--baseline", baseline_id],
     )
-    with patch.object(FileRunStore, "load_run", wrapper):
+    with patch.object(FileRunStore, "load_canonical_snapshot", wrapper):
         structured = run_cli(argv)
     _assert_operational_without_traceback(structured)
 

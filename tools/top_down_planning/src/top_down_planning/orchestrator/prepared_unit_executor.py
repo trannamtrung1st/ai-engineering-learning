@@ -14,16 +14,17 @@ from top_down_planning.orchestrator.sub_tdp_child_driver import (
 from top_down_planning.package.lineage import (
     ExecutionLineageValidator,
     accepted_result_record,
+    load_canonical_child_delivery,
     upstream_accepted_result_binding,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
-from top_down_planning.persistence import FileRunStore, PersistenceError
+from top_down_planning.persistence import FileRunStore
 
 ProviderFactory = Callable[[dict[str, Any], Path], Any]
 RuntimeFactory = Callable[[str], Any]
 
-_EXPLICIT_SEMANTIC_READ_ERRORS = (ValueError, KeyError, PersistenceError)
-_DISCOVERY_SKIP_ERRORS = (OSError, ValueError, KeyError, PersistenceError)
+_EXPLICIT_SEMANTIC_READ_ERRORS = (ValueError, KeyError)
+_DISCOVERY_SKIP_ERRORS = (ValueError, KeyError)
 
 
 def validate_explicit_upstream_bindings(
@@ -505,7 +506,7 @@ class PreparedUnitExecutor:
 
                 try:
                     verify_upstream_wrapper_matches_live_delivery(child_store, wrapper)
-                except _DISCOVERY_SKIP_ERRORS as exc:
+                except ValueError as exc:
                     raise ExecutionPackageError(
                         f"baseline closure wrapper delivery invalid: {exc}",
                         code="sub_tdp_upstream_invalid",
@@ -733,17 +734,12 @@ class PreparedUnitExecutor:
     ) -> dict[str, Any]:
         from top_down_planning.package.lineage import (
             accepted_result_record,
-            validate_accepted_child_delivery,
         )
 
         try:
-            child_run = child_store.load_run(child_run_id)
-            child_production = child_store.load_production(child_run_id)
-            validate_accepted_child_delivery(
-                store=child_store,
-                child_run_id=child_run_id,
-                child_run=child_run,
-                child_production=child_production,
+            snapshot = load_canonical_child_delivery(
+                child_store,
+                child_run_id,
                 verify_evidence=True,
             )
         except _EXPLICIT_SEMANTIC_READ_ERRORS as exc:
@@ -752,8 +748,8 @@ class PreparedUnitExecutor:
                 code="sub_tdp_upstream_invalid",
             ) from exc
         return accepted_result_record(
-            child_run=child_run,
-            child_production=child_production,
+            child_run=snapshot.run,
+            child_production=snapshot.production,
             unit_id=unit_id,
             unit_plan_digest=unit_plan_digest,
             package_id=package_id,
@@ -981,9 +977,12 @@ class PreparedUnitExecutor:
             if not run_id:
                 return None
             try:
-                run = child_store.load_run(run_id)
-                production = child_store.load_production(run_id)
-                child_plan = child_store.load_plan_model(run_id)
+                snapshot = child_store.load_canonical_snapshot(run_id)
+                run = snapshot.run
+                production = snapshot.production
+                from top_down_planning.domain.models import Plan
+
+                child_plan = Plan.from_dict(snapshot.plan)
             except _EXPLICIT_SEMANTIC_READ_ERRORS as exc:
                 raise ExecutionPackageError(
                     f"explicit upstream run {run_id!r} is missing or unreadable",
@@ -1023,6 +1022,8 @@ class PreparedUnitExecutor:
                     child_run_id=run_id,
                     child_run=run,
                     child_production=production,
+                    child_reviews=snapshot.reviews,
+                    verify_evidence=True,
                 )
             except ValueError as exc:
                 raise ExecutionPackageError(
@@ -1047,9 +1048,11 @@ class PreparedUnitExecutor:
             if not run_dir.is_dir() or run_dir.name.startswith("."):
                 continue
             try:
-                run = child_store.load_run(run_dir.name)
+                snapshot = child_store.load_canonical_snapshot(run_dir.name)
             except _DISCOVERY_SKIP_ERRORS:
                 continue
+            run = snapshot.run
+            production = snapshot.production
             binding = run.get("package_binding") or {}
             if not isinstance(binding, dict):
                 continue
@@ -1081,11 +1084,6 @@ class PreparedUnitExecutor:
                 and str(run.get("phase") or "") == OUTPUT_VALIDATED
                 and str(run.get("outcome") or "") == "accepted"
             ):
-                try:
-                    production = child_store.load_production(run_dir.name)
-                except _DISCOVERY_SKIP_ERRORS:
-                    continue
-                # Recompute digest from production for integrity.
                 from top_down_planning.persistence.digests import compute_output_digest
 
                 recomputed = compute_output_digest(production)
@@ -1108,6 +1106,7 @@ class PreparedUnitExecutor:
                         child_run_id=run_dir.name,
                         child_run=run,
                         child_production=production,
+                        child_reviews=snapshot.reviews,
                         verify_evidence=True,
                     )
                 except ValueError:

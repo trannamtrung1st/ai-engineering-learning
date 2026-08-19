@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core_tools.persistence import PersistenceError
 from top_down_planning.orchestrator.engine import RunContinuationResult
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
@@ -524,7 +525,7 @@ def test_execute_explicit_upstream_corrupt_artifacts_are_stable_errors(
     assert structured.exit_code == 1
     payload = _stdout_json(structured)
     assert payload["ok"] is False
-    assert payload["error"]["code"] in {"sub_tdp_upstream_invalid", "corrupt_run"}
+    assert payload["error"]["code"] == "corrupt_run"
     assert "Traceback" not in structured.stdout
     assert "Traceback" not in structured.stderr
     assert human.exit_code == 1
@@ -554,11 +555,7 @@ def test_execute_explicit_baseline_corrupt_run_is_stable_error(tmp_path: Path) -
     assert structured.exit_code == 1
     payload = _stdout_json(structured)
     assert payload["ok"] is False
-    assert payload["error"]["code"] in {
-        "sub_tdp_upstream_invalid",
-        "sub_tdp_baseline_invalid",
-        "corrupt_run",
-    }
+    assert payload["error"]["code"] == "corrupt_run"
     assert "Traceback" not in structured.stdout
 
 
@@ -569,7 +566,7 @@ def _write_unrelated_corrupt_run(store: FileRunStore) -> None:
     (run_dir / "run.json").write_text("{not-json", encoding="utf-8")
 
 
-def test_unrelated_corrupt_run_does_not_abort_dependency_discovery(tmp_path: Path) -> None:
+def test_unrelated_corrupt_run_does_not_hide_discovery_access_errors(tmp_path: Path) -> None:
     store, output_dir, _ = _dependent_build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
     unit_a = package.units["item-a"]
@@ -582,20 +579,14 @@ def test_unrelated_corrupt_run_does_not_abort_dependency_discovery(tmp_path: Pat
     )
     accept_child_run(store, dep_id)
     _write_unrelated_corrupt_run(store)
-    child_id = PreparedUnitExecutor().create_or_load_child_run(
-        store,
-        package,
-        "item-b",
-        resolved_config=package.resolved_config,
-        invocation={"command": "execute"},
-    )
-    child = store.load_run(child_id)
-    upstream = (child.get("package_binding") or {}).get("upstream_accepted_results")
-    assert isinstance(upstream, list)
-    assert upstream[0]["accepted_result"]["child_run_id"] == dep_id
+    argv = _execute_item_b_argv(package, store, [])
+    result = run_cli(argv)
+    assert result.exit_code == 1
+    payload = _stdout_json(result)
+    assert payload["error"]["code"] == "corrupt_run"
 
 
-def test_unrelated_corrupt_run_does_not_abort_parent_child_reuse(tmp_path: Path) -> None:
+def test_unrelated_corrupt_run_does_not_skip_creation_key_discovery(tmp_path: Path) -> None:
     store, output_dir, _ = _dependent_build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
     parent_id = PreparedRunFactory().create_parent_run(
@@ -612,16 +603,20 @@ def test_unrelated_corrupt_run_does_not_abort_parent_child_reuse(tmp_path: Path)
         invocation={"command": "execute"},
         parent_run_id=parent_id,
     )
+    before_ids = {path.name for path in store.root.iterdir() if path.name.startswith("run-")}
     _write_unrelated_corrupt_run(store)
-    second = PreparedUnitExecutor().create_or_load_child_run(
-        store,
-        package,
-        "item-a",
-        resolved_config=package.resolved_config,
-        invocation={"command": "execute"},
-        parent_run_id=parent_id,
-    )
-    assert second == first
+    with pytest.raises(PersistenceError):
+        PreparedUnitExecutor().create_or_load_child_run(
+            store,
+            package,
+            "item-a",
+            resolved_config=package.resolved_config,
+            invocation={"command": "execute"},
+            parent_run_id=parent_id,
+        )
+    after_ids = {path.name for path in store.root.iterdir() if path.name.startswith("run-")}
+    assert after_ids == before_ids | {"run-20260101T109999-109999"}
+    assert first in after_ids
 
 
 def test_explicit_corrupt_upstream_is_rejected_not_skipped(tmp_path: Path) -> None:
@@ -635,7 +630,7 @@ def test_explicit_corrupt_upstream_is_rejected_not_skipped(tmp_path: Path) -> No
     result = run_cli(argv)
     assert result.exit_code == 1
     payload = _stdout_json(result)
-    assert payload["error"]["code"] in {"sub_tdp_upstream_invalid", "corrupt_run"}
+    assert payload["error"]["code"] == "corrupt_run"
 
 
 def test_unreadable_config_file_is_operational_error(tmp_path: Path) -> None:

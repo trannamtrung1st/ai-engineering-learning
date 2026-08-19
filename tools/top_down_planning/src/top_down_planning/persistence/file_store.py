@@ -356,17 +356,19 @@ class FileRunStore:
                 workspace=workspace_path,
             )
 
+            canonical_run = None
             try:
                 staging_dir.mkdir(parents=True)
                 (staging_dir / "reviews").mkdir()
                 (staging_dir / "capabilities").mkdir()
                 (staging_dir / "artifacts").mkdir()
                 (staging_dir / AGENT_REQUESTS_DIR).mkdir()
+                canonical_run = validate_canonical_run(validated_run_id, run_record)
                 atomic_write_text(
                     staging_dir / "resolved-config.yaml",
                     dump_yaml(resolved_config) + "\n",
                 )
-                atomic_write_json(staging_dir / "run.json", validate_canonical_run(validated_run_id, run_record))
+                atomic_write_json(staging_dir / "run.json", canonical_run)
                 atomic_write_json(staging_dir / "plan.json", plan_payload)
                 atomic_write_json(
                     staging_dir / "production.json",
@@ -387,7 +389,11 @@ class FileRunStore:
         if remove_creation_lock and creation_lock_path.exists():
             creation_lock_path.unlink(missing_ok=True)
 
-        return self.load_run(validated_run_id)
+        if canonical_run is None:
+            raise PersistenceError(
+                f"create_run did not publish a canonical run: {validated_run_id}"
+            )
+        return dict(canonical_run)
 
     @contextmanager
     def _with_run_commit_lock(self, run_id: str) -> Iterator[str]:
