@@ -115,6 +115,42 @@ def test_corrupt_run_artifacts_emit_stable_cli_errors(
     assert "Traceback" not in human.stdout
 
 
+def _rewrite_json_file_as_utf16(path: Path) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_bytes(json.dumps(payload).encode("utf-16"))
+
+
+@pytest.mark.parametrize("command", ["status", "inspect", "validate", "resume"])
+@pytest.mark.parametrize("artifact", ["run.json", "plan.json"])
+def test_utf16_canonical_json_is_corrupt_run_for_user_commands(
+    tmp_path: Path, command: str, artifact: str
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = _create_planning_run(store, "run-20260101T081401-081401")
+    if command == "resume":
+        _pause_run(store, run_id)
+    run_dir = store.run_dir(run_id)
+    _wipe_txn_dirs(run_dir)
+    _rewrite_json_file_as_utf16(run_dir / artifact)
+
+    argv = [command, "--run", run_id, "--runs-dir", str(store.root)]
+    if command == "resume":
+        argv.append("--check")
+    structured = run_cli([*argv, "--stream-json"])
+    human = run_cli(argv)
+
+    assert structured.exit_code == 1
+    payload = _stdout_json(structured)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "corrupt_run"
+    assert "Traceback" not in structured.stderr
+    assert "Traceback" not in structured.stdout
+    assert human.exit_code == 1
+    assert "Traceback" not in human.stderr
+    assert "Traceback" not in human.stdout
+    assert human.stderr.strip()
+
+
 @pytest.mark.parametrize("command", ["status", "inspect", "validate", "resume"])
 def test_malformed_run_ids_are_usage_errors_for_user_commands(
     tmp_path: Path, command: str

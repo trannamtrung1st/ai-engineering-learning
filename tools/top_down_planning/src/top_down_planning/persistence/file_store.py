@@ -1777,13 +1777,16 @@ class FileRunStore:
     def _read_json_object(self, path: Path, *, label: str | None = None) -> dict[str, Any]:
         file_label = label or path.name
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+            payload = json.loads(text)
         except FileNotFoundError as exc:
             raise RunNotFoundError(
                 path.parent.name,
                 f"missing {path.name}",
                 runs_root=self._root,
             ) from exc
+        except UnicodeDecodeError as exc:
+            raise PersistenceError(f"failed to decode {path} as UTF-8: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise PersistenceError(f"failed to load {path}: {exc}") from exc
         if not isinstance(payload, dict):
