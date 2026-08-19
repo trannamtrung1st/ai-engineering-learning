@@ -6,6 +6,7 @@ import json
 import shutil
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -149,6 +150,143 @@ def test_utf16_canonical_json_is_corrupt_run_for_user_commands(
     assert "Traceback" not in human.stderr
     assert "Traceback" not in human.stdout
     assert human.stderr.strip()
+
+
+def _user_command_argv(command: str, run_id: str, runs_dir: Path) -> list[str]:
+    argv = [command, "--run", run_id, "--runs-dir", str(runs_dir)]
+    if command == "resume":
+        argv.append("--check")
+    return argv
+
+
+def _assert_structured_operational(result: CliResult) -> None:
+    assert result.exit_code == 1
+    assert result.stderr == ""
+    assert "Traceback" not in result.stdout
+    payload = _stdout_json(result)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "operational_error"
+
+
+def _assert_human_operational(result: CliResult) -> None:
+    assert result.exit_code == 1
+    assert result.stderr.strip()
+    assert "Traceback" not in result.stderr
+    assert "Traceback" not in result.stdout
+
+
+@pytest.mark.parametrize("command", ["status", "inspect", "validate", "resume"])
+def test_canonical_json_read_oserror_is_operational_error(
+    tmp_path: Path, command: str
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = _create_planning_run(store, "run-20260101T081501-081501")
+    if command == "resume":
+        _pause_run(store, run_id)
+    argv = _user_command_argv(command, run_id, store.root)
+    with patch.object(
+        FileRunStore, "_read_json_object", side_effect=PermissionError("denied")
+    ):
+        structured = run_cli([*argv, "--stream-json"])
+        human = run_cli(argv)
+    _assert_structured_operational(structured)
+    _assert_human_operational(human)
+
+
+@pytest.mark.parametrize("command", ["inspect", "validate", "resume"])
+def test_resolved_config_read_oserror_is_operational_error(
+    tmp_path: Path, command: str
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = _create_planning_run(store, "run-20260101T081502-081502")
+    if command == "resume":
+        _pause_run(store, run_id)
+    original = Path.read_text
+
+    def _read_text(self: Path, *args, **kwargs):
+        if self.name == "resolved-config.yaml":
+            raise PermissionError("denied")
+        return original(self, *args, **kwargs)
+
+    argv = _user_command_argv(command, run_id, store.root)
+    with patch.object(Path, "read_text", _read_text):
+        structured = run_cli([*argv, "--stream-json"])
+        human = run_cli(argv)
+    _assert_structured_operational(structured)
+    _assert_human_operational(human)
+
+
+@pytest.mark.parametrize("command", ["inspect", "validate", "resume"])
+def test_malformed_resolved_config_utf16_is_corrupt_run(
+    tmp_path: Path, command: str
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = _create_planning_run(store, "run-20260101T081503-081503")
+    if command == "resume":
+        _pause_run(store, run_id)
+    path = store.run_dir(run_id) / "resolved-config.yaml"
+    path.write_bytes(path.read_text(encoding="utf-8").encode("utf-16"))
+    _wipe_txn_dirs(store.run_dir(run_id))
+    argv = _user_command_argv(command, run_id, store.root)
+    structured = run_cli([*argv, "--stream-json"])
+    human = run_cli(argv)
+    assert structured.exit_code == 1
+    payload = _stdout_json(structured)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "corrupt_run"
+    assert "Traceback" not in structured.stderr
+    assert "Traceback" not in structured.stdout
+    assert human.exit_code == 1
+    assert "Traceback" not in human.stderr
+    assert "Traceback" not in human.stdout
+
+
+@pytest.mark.parametrize("mutate", ["missing", "unknown"])
+def test_invalid_run_kind_is_corrupt_run(tmp_path: Path, mutate: str) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = _create_planning_run(store, "run-20260101T081504-081504")
+    run_path = store.run_dir(run_id) / "run.json"
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    if mutate == "missing":
+        payload.pop("run_kind", None)
+    else:
+        payload["run_kind"] = "not-a-kind"
+    run_path.write_text(json.dumps(payload), encoding="utf-8")
+    _wipe_txn_dirs(store.run_dir(run_id))
+    for command in ("status", "doctor"):
+        argv = [command, "--run", run_id, "--runs-dir", str(store.root)]
+        structured = run_cli([*argv, "--stream-json"])
+        human = run_cli(argv)
+        assert structured.exit_code == 1
+        error = _stdout_json(structured)["error"]
+        assert error["code"] == "corrupt_run"
+        assert "Traceback" not in structured.stderr
+        assert "Traceback" not in structured.stdout
+        assert human.exit_code == 1
+        assert "Traceback" not in human.stderr
+        assert "Traceback" not in human.stdout
+
+
+def test_inspect_reports_invalid_run_status_as_corrupt_run(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = _create_planning_run(store, "run-20260101T081505-081505")
+    run_path = store.run_dir(run_id) / "run.json"
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    payload["status"] = "bogus"
+    run_path.write_text(json.dumps(payload), encoding="utf-8")
+    _wipe_txn_dirs(store.run_dir(run_id))
+    argv = ["inspect", "--run", run_id, "--runs-dir", str(store.root)]
+    structured = run_cli([*argv, "--stream-json"])
+    human = run_cli(argv)
+    assert structured.exit_code == 1
+    payload = _stdout_json(structured)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "corrupt_run"
+    assert "Traceback" not in structured.stderr
+    assert "Traceback" not in structured.stdout
+    assert human.exit_code == 1
+    assert "Traceback" not in human.stderr
+    assert "Traceback" not in human.stdout
 
 
 @pytest.mark.parametrize("command", ["status", "inspect", "validate", "resume"])

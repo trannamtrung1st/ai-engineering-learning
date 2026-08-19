@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from argparse import Namespace
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ from core_tools.cli import (
 )
 
 from top_down_planning.config import resolve_config
-from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence import FileRunStore, PersistenceError, RunNotFoundError
 from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
 from top_down_planning.persistence.path_ids import validate_run_id
 
@@ -278,6 +279,16 @@ def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
     raise exc
 
 
+@contextmanager
+def run_access_boundary(*, stream_json: bool) -> Iterator[None]:
+    """Catch missing-run, corrupt-run, and filesystem errors for user commands."""
+
+    try:
+        yield
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
+        emit_run_access_error(exc, stream_json=stream_json)
+
+
 def emit_operational_error(exc: BaseException, *, stream_json: bool) -> None:
     """Normalize filesystem I/O failures for mutating user commands."""
 
@@ -307,6 +318,7 @@ __all__ = [
     "emit_message",
     "emit_payload",
     "emit_run_access_error",
+    "run_access_boundary",
     "emit_operational_error",
     "require_cli_run_id",
     "format_run_startup_diagnostics",

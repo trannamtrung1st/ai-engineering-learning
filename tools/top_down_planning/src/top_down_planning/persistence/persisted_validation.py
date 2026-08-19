@@ -26,6 +26,7 @@ from top_down_planning.domain.production import (
     is_live_completed_batch,
 )
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.run_kind import resolve_run_kind
 from top_down_planning.domain.run_lifecycle import (
     RunLifecycleError,
     validate_run_lifecycle_invariants,
@@ -1339,6 +1340,10 @@ def validate_persisted_run(run_id: str, payload: dict[str, Any]) -> dict[str, An
         raise PersistenceError("context_snapshot_binding is required on schema v3 run records")
     validate_context_snapshot_binding(binding)
     sessions = validate_persisted_sessions(payload.get("sessions"))
+    try:
+        resolve_run_kind(payload)
+    except ValueError as exc:
+        raise PersistenceError(str(exc)) from exc
     normalized = dict(payload)
     normalized["sessions"] = sessions
     return normalized

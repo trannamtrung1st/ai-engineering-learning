@@ -977,20 +977,26 @@ class FileRunStore:
                 runs_root=self._root,
             )
         try:
-            payload = load_yaml(path.read_text(encoding="utf-8"))
+            payload = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise PersistenceError(
+                f"failed to decode resolved-config.yaml as UTF-8: {exc}"
+            ) from exc
+        try:
+            parsed = load_yaml(payload)
         except Exception as exc:
             raise PersistenceError(f"failed to load resolved-config.yaml: {exc}") from exc
-        if not isinstance(payload, dict):
+        if not isinstance(parsed, dict):
             raise PersistenceError("resolved-config.yaml must contain a mapping")
         from top_down_planning.config import ConfigError, validate_persisted_resolved_config
 
         try:
-            validate_persisted_resolved_config(payload)
+            validate_persisted_resolved_config(parsed)
         except ConfigError as exc:
             raise PersistenceError(
                 f"resolved-config.yaml is invalid: {exc}"
             ) from exc
-        return payload
+        return parsed
 
     def save_invocation(self, run_id: str, invocation: dict[str, Any]) -> None:
         """Persist CLI invocation metadata under the per-run commit lock.

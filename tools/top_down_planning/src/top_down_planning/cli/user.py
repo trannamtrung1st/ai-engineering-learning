@@ -17,6 +17,7 @@ from top_down_planning.cli.common import (
     emit_operational_error,
     emit_payload,
     emit_run_access_error,
+    run_access_boundary,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
     provider_extra_env,
@@ -504,7 +505,7 @@ def handle_resume_command(args: Namespace) -> None:
         reconcile_stale_running_run(store, args.run)
         run = store.load_run(args.run)
         snapshot = load_run_resume_snapshot(store, args.run)
-    except (RunNotFoundError, PersistenceError) as exc:
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
     if snapshot.status == "failed":
@@ -551,7 +552,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     try:
         stored = store.load_resolved_config(args.run)
-    except (RunNotFoundError, PersistenceError) as exc:
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
     try:
@@ -600,7 +601,7 @@ def handle_resume_command(args: Namespace) -> None:
             code=exc.code,
         )
         return
-    except (RunNotFoundError, PersistenceError) as exc:
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
     plan_summary = build_resume_plan_summary(
@@ -790,7 +791,7 @@ def handle_status_command(args: Namespace) -> None:
     try:
         run = store.load_run(args.run)
         plan = store.load_plan(args.run)
-    except (RunNotFoundError, PersistenceError) as exc:
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
@@ -835,7 +836,7 @@ def handle_status_command(args: Namespace) -> None:
                 stream_json=args.stream_json,
                 code="corrupt_run",
             )
-        except PersistenceError as exc:
+        except (PersistenceError, OSError) as exc:
             emit_run_access_error(exc, stream_json=args.stream_json)
         completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
         if total:
@@ -890,7 +891,7 @@ def handle_status_command(args: Namespace) -> None:
                 stream_json=args.stream_json,
                 code="corrupt_run",
             )
-        except PersistenceError as exc:
+        except (PersistenceError, OSError) as exc:
             emit_run_access_error(exc, stream_json=args.stream_json)
         completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
         if total:
@@ -926,10 +927,10 @@ def handle_inspect_command(args: Namespace) -> None:
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, _resolved_runs = _open_run_store_for_command(args)
     try:
-        plan = store.load_plan_model(args.run)
-        config = store.load_resolved_config(args.run)
-    except (RunNotFoundError, PersistenceError) as exc:
-        emit_run_access_error(exc, stream_json=args.stream_json)
+        with run_access_boundary(stream_json=args.stream_json):
+            store.load_run(args.run)
+            plan = store.load_plan_model(args.run)
+            config = store.load_resolved_config(args.run)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
             str(exc),
@@ -969,7 +970,7 @@ def handle_validate_command(args: Namespace) -> None:
         config = store.load_resolved_config(args.run)
         production = store.load_production(args.run)
         reviews = store.list_reviews(args.run)
-    except (RunNotFoundError, PersistenceError) as exc:
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
@@ -989,7 +990,7 @@ def handle_validate_command(args: Namespace) -> None:
             run,
             plan,
         )
-    except PersistenceError as exc:
+    except (PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
     plan_validation = validate_plan(
