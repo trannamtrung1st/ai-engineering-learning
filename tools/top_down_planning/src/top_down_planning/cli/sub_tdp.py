@@ -160,6 +160,8 @@ def _attach_child_under_ownership(
             Path(manifest_path),
             package_id=str(binding.get("package_id") or "").strip() or None,
         )
+    except OSError:
+        raise
     except Exception as exc:
         emit_error_message(
             f"parent package manifest_path invalid: {exc}",

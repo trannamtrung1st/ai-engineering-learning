@@ -228,6 +228,8 @@ def open_run_store_for_cli(
             stream_json=bool(getattr(args, "stream_json", False)),
             code="config_error",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=bool(getattr(args, "stream_json", False)))
     except RunsStoreNotFoundError as exc:
         emit_error_message(
             str(exc),

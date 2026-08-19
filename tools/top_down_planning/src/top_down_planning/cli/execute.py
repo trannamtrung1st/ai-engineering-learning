@@ -14,12 +14,14 @@ from top_down_planning.cli.common import (
     emit_command_result,
     emit_error_message,
     emit_operational_error,
+    emit_run_access_error,
     format_run_startup_diagnostics,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
 )
 from top_down_planning.cli.user import (
     _build_run_engine,
+    _cli_load_run,
     _exit_for_cancel,
     _handle_blocking_run_interrupt,
 )
@@ -183,6 +185,8 @@ def handle_execute_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="config_error",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
     if resolved_runs.source == "default":
@@ -442,6 +446,8 @@ def _execute_unit(
             stream_json=args.stream_json,
             code=getattr(exc, "code", "package_invalid"),
         )
+    except PersistenceError as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
 
@@ -485,8 +491,8 @@ def _execute_unit(
         if cancelled:
             _exit_for_cancel(
                 run_id=child_run_id,
-                store=store,
                 stream_json=args.stream_json,
+                run=child_result.run,
             )
             return
     except KeyboardInterrupt:
@@ -504,7 +510,7 @@ def _execute_unit(
     if cancelled:
         return
 
-    child_run = store.load_run(child_run_id)
+    child_run = _cli_load_run(store, child_run_id, stream_json=args.stream_json)
     ok = _child_success(child_run)
     payload: dict[str, Any] = {
         "ok": ok,
@@ -592,9 +598,14 @@ def _drive_execution_run(
         observability.close()
 
     if continuation.cancelled:
-        _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
+        _exit_for_cancel(
+            run_id=run_id,
+            stream_json=args.stream_json,
+            phase=continuation.phase,
+            status=continuation.status,
+        )
 
-    run_record = store.load_run(run_id)
+    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
     payload = {
         "ok": continuation.ok,
         "run_id": run_id,

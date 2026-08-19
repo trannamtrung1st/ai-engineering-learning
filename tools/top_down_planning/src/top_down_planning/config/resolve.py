@@ -423,6 +423,10 @@ def resolve_config(
 
     resolved = copy.deepcopy(DEFAULT_CONFIG)
     if config_path is not None:
+        try:
+            config_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            pass
         yaml_config = load_yaml_config(config_path)
         _validate_agent_context_roles(yaml_config)
         _validate_context_snapshot(yaml_config)

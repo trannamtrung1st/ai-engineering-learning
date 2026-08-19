@@ -111,20 +111,31 @@ _CANCEL_EXIT_CODE = 130
 def _exit_for_cancel(
     *,
     run_id: str,
-    store: FileRunStore,
     stream_json: bool,
+    run: dict[str, Any] | None = None,
+    store: FileRunStore | None = None,
+    phase: str | None = None,
+    status: str | None = None,
 ) -> None:
     """Exit with SIGINT convention (130) after cancellation was logged."""
 
-    run = store.load_run(run_id)
+    payload_run = run
+    if payload_run is None and store is not None:
+        try:
+            payload_run = store.load_run(run_id)
+        except (RunNotFoundError, PersistenceError, OSError):
+            payload_run = None
+    if payload_run is not None:
+        phase = payload_run.get("phase") if phase is None else phase
+        status = payload_run.get("status") if status is None else status
     if stream_json:
         emit_payload(
             {
                 "ok": False,
                 "cancelled": True,
                 "run_id": run_id,
-                "phase": run.get("phase"),
-                "status": run.get("status"),
+                "phase": phase,
+                "status": status,
                 "reason": "cancelled by user",
             },
             exit_code=_CANCEL_EXIT_CODE,
@@ -135,12 +146,23 @@ def _exit_for_cancel(
 def _exit_for_command_interrupt(
     *,
     run_id: str,
-    store: FileRunStore,
     stream_json: bool,
+    run: dict[str, Any] | None = None,
+    store: FileRunStore | None = None,
+    phase: str | None = None,
+    status: str | None = None,
 ) -> None:
     """Exit with SIGINT convention when the command was interrupted without cancelling the run."""
 
-    run = store.load_run(run_id)
+    payload_run = run
+    if payload_run is None and store is not None:
+        try:
+            payload_run = store.load_run(run_id)
+        except (RunNotFoundError, PersistenceError, OSError):
+            payload_run = None
+    if payload_run is not None:
+        phase = payload_run.get("phase") if phase is None else phase
+        status = payload_run.get("status") if status is None else status
     if stream_json:
         emit_payload(
             {
@@ -148,8 +170,8 @@ def _exit_for_command_interrupt(
                 "cancelled": False,
                 "command_interrupted": True,
                 "run_id": run_id,
-                "phase": run.get("phase"),
-                "status": run.get("status"),
+                "phase": phase,
+                "status": status,
                 "reason": "command interrupted by user",
             },
             exit_code=_CANCEL_EXIT_CODE,
@@ -177,7 +199,12 @@ def _handle_blocking_run_interrupt(
 ) -> None:
     """Emit cancel observability and exit when Ctrl+C escapes the engine loop."""
 
-    run = store.load_run(run_id)
+    try:
+        with run_access_boundary(stream_json=stream_json):
+            run = store.load_run(run_id)
+    except SystemExit:
+        raise
+
     if str(run.get("status") or "") == "running" and holds_run_ownership(run_id):
         phase = str(run.get("phase") or "unknown")
         finalize_user_cancel(
@@ -186,7 +213,19 @@ def _handle_blocking_run_interrupt(
             phase=phase,
             exclude_pids=frozenset({os.getpid()}),
         )
-        run = store.load_run(run_id)
+        try:
+            run = store.load_run(run_id)
+        except (RunNotFoundError, PersistenceError, OSError):
+            run = {
+                **run,
+                "status": "paused",
+                "stop": {
+                    "code": "user_cancelled",
+                    "category": "operational",
+                    "phase": phase,
+                    "message": "cancelled by user",
+                },
+            }
 
     if _run_is_user_cancelled(run):
         if notifications is not None:
@@ -202,13 +241,33 @@ def _handle_blocking_run_interrupt(
                 phase=str(run.get("phase") or "unknown"),
             )
         )
-        _exit_for_cancel(run_id=run_id, store=store, stream_json=stream_json)
+        _exit_for_cancel(run_id=run_id, stream_json=stream_json, run=run)
 
     _exit_for_command_interrupt(
         run_id=run_id,
-        store=store,
         stream_json=stream_json,
+        run=run,
     )
+
+
+def _cli_load_run(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    stream_json: bool,
+) -> dict[str, Any]:
+    with run_access_boundary(stream_json=stream_json):
+        return store.load_run(run_id)
+
+
+def _canonical_snapshot_for_cli(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    stream_json: bool,
+):
+    with run_access_boundary(stream_json=stream_json):
+        return store.load_canonical_snapshot(run_id)
 
 
 def _open_run_store_for_command(
@@ -287,6 +346,8 @@ def handle_run_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="config_error",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     run_id = new_run_id()
     cwd = Path.cwd().resolve()
@@ -427,18 +488,22 @@ def handle_run_command(args: Namespace) -> None:
         observability.close()
 
     if continuation.cancelled:
-        _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
+        _exit_for_cancel(
+            run_id=run_id,
+            stream_json=args.stream_json,
+            phase=continuation.phase,
+            status=continuation.status,
+        )
 
+    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
     if until and continuation.target_reached and continuation.status == "running":
         notify_run_outcome(
             "target_reached",
             run_id=run_id,
-            run=store.load_run(run_id),
+            run=run_record,
             options=notifications.options,
             until=until,
         )
-
-    run_record = store.load_run(run_id)
     last_step = continuation.steps[-1].details if continuation.steps else {}
     payload = {
         "ok": continuation.ok,
@@ -569,6 +634,8 @@ def handle_resume_command(args: Namespace) -> None:
             code="config_error",
         )
         return
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     invocation = invocation_options_from_args(
         args,
@@ -723,18 +790,22 @@ def handle_resume_command(args: Namespace) -> None:
         observability.close()
 
     if continuation.cancelled:
-        _exit_for_cancel(run_id=args.run, store=store, stream_json=args.stream_json)
+        _exit_for_cancel(
+            run_id=args.run,
+            stream_json=args.stream_json,
+            phase=continuation.phase,
+            status=continuation.status,
+        )
 
+    run = _cli_load_run(store, args.run, stream_json=args.stream_json)
     if until and continuation.target_reached and continuation.status == "running":
         notify_run_outcome(
             "target_reached",
             run_id=args.run,
-            run=store.load_run(args.run),
+            run=run,
             options=notifications.options,
             until=until,
         )
-
-    run = store.load_run(args.run)
     payload = {
         "ok": continuation.ok,
         "target_reached": continuation.target_reached,
@@ -789,9 +860,19 @@ def handle_status_command(args: Namespace) -> None:
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, resolved_runs = _open_run_store_for_command(args)
     try:
-        run = store.load_run(args.run)
-        plan = store.load_plan(args.run)
-    except (RunNotFoundError, PersistenceError, OSError) as exc:
+        snapshot = store.load_canonical_snapshot(args.run)
+        run = snapshot.run
+        plan = snapshot.plan
+    except RunNotFoundError as exc:
+        if "production.json" in str(exc):
+            emit_error_message(
+                f"parent execution run {args.run} is missing production.json",
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="corrupt_run",
+            )
+        emit_run_access_error(exc, stream_json=args.stream_json)
+    except (PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
@@ -827,17 +908,7 @@ def handle_status_command(args: Namespace) -> None:
             "unit_id"
         )
     if resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION:
-        try:
-            production = store.load_production(args.run)
-        except RunNotFoundError:
-            emit_error_message(
-                f"parent execution run {args.run} is missing production.json",
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="corrupt_run",
-            )
-        except (PersistenceError, OSError) as exc:
-            emit_run_access_error(exc, stream_json=args.stream_json)
+        production = snapshot.production
         completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
         if total:
             payload["run"]["units_completed"] = completed
@@ -882,17 +953,7 @@ def handle_status_command(args: Namespace) -> None:
         f"  run_path: {resolved_runs.path / args.run}",
     ]
     if resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION:
-        try:
-            production = store.load_production(args.run)
-        except RunNotFoundError:
-            emit_error_message(
-                f"parent execution run {args.run} is missing production.json",
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="corrupt_run",
-            )
-        except (PersistenceError, OSError) as exc:
-            emit_run_access_error(exc, stream_json=args.stream_json)
+        production = snapshot.production
         completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
         if total:
             lines.append(f"  units: {completed}/{total} completed")
@@ -927,10 +988,11 @@ def handle_inspect_command(args: Namespace) -> None:
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, _resolved_runs = _open_run_store_for_command(args)
     try:
-        with run_access_boundary(stream_json=args.stream_json):
-            store.load_run(args.run)
-            plan = store.load_plan_model(args.run)
-            config = store.load_resolved_config(args.run)
+        canonical = _canonical_snapshot_for_cli(
+            store, args.run, stream_json=args.stream_json
+        )
+        plan = Plan.from_dict(canonical.plan)
+        config = canonical.resolved_config
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
             str(exc),
@@ -965,13 +1027,14 @@ def handle_validate_command(args: Namespace) -> None:
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, _resolved_runs = _open_run_store_for_command(args)
     try:
-        run = store.load_run(args.run)
-        plan = store.load_plan_model(args.run)
-        config = store.load_resolved_config(args.run)
-        production = store.load_production(args.run)
-        reviews = store.list_reviews(args.run)
-    except (RunNotFoundError, PersistenceError, OSError) as exc:
-        emit_run_access_error(exc, stream_json=args.stream_json)
+        canonical = _canonical_snapshot_for_cli(
+            store, args.run, stream_json=args.stream_json
+        )
+        run = canonical.run
+        plan = Plan.from_dict(canonical.plan)
+        config = canonical.resolved_config
+        production = canonical.production
+        reviews = canonical.reviews
     except UnsupportedPlanSchemaVersionError as exc:
         emit_error_message(
             str(exc),

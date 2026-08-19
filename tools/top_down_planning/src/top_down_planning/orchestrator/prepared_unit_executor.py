@@ -17,10 +17,13 @@ from top_down_planning.package.lineage import (
     upstream_accepted_result_binding,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
-from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence import FileRunStore, PersistenceError
 
 ProviderFactory = Callable[[dict[str, Any], Path], Any]
 RuntimeFactory = Callable[[str], Any]
+
+_EXPLICIT_PERSISTED_READ_ERRORS = (OSError, ValueError, KeyError, PersistenceError)
+_DISCOVERY_SKIP_ERRORS = (OSError, ValueError, KeyError, PersistenceError)
 
 
 def validate_explicit_upstream_bindings(
@@ -310,7 +313,7 @@ class PreparedUnitExecutor:
                 continue
             try:
                 run = child_store.load_run(run_dir.name)
-            except (OSError, ValueError, KeyError):
+            except _DISCOVERY_SKIP_ERRORS:
                 continue
             binding = run.get("package_binding") or {}
             if not isinstance(binding, dict):
@@ -502,7 +505,7 @@ class PreparedUnitExecutor:
 
                 try:
                     verify_upstream_wrapper_matches_live_delivery(child_store, wrapper)
-                except (OSError, ValueError, KeyError) as exc:
+                except _DISCOVERY_SKIP_ERRORS as exc:
                     raise ExecutionPackageError(
                         f"baseline closure wrapper delivery invalid: {exc}",
                         code="sub_tdp_upstream_invalid",
@@ -521,7 +524,7 @@ class PreparedUnitExecutor:
                 return
             try:
                 child_run = child_store.load_run(child_run_id)
-            except (OSError, ValueError, KeyError) as exc:
+            except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
                 raise ExecutionPackageError(
                     f"baseline closure child {child_run_id!r} is missing or unreadable",
                     code="sub_tdp_upstream_invalid",
@@ -676,7 +679,7 @@ class PreparedUnitExecutor:
             )
         try:
             child_run = child_store.load_run(child_run_id)
-        except (OSError, ValueError, KeyError) as exc:
+        except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
             raise ExecutionPackageError(
                 f"{error_label} is missing or unreadable",
                 code="sub_tdp_baseline_invalid",
@@ -743,7 +746,7 @@ class PreparedUnitExecutor:
                 child_production=child_production,
                 verify_evidence=True,
             )
-        except (OSError, ValueError, KeyError) as exc:
+        except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
             raise ExecutionPackageError(
                 f"{error_label} delivery invalid: {exc}",
                 code="sub_tdp_upstream_invalid",
@@ -977,12 +980,11 @@ class PreparedUnitExecutor:
             run_id = str(explicit_upstream[dep_unit_id] or "").strip()
             if not run_id:
                 return None
-            from core_tools.persistence.revision import RunNotFoundError
-
             try:
                 run = child_store.load_run(run_id)
                 production = child_store.load_production(run_id)
-            except (OSError, ValueError, KeyError, RunNotFoundError) as exc:
+                child_plan = child_store.load_plan_model(run_id)
+            except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
                 raise ExecutionPackageError(
                     f"explicit upstream run {run_id!r} is missing or unreadable",
                     code="sub_tdp_upstream_invalid",
@@ -1004,7 +1006,7 @@ class PreparedUnitExecutor:
                 parent_manifest_digest=str(package.manifest.get("package_digest") or ""),
                 child_run=run,
                 child_production=production,
-                child_plan=child_store.load_plan_model(run_id),
+                child_plan=child_plan,
             )
             if mismatches:
                 detail = mismatches[0]
@@ -1046,7 +1048,7 @@ class PreparedUnitExecutor:
                 continue
             try:
                 run = child_store.load_run(run_dir.name)
-            except (OSError, ValueError, KeyError):
+            except _DISCOVERY_SKIP_ERRORS:
                 continue
             binding = run.get("package_binding") or {}
             if not isinstance(binding, dict):
@@ -1079,7 +1081,10 @@ class PreparedUnitExecutor:
                 and str(run.get("phase") or "") == OUTPUT_VALIDATED
                 and str(run.get("outcome") or "") == "accepted"
             ):
-                production = child_store.load_production(run_dir.name)
+                try:
+                    production = child_store.load_production(run_dir.name)
+                except _DISCOVERY_SKIP_ERRORS:
+                    continue
                 # Recompute digest from production for integrity.
                 from top_down_planning.persistence.digests import compute_output_digest
 

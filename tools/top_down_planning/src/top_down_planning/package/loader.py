@@ -72,15 +72,17 @@ def _contained_package_path(package_dir: Path, relative: str, *, label: str) -> 
 
 def _load_json(path: Path) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ExecutionPackageError(
+            f"unreadable package file {path.name}: {exc}",
+            code="package_json_invalid",
+        ) from exc
+    try:
+        return json.loads(text)
     except json.JSONDecodeError as exc:
         raise ExecutionPackageError(
             f"invalid JSON in {path.name}: {exc}",
-            code="package_json_invalid",
-        ) from exc
-    except (OSError, UnicodeDecodeError) as exc:
-        raise ExecutionPackageError(
-            f"unreadable package file {path.name}: {exc}",
             code="package_json_invalid",
         ) from exc
 

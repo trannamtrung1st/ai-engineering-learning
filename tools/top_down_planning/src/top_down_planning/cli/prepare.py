@@ -13,10 +13,12 @@ from top_down_planning.cli.common import (
     format_run_startup_diagnostics,
     provider_extra_env,
     resolve_runs_dir_from_args,
+    run_access_boundary,
     run_startup_diagnostics_payload,
 )
 from top_down_planning.cli.user import (
     _build_run_engine,
+    _cli_load_run,
     _create_provider_for_run,
     _exit_for_cancel,
     _handle_blocking_run_interrupt,
@@ -62,6 +64,8 @@ def handle_prepare_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="config_error",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     output_dir = Path(args.output).resolve() if args.output else Path(".tdp/execution").resolve()
     cwd = Path.cwd().resolve()
@@ -189,9 +193,14 @@ def handle_prepare_command(args: Namespace) -> None:
         observability.close()
 
     if continuation.cancelled:
-        _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
+        _exit_for_cancel(
+            run_id=run_id,
+            stream_json=args.stream_json,
+            phase=continuation.phase,
+            status=continuation.status,
+        )
 
-    run_record = store.load_run(run_id)
+    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
     if str(run_record.get("phase") or "") != PLAN_VALIDATED:
         emit_error_message(
             continuation.reason or "prepare did not reach plan_validated",
@@ -217,14 +226,19 @@ def handle_prepare_command(args: Namespace) -> None:
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
 
-    run_record = store.load_run(run_id)
+    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
     digests = dict(run_record.get("digests") or {})
+    try:
+        with run_access_boundary(stream_json=args.stream_json):
+            plan_revision = store.load_plan(run_id).get("revision")
+    except SystemExit:
+        raise
     payload: dict[str, Any] = {
         "ok": True,
         "planning_run_id": run_id,
         "package_id": built.package_id,
         "manifest": str(built.manifest_path),
-        "plan_revision": store.load_plan(run_id).get("revision"),
+        "plan_revision": plan_revision,
         "plan_digest": digests.get("plan"),
     }
     emit_command_result(

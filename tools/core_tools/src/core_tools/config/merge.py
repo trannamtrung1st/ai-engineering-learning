@@ -130,8 +130,13 @@ def load_yaml_config(path: Path) -> dict[str, Any]:
         raise ConfigError(f"config file not found: {path}")
 
     try:
-        raw = load_yaml(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"failed to load config file {path}: {exc}") from exc
+
+    try:
+        raw = load_yaml(text)
+    except ValueError as exc:
         raise ConfigError(f"failed to load config file {path}: {exc}") from exc
 
     if not isinstance(raw, dict):

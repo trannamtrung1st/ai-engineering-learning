@@ -10,6 +10,7 @@ from top_down_planning.cli.common import (
     RUNS_DIR_HELP,
     RUNS_DIR_REQUIRED_HELP,
     emit_error_message,
+    emit_operational_error,
 )
 from top_down_planning.cli.agent import add_agent_subparsers, handle_agent_command
 from top_down_planning.cli.user import (
@@ -411,6 +412,11 @@ def main(argv: list[str] | None = None) -> None:
             exit_code=2,
             stream_json=bool(getattr(args, "stream_json", False)),
             code="config_error",
+        )
+    except OSError as exc:
+        emit_operational_error(
+            exc,
+            stream_json=bool(getattr(args, "stream_json", False)),
         )
 
 
