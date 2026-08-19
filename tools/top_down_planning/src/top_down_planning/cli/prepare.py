@@ -72,17 +72,8 @@ def handle_prepare_command(args: Namespace) -> None:
     workspace = resolve_workspace(resolved, cwd=cwd)
     try:
         output_goal = resolve_output_goal_text(resolved, base_dir=workspace)
-    except ConfigError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=2,
-            stream_json=args.stream_json,
-            code="config_error",
-        )
-
-    input_digest = compute_input_digest(resolved, base_dir=workspace)
-    output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
-    try:
+        input_digest = compute_input_digest(resolved, base_dir=workspace)
+        output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
         binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
             build_initial_context_snapshot_binding_with_diagnostics(
                 resolved,
@@ -96,6 +87,8 @@ def handle_prepare_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="config_error",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
     run_id = new_run_id()
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 

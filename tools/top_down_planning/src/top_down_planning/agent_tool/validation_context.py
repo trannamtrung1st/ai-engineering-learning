@@ -113,6 +113,18 @@ def _approval_hooks_not_checked_context(
     )
 
 
+def user_validate_mode_and_context_from_snapshot(
+    snapshot: CanonicalRunSnapshot,
+    plan: Plan,
+) -> tuple[ValidationMode, ReviewState | None, DigestBundle | None]:
+    """Resolve ``tdp validate`` mode from one canonical snapshot."""
+
+    approval = find_whole_plan_approval(snapshot.reviews, plan.revision)
+    if approval is None:
+        return "draft", None, None
+    return "approval", *plan_approval_validation_context(snapshot, plan, "approval")
+
+
 def user_validate_mode_and_context(
     store: RunStore,
     run_id: str,
@@ -121,24 +133,11 @@ def user_validate_mode_and_context(
 ) -> tuple[ValidationMode, ReviewState | None, DigestBundle | None]:
     """Resolve validation mode for ``tdp validate`` from stored whole-plan approval."""
 
-    approval = find_whole_plan_approval(store.list_reviews(run_id), plan.revision)
-    if approval is None:
-        return "draft", None, None
-
-    (
-        actual_plan_digest,
-        actual_config_contract_digest,
-        actual_input_digest,
-        actual_output_goal_digest,
-        actual_context_spec_digest,
-    ) = compute_plan_approval_actual_digests(store, run_id, run, plan)
-    review_state, digest_bundle = build_plan_approval_validation_context(
-        plan=plan,
-        approval=approval,
-        actual_plan_digest=actual_plan_digest,
-        actual_config_contract_digest=actual_config_contract_digest,
-        actual_input_digest=actual_input_digest,
-        actual_output_goal_digest=actual_output_goal_digest,
-        actual_context_spec_digest=actual_context_spec_digest,
+    snapshot = CanonicalRunSnapshot(
+        run=run,
+        plan=plan.to_dict(),
+        production={},
+        reviews=store.list_reviews(run_id),
+        resolved_config=store.load_resolved_config(run_id),
     )
-    return "approval", review_state, digest_bundle
+    return user_validate_mode_and_context_from_snapshot(snapshot, plan)

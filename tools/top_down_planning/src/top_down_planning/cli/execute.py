@@ -263,7 +263,7 @@ def handle_execute_command(args: Namespace) -> None:
             resolved_config=resolved,
             invocation=invocation_dict,
         )
-        parent_run = store.load_run(run_id)
+        parent_run = _cli_load_run(store, run_id, stream_json=args.stream_json)
         binding = parent_run.get("package_binding") or {}
         persisted_manifest = str(binding.get("manifest_path") or package.manifest_path)
         production = store.load_production(run_id)
@@ -294,9 +294,8 @@ def handle_execute_command(args: Namespace) -> None:
             from top_down_planning.orchestrator.phases import SUB_TDPS
             from top_down_planning.orchestrator.run_transitions import pause_run
 
-            run = store.load_run(run_id)
+            run = dict(_cli_load_run(store, run_id, stream_json=args.stream_json))
             expected_run = int(run["revision"])
-            run = dict(run)
             run["revision"] = expected_run + 1
             run["phase"] = SUB_TDPS
             store.save_run(run_id, run, expected_run)
@@ -308,7 +307,7 @@ def handle_execute_command(args: Namespace) -> None:
                     "parent_only": True,
                 },
             )
-            pause_run(
+            paused = pause_run(
                 store,
                 run_id,
                 stop=StopRecord(
@@ -320,7 +319,6 @@ def handle_execute_command(args: Namespace) -> None:
                 revoke_phase=SUB_TDPS,
                 event_type="sub_tdps_awaiting_children",
             )
-            paused = store.load_run(run_id)
             payload = {
                 "ok": True,
                 "run_id": run_id,
@@ -339,6 +337,8 @@ def handle_execute_command(args: Namespace) -> None:
                 stream_json=args.stream_json,
             )
             return
+    except PersistenceError as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
 

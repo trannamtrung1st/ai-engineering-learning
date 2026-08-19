@@ -22,7 +22,7 @@ from top_down_planning.persistence import FileRunStore, PersistenceError
 ProviderFactory = Callable[[dict[str, Any], Path], Any]
 RuntimeFactory = Callable[[str], Any]
 
-_EXPLICIT_PERSISTED_READ_ERRORS = (OSError, ValueError, KeyError, PersistenceError)
+_EXPLICIT_SEMANTIC_READ_ERRORS = (ValueError, KeyError, PersistenceError)
 _DISCOVERY_SKIP_ERRORS = (OSError, ValueError, KeyError, PersistenceError)
 
 
@@ -524,7 +524,7 @@ class PreparedUnitExecutor:
                 return
             try:
                 child_run = child_store.load_run(child_run_id)
-            except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
+            except _EXPLICIT_SEMANTIC_READ_ERRORS as exc:
                 raise ExecutionPackageError(
                     f"baseline closure child {child_run_id!r} is missing or unreadable",
                     code="sub_tdp_upstream_invalid",
@@ -679,7 +679,7 @@ class PreparedUnitExecutor:
             )
         try:
             child_run = child_store.load_run(child_run_id)
-        except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
+        except _EXPLICIT_SEMANTIC_READ_ERRORS as exc:
             raise ExecutionPackageError(
                 f"{error_label} is missing or unreadable",
                 code="sub_tdp_baseline_invalid",
@@ -746,7 +746,7 @@ class PreparedUnitExecutor:
                 child_production=child_production,
                 verify_evidence=True,
             )
-        except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
+        except _EXPLICIT_SEMANTIC_READ_ERRORS as exc:
             raise ExecutionPackageError(
                 f"{error_label} delivery invalid: {exc}",
                 code="sub_tdp_upstream_invalid",
@@ -984,7 +984,7 @@ class PreparedUnitExecutor:
                 run = child_store.load_run(run_id)
                 production = child_store.load_production(run_id)
                 child_plan = child_store.load_plan_model(run_id)
-            except _EXPLICIT_PERSISTED_READ_ERRORS as exc:
+            except _EXPLICIT_SEMANTIC_READ_ERRORS as exc:
                 raise ExecutionPackageError(
                     f"explicit upstream run {run_id!r} is missing or unreadable",
                     code="sub_tdp_upstream_invalid",

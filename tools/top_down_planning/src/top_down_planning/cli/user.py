@@ -41,8 +41,8 @@ from top_down_planning.domain.run_lifecycle import continuation_ok_from_run
 from top_down_planning.domain.run_ownership import holds_run_ownership
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, seed_plan_root_item
 from top_down_planning.agent_tool.validation_context import (
-    compute_plan_approval_actual_digests,
-    user_validate_mode_and_context,
+    compute_plan_approval_actual_digests_from_snapshot,
+    user_validate_mode_and_context_from_snapshot,
 )
 from top_down_planning.domain.reviews import find_whole_output_approval
 from top_down_planning.domain.output_validators import (
@@ -354,17 +354,8 @@ def handle_run_command(args: Namespace) -> None:
     workspace = resolve_workspace(resolved, cwd=cwd)
     try:
         output_goal = resolve_output_goal_text(resolved, base_dir=workspace)
-    except ConfigError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=2,
-            stream_json=args.stream_json,
-            code="config_error",
-        )
-
-    input_digest = compute_input_digest(resolved, base_dir=workspace)
-    output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
-    try:
+        input_digest = compute_input_digest(resolved, base_dir=workspace)
+        output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
         binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
             build_initial_context_snapshot_binding_with_diagnostics(
                 resolved,
@@ -378,6 +369,8 @@ def handle_run_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="config_error",
         )
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
@@ -591,7 +584,7 @@ def handle_resume_command(args: Namespace) -> None:
                 f"run already terminated "
                 f"(status={snapshot.status}, outcome={snapshot.outcome})"
             )
-        ok = continuation_ok_from_run(store.load_run(args.run))
+        ok = continuation_ok_from_run(run)
         payload = {
             "ok": ok,
             "run_id": args.run,
@@ -685,8 +678,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     if resume_plan.already_completed:
         message = resume_plan.message or "run already completed"
-        run_record = store.load_run(args.run)
-        ok = continuation_ok_from_run(run_record)
+        ok = continuation_ok_from_run(run)
         payload = {
             "ok": ok,
             "run_id": args.run,
@@ -866,7 +858,7 @@ def handle_status_command(args: Namespace) -> None:
     except RunNotFoundError as exc:
         if "production.json" in str(exc):
             emit_error_message(
-                f"parent execution run {args.run} is missing production.json",
+                f"run {args.run} is missing production.json",
                 exit_code=1,
                 stream_json=args.stream_json,
                 code="corrupt_run",
@@ -1047,10 +1039,8 @@ def handle_validate_command(args: Namespace) -> None:
     dispositions = dict(production.get("dispositions") or {})
     phase = str(run.get("phase") or "")
     try:
-        mode, review_state, digest_bundle = user_validate_mode_and_context(
-            store,
-            args.run,
-            run,
+        mode, review_state, digest_bundle = user_validate_mode_and_context_from_snapshot(
+            canonical,
             plan,
         )
     except (PersistenceError, OSError) as exc:
@@ -1087,7 +1077,7 @@ def handle_validate_command(args: Namespace) -> None:
                 actual_input_digest,
                 actual_output_goal_digest,
                 actual_context_spec_digest,
-            ) = compute_plan_approval_actual_digests(store, args.run, run, plan)
+            ) = compute_plan_approval_actual_digests_from_snapshot(canonical, plan)
             output_review_state, output_digest_bundle = build_output_approval_validation_context(
                 production=production,
                 approval=output_approval,

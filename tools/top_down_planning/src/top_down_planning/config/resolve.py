@@ -486,9 +486,9 @@ def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
             )
         try:
             text = goal_path.read_text(encoding="utf-8")
-        except OSError as exc:
+        except UnicodeDecodeError as exc:
             raise ConfigError(
-                f"failed to read output goal file: {goal_path}",
+                f"failed to read output goal file: {goal_path}: {exc}",
                 path="run.output_goal_file",
             ) from exc
         if not text.strip():

@@ -578,11 +578,6 @@ def _read_guidance_file_content(
             f"{entry_field}.file must be UTF-8 text: {path}",
             path=f"{entry_field}.file",
         ) from exc
-    except OSError as exc:
-        raise ConfigError(
-            f"{entry_field}.file could not be read: {path}: {exc}",
-            path=f"{entry_field}.file",
-        ) from exc
     normalized = content.strip()
     if not normalized:
         raise ConfigError(
@@ -627,7 +622,7 @@ def _resolve_guidance_entries(
                 continue
             try:
                 content = _read_guidance_file_content(candidate, entry_field=entry_field)
-            except ConfigError:
+            except (ConfigError, OSError):
                 resolved.append(GuidanceEntry(text="", path=candidate))
                 continue
             resolved.append(GuidanceEntry(text=content, path=candidate))
