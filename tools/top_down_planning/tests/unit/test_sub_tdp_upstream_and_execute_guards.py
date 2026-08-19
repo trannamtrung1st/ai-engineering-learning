@@ -51,7 +51,7 @@ def test_validate_explicit_upstream_rejects_unknown_unit(tmp_path: Path) -> None
         )
 
 
-def test_direct_child_execution_creates_fresh_run_each_time(tmp_path: Path) -> None:
+def test_direct_child_execution_reuses_run_for_same_package_unit(tmp_path: Path) -> None:
     store, _, package = _built_package(tmp_path)
     config = create_run_kwargs(tmp_path)["resolved_config"]
     executor = PreparedUnitExecutor()
@@ -69,7 +69,7 @@ def test_direct_child_execution_creates_fresh_run_each_time(tmp_path: Path) -> N
         resolved_config=config,
         invocation={"command": "execute", "observability": {}},
     )
-    assert first != second
+    assert first == second
 
 
 def test_execute_rejects_unsupported_set_override(tmp_path: Path) -> None:

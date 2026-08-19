@@ -12,8 +12,11 @@ from top_down_planning.cli.common import (
     emit_operational_error,
     emit_run_access_error,
     emit_create_run_error,
+    emit_continue_run_error,
+    emit_error_with_fields,
     format_run_startup_diagnostics,
     provider_extra_env,
+    require_cli_run_id,
     resolve_runs_dir_from_args,
     run_access_boundary,
     run_startup_diagnostics_payload,
@@ -36,9 +39,11 @@ from top_down_planning.config import (
     resolve_workspace,
 )
 from top_down_planning.domain.run_kind import RUN_KIND_PLANNING
+from top_down_planning.domain.run_ownership import RunOwnershipError
 from top_down_planning.invocation import invocation_options_from_args, invocation_to_dict
 from top_down_planning.notifications import NotificationContext, wrap_run_store
 from top_down_planning.observability import ObservabilityContext, build_observability_context
+from top_down_planning.orchestrator.engine import RunContinuationResult
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.package.builder import ExecutionPackageBuilder
@@ -91,9 +96,6 @@ def handle_prepare_command(args: Namespace) -> None:
         )
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
-    run_id = new_run_id()
-    plan = _initial_plan(run_id, resolved, output_goal=output_goal)
-
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
     if resolved_runs.source == "default":
         emit_error_message(
@@ -120,30 +122,36 @@ def handle_prepare_command(args: Namespace) -> None:
     invocation_dict["command"] = "prepare"
     invocation_dict["until"] = "validated"
 
-    try:
-        store.create_run(
-            run_id,
-            plan=plan,
-            resolved_config=resolved,
-            input_digest=input_digest,
-            output_goal_digest=output_goal_digest,
-            context_spec_digest=context_spec_digest,
-            context_snapshot_digest=context_snapshot_digest,
-            context_snapshot_binding=binding,
-            workspace=str(workspace),
-            invocation=invocation_dict,
-            run_extras={"run_kind": RUN_KIND_PLANNING},
-            initial_events=[
-                {
-                    "type": "context_snapshot_collected",
-                    **snapshot_diag.to_event_fields(),
-                }
-            ],
-        )
-    except PersistenceError as exc:
-        emit_create_run_error(exc, stream_json=args.stream_json)
-    except OSError as exc:
-        emit_operational_error(exc, stream_json=args.stream_json)
+    planning_run = str(getattr(args, "planning_run", "") or "").strip()
+    if planning_run:
+        run_id = require_cli_run_id(planning_run, stream_json=args.stream_json)
+    else:
+        run_id = new_run_id()
+        plan = _initial_plan(run_id, resolved, output_goal=output_goal)
+        try:
+            store.create_run(
+                run_id,
+                plan=plan,
+                resolved_config=resolved,
+                input_digest=input_digest,
+                output_goal_digest=output_goal_digest,
+                context_spec_digest=context_spec_digest,
+                context_snapshot_digest=context_snapshot_digest,
+                context_snapshot_binding=binding,
+                workspace=str(workspace),
+                invocation=invocation_dict,
+                run_extras={"run_kind": RUN_KIND_PLANNING},
+                initial_events=[
+                    {
+                        "type": "context_snapshot_collected",
+                        **snapshot_diag.to_event_fields(),
+                    }
+                ],
+            )
+        except PersistenceError as exc:
+            emit_create_run_error(exc, stream_json=args.stream_json)
+        except OSError as exc:
+            emit_operational_error(exc, stream_json=args.stream_json)
 
     diagnostics = run_startup_diagnostics_payload(
         cwd=cwd,
@@ -172,14 +180,37 @@ def handle_prepare_command(args: Namespace) -> None:
     )
 
     try:
-        engine = _build_run_engine(
-            store,
-            resolved_runs,
-            run_id=run_id,
-            observability=observability,
-            notifications=notifications,
-        )
-        continuation = engine.continue_run(run_id, until="validated")
+        if planning_run:
+            existing = _cli_load_run(store, run_id, stream_json=args.stream_json)
+            if str(existing.get("phase") or "") == PLAN_VALIDATED:
+                continuation = RunContinuationResult(
+                    ok=True,
+                    run_id=run_id,
+                    phase=PLAN_VALIDATED,
+                    status=str(existing.get("status") or "running"),
+                    outcome=existing.get("outcome"),
+                    reason=None,
+                    cancelled=False,
+                    target_reached=True,
+                )
+            else:
+                engine = _build_run_engine(
+                    store,
+                    resolved_runs,
+                    run_id=run_id,
+                    observability=observability,
+                    notifications=notifications,
+                )
+                continuation = engine.continue_run(run_id, until="validated")
+        else:
+            engine = _build_run_engine(
+                store,
+                resolved_runs,
+                run_id=run_id,
+                observability=observability,
+                notifications=notifications,
+            )
+            continuation = engine.continue_run(run_id, until="validated")
     except KeyboardInterrupt:
         _handle_blocking_run_interrupt(
             run_id=run_id,
@@ -188,6 +219,8 @@ def handle_prepare_command(args: Namespace) -> None:
             notifications=notifications,
             stream_json=args.stream_json,
         )
+    except (PersistenceError, OSError, RunOwnershipError) as exc:
+        emit_continue_run_error(exc, stream_json=args.stream_json)
     finally:
         observability.close()
 
@@ -216,14 +249,33 @@ def handle_prepare_command(args: Namespace) -> None:
             replace=getattr(args, "replace", False),
         )
     except ValueError as exc:
-        emit_error_message(
+        emit_error_with_fields(
             str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
             code="package_build_failed",
+            stream_json=args.stream_json,
+            extra={
+                "planning_run_id": run_id,
+                "recovery": {
+                    "command": "prepare",
+                    "planning_run_id": run_id,
+                },
+            },
         )
     except OSError as exc:
-        emit_operational_error(exc, stream_json=args.stream_json)
+        from top_down_planning.orchestrator.failure import sanitize_operational_error
+
+        emit_error_with_fields(
+            sanitize_operational_error(exc),
+            code="operational_error",
+            stream_json=args.stream_json,
+            extra={
+                "planning_run_id": run_id,
+                "recovery": {
+                    "command": "prepare",
+                    "planning_run_id": run_id,
+                },
+            },
+        )
 
     run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
     digests = dict(run_record.get("digests") or {})

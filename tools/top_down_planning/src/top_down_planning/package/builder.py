@@ -109,10 +109,11 @@ class ExecutionPackageBuilder:
         output_dir: Path,
         replace: bool = False,
     ) -> BuiltExecutionPackage:
-        run = store.load_run(planning_run_id)
-        plan = store.load_plan_model(planning_run_id)
-        config = store.load_resolved_config(planning_run_id)
-        reviews = store.list_reviews(planning_run_id)
+        snapshot = store.load_canonical_snapshot(planning_run_id)
+        run = snapshot.run
+        plan = Plan.from_dict(snapshot.plan)
+        config = snapshot.resolved_config
+        reviews = snapshot.reviews
         approval = find_whole_plan_approval(reviews, plan.revision)
         if approval is None:
             raise ValueError("whole plan must be approved before package materialization")

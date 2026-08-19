@@ -290,9 +290,7 @@ class PreparedUnitExecutor:
         unit_id: str,
         parent_run_id: str | None,
     ) -> str | None:
-        parent = str(parent_run_id or "").strip()
-        if not parent:
-            return None
+        parent = str(parent_run_id or "").strip() or "direct"
         unit = str(unit_id or "").strip()
         package_digest = str(package.manifest.get("package_digest") or "").strip()
         if not unit or not package_digest:

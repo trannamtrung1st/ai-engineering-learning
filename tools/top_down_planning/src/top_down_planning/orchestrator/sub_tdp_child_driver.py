@@ -90,7 +90,12 @@ def continue_child_sub_tdp(
     _ = workspace  # workspace is applied via provider factory / run record
 
     if str(child_run.get("status") or "") == "paused":
-        resume_plan = prepare_resume(child_store, child_run_id, child_config)
+        resume_plan = prepare_resume(
+            child_store,
+            child_run_id,
+            child_config,
+            snapshot=snapshot,
+        )
         apply_resume_plan_atomically(
             child_store,
             resume_plan,
@@ -102,7 +107,11 @@ def continue_child_sub_tdp(
 
     store_for_engine = child_store
     if observability is not None:
-        store_for_engine = wrap_run_store(child_store, observability=observability)
+        store_for_engine = wrap_run_store(
+            child_store,
+            observability=observability,
+            notifications=None,
+        )
 
     engine = RunEngine(
         store_for_engine,

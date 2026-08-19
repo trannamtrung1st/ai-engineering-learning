@@ -106,6 +106,9 @@ class PreparedRunFactory:
         resolved_config: dict[str, Any],
         invocation: dict[str, Any],
     ) -> str:
+        existing = self._find_parent_run(store, package)
+        if existing is not None:
+            return existing
         return self._create_prepared_run(
             store,
             package,
@@ -116,6 +119,31 @@ class PreparedRunFactory:
             selected_unit_id=None,
             unit_record=None,
         )
+
+    @staticmethod
+    def _find_parent_run(
+        store: FileRunStore,
+        package: LoadedExecutionPackage,
+    ) -> str | None:
+        digest = str(package.manifest.get("package_digest") or "").strip()
+        if not digest:
+            return None
+        matches: list[str] = []
+        for run_dir in store.root.iterdir():
+            if not run_dir.is_dir() or not run_dir.name.startswith("run-"):
+                continue
+            run = store.load_run(run_dir.name)
+            if str(run.get("run_kind") or "") != RUN_KIND_PARENT_EXECUTION:
+                continue
+            binding = run.get("package_binding") or {}
+            if str(binding.get("package_digest") or "").strip() == digest:
+                matches.append(run_dir.name)
+        if len(matches) > 1:
+            raise ExecutionPackageError(
+                f"multiple parent execution runs for package digest {digest}",
+                code="sub_tdp_ambiguous_upstream",
+            )
+        return matches[0] if matches else None
 
     def create_child_run(
         self,
@@ -214,7 +242,7 @@ class PreparedRunFactory:
                         package_digest=package_digest,
                         package_units=package.units,
                     )
-                except (OSError, ValueError, KeyError) as exc:
+                except (ValueError, KeyError) as exc:
                     raise ExecutionPackageError(
                         f"workspace baseline wrapper delivery invalid: {exc}",
                         code="sub_tdp_upstream_invalid",
@@ -298,12 +326,64 @@ class PreparedRunFactory:
             package_binding["baseline_context_snapshot_digest"] = context_snapshot_digest
         else:
             output_goal_digest = parent_output_goal_digest
+        production_payload = None
+        if run_kind == RUN_KIND_PARENT_EXECUTION:
+            from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+            from top_down_planning.persistence.sub_tdp_state import (
+                initial_sub_tdp_state_from_package,
+                merge_sub_tdp_state_into_production,
+            )
+
+            state = initial_sub_tdp_state_from_package(
+                package.manifest,
+                manifest_path=str(persisted_manifest),
+                units=[
+                    SubTdpUnit(
+                        plan_item_id=unit.unit_id,
+                        title=unit.title,
+                        outcome="",
+                        directory=unit.plan_file.parent.name,
+                        ordinal=unit.ordinal,
+                    )
+                    for unit in sorted(
+                        package.units.values(), key=lambda item: item.ordinal
+                    )
+                ],
+                package_units=package.units,
+            )
+            production_payload = merge_sub_tdp_state_into_production(
+                {
+                    "revision": 0,
+                    "output_revision": 0,
+                    "batches": [],
+                    "dispositions": {},
+                    "output_evidence": [],
+                    "amendment_requests": [],
+                    "pending_amendment_id": None,
+                    "reconciliation_reports": [],
+                    "completion_claim": None,
+                    "blocker_report": None,
+                    "sub_tdps": None,
+                },
+                state,
+            )
         run_record_extras = {
             "run_kind": run_kind,
             "package_binding": package_binding,
             "plan_source": "prepared_package",
             "plan_review_inherited": True,
         }
+
+        def _inherited_reviews(run: dict[str, Any]) -> list[dict[str, Any]]:
+            return [
+                inherited_whole_plan_approval(
+                    run_id=str(run.get("id") or run_id),
+                    plan=plan,
+                    package_manifest=package.manifest,
+                    run_digests=dict(run.get("digests") or {}),
+                )
+            ]
+
         store.create_run(
             run_id,
             plan=plan,
@@ -314,19 +394,11 @@ class PreparedRunFactory:
             context_snapshot_digest=context_snapshot_digest,
             context_snapshot_binding=binding,
             phase=PLAN_VALIDATED,
+            production=production_payload,
             workspace=str(workspace),
             invocation=invocation,
             run_extras=run_record_extras,
-        )
-        run = store.load_run(run_id)
-        store.save_review(
-            run_id,
-            inherited_whole_plan_approval(
-                run_id=run_id,
-                plan=plan,
-                package_manifest=package.manifest,
-                run_digests=dict(run.get("digests") or {}),
-            ),
+            initial_reviews_for_run=_inherited_reviews,
         )
         return run_id
 

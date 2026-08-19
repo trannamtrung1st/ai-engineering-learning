@@ -18,6 +18,7 @@ from top_down_planning.cli.common import (
     emit_payload,
     emit_run_access_error,
     emit_create_run_error,
+    emit_continue_run_error,
     run_access_boundary,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
@@ -98,6 +99,7 @@ from top_down_planning.domain.run_kind import (
     RUN_KIND_PLANNING,
     resolve_run_kind,
 )
+from top_down_planning.domain.run_ownership import RunOwnershipError
 from top_down_planning.domain.plan_schema import UnsupportedPlanSchemaVersionError
 from top_down_planning.persistence import FileRunStore, PersistenceError, RunNotFoundError
 from top_down_planning.persistence.digests import compute_output_digest
@@ -478,6 +480,8 @@ def handle_run_command(args: Namespace) -> None:
                 notifications=notifications,
                 stream_json=args.stream_json,
             )
+        except (PersistenceError, OSError, RunOwnershipError) as exc:
+            emit_continue_run_error(exc, stream_json=args.stream_json)
     finally:
         observability.close()
 

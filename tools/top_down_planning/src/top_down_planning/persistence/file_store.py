@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -258,6 +258,7 @@ class FileRunStore:
         invocation: dict[str, Any],
         run_extras: dict[str, Any] | None = None,
         initial_events: list[dict[str, Any]] | None = None,
+        initial_reviews_for_run: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         """Create a run atomically with its initial ``run_created`` audit event.
 
@@ -370,6 +371,16 @@ class FileRunStore:
                 (staging_dir / "artifacts").mkdir()
                 (staging_dir / AGENT_REQUESTS_DIR).mkdir()
                 canonical_run = validate_canonical_run(validated_run_id, run_record)
+                if initial_reviews_for_run is not None:
+                    for review in initial_reviews_for_run(canonical_run) or []:
+                        payload = review_record_for_persistence(dict(review))
+                        review_id = str(payload.get("id") or "").strip()
+                        if not review_id:
+                            raise PersistenceError("initial review requires id")
+                        atomic_write_json(
+                            staging_dir / "reviews" / f"{review_id}.json",
+                            payload,
+                        )
                 atomic_write_text(
                     staging_dir / "resolved-config.yaml",
                     dump_yaml(resolved_config) + "\n",
@@ -388,6 +399,16 @@ class FileRunStore:
                             "create_run initial_events must be mappings"
                         )
                     payload = dict(extra)
+                    reserved = [
+                        key
+                        for key in ("txn_id", "event_index", "event_count")
+                        if key in payload
+                    ]
+                    if reserved:
+                        raise PersistenceError(
+                            "create_run initial_events cannot include journal metadata: "
+                            + ", ".join(reserved)
+                        )
                     if not str(payload.get("type") or "").strip():
                         raise PersistenceError(
                             "create_run initial_events require type"
@@ -395,6 +416,8 @@ class FileRunStore:
                     payload.setdefault("run_id", validated_run_id)
                     payload.setdefault("ts", _utc_now())
                     event_records.append(payload)
+                validate_event_log_integrity(event_records)
+                validate_run_created_anchor(validated_run_id, event_records)
                 atomic_write_text(
                     staging_dir / "events.jsonl",
                     "".join(

@@ -6,6 +6,7 @@ from argparse import Namespace
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
+import sys
 from typing import Any
 
 from core_tools.cli import (
@@ -328,6 +329,47 @@ def emit_operational_error(exc: BaseException, *, stream_json: bool) -> None:
     )
 
 
+def emit_error_with_fields(
+    message: str,
+    *,
+    code: str,
+    stream_json: bool,
+    exit_code: int = 1,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Emit a classified CLI error, optionally attaching recovery identity fields."""
+
+    if stream_json:
+        payload: dict[str, Any] = {
+            "ok": False,
+            "error": {"code": code, "message": message},
+        }
+        if extra:
+            payload.update(extra)
+        emit_payload(payload, exit_code=exit_code)
+    print(message, file=sys.stderr)
+    raise SystemExit(exit_code)
+
+
+def emit_continue_run_error(exc: BaseException, *, stream_json: bool) -> None:
+    """Normalize engine-boundary failures for blocking CLI commands."""
+
+    from top_down_planning.domain.run_ownership import RunOwnershipError
+
+    if isinstance(exc, RunOwnershipError):
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=stream_json,
+            code=exc.code,
+        )
+    if isinstance(exc, PersistenceError):
+        emit_run_access_error(exc, stream_json=stream_json)
+    if isinstance(exc, OSError):
+        emit_operational_error(exc, stream_json=stream_json)
+    raise exc
+
+
 __all__ = [
     "AGENT_REQUESTS_DIR_ENV_VAR",
     "AGENT_RUNS_DIR_HELP",
@@ -347,6 +389,8 @@ __all__ = [
     "emit_create_run_error",
     "run_access_boundary",
     "emit_operational_error",
+    "emit_continue_run_error",
+    "emit_error_with_fields",
     "require_cli_run_id",
     "format_run_startup_diagnostics",
     "load_config_for_runs_dir",

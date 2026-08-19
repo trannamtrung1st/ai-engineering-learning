@@ -286,7 +286,7 @@ def test_output_goal_file_invalid_utf8_is_config_error(tmp_path: Path, command: 
 
 
 @pytest.mark.parametrize("command", ["run", "prepare"])
-def test_guidance_file_permission_error_is_operational(tmp_path: Path, command: str) -> None:
+def test_guidance_file_permission_error_is_config_error(tmp_path: Path, command: str) -> None:
     guide = tmp_path / "guide.md"
     guide.write_text("Be careful.\n", encoding="utf-8")
     config_path = write_config(
@@ -308,9 +308,12 @@ def test_guidance_file_permission_error_is_operational(tmp_path: Path, command: 
     with patch.object(Path, "read_text", _read_text):
         structured = run_cli([*argv, "--stream-json"])
         human = run_cli(argv)
-    _assert_operational_without_traceback(structured)
+    assert structured.exit_code == 2
+    payload = _stdout_json(structured)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "config_error"
+    _assert_no_traceback(structured)
     _assert_no_traceback(human)
-    assert structured.stdout.strip().startswith("{")
 
 
 @pytest.mark.parametrize("command", ["run", "prepare"])

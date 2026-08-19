@@ -204,6 +204,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace an existing package at --output.",
     )
     prepare_parser.add_argument(
+        "--planning-run",
+        default="",
+        help="Materialize a package from an existing validated planning run id.",
+    )
+    prepare_parser.add_argument(
         "--set",
         action="append",
         default=[],

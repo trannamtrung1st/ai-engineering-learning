@@ -273,7 +273,7 @@ def test_execute_save_oserror_is_operational(tmp_path: Path) -> None:
     ]
     with patch.object(FileRunStore, "create_run", side_effect=OSError("disk full")):
         _assert_operational_both(argv)
-    with patch.object(FileRunStore, "save_production", side_effect=OSError("disk full")):
+    with patch.object(FileRunStore, "save_run", side_effect=OSError("disk full")):
         _assert_operational_both(argv)
 
 

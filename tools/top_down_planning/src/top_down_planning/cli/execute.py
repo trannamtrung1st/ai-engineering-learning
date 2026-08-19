@@ -15,6 +15,8 @@ from top_down_planning.cli.common import (
     emit_error_message,
     emit_operational_error,
     emit_run_access_error,
+    emit_continue_run_error,
+    emit_error_with_fields,
     format_run_startup_diagnostics,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
@@ -36,6 +38,7 @@ from top_down_planning.invocation import invocation_options_from_args, invocatio
 from top_down_planning.notifications import NotificationContext
 from top_down_planning.observability import build_observability_context
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED
+from top_down_planning.domain.run_ownership import RunOwnershipError
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.orchestrator.prepared_unit_executor import (
     PreparedUnitExecutor,
@@ -287,6 +290,7 @@ def handle_execute_command(args: Namespace) -> None:
         )
         return
 
+    run_id = None
     try:
         run_id = run_factory.create_parent_run(
             store,
@@ -294,38 +298,60 @@ def handle_execute_command(args: Namespace) -> None:
             resolved_config=resolved,
             invocation=invocation_dict,
         )
-        parent_run = _cli_load_run(store, run_id, stream_json=args.stream_json)
-        binding = parent_run.get("package_binding") or {}
-        persisted_manifest = str(binding.get("manifest_path") or package.manifest_path)
         production = store.load_production(run_id)
-        state = initial_sub_tdp_state_from_package(
-            package.manifest,
-            manifest_path=persisted_manifest,
-            units=[
-                SubTdpUnit(
-                    plan_item_id=unit.unit_id,
-                    title=unit.title,
-                    outcome="",
-                    directory=unit.plan_file.parent.name,
-                    ordinal=unit.ordinal,
-                )
-                for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
-            ],
-            package_units=package.units,
-        )
-        merged = merge_sub_tdp_state_into_production(production, state)
-        expected_revision = int(production["revision"])
-        merged["revision"] = expected_revision + 1
-        store.save_production(run_id, merged, expected_revision)
+        if not isinstance(production.get("sub_tdps"), dict):
+            parent_run = _cli_load_run(store, run_id, stream_json=args.stream_json)
+            binding = parent_run.get("package_binding") or {}
+            persisted_manifest = str(binding.get("manifest_path") or package.manifest_path)
+            state = initial_sub_tdp_state_from_package(
+                package.manifest,
+                manifest_path=persisted_manifest,
+                units=[
+                    SubTdpUnit(
+                        plan_item_id=unit.unit_id,
+                        title=unit.title,
+                        outcome="",
+                        directory=unit.plan_file.parent.name,
+                        ordinal=unit.ordinal,
+                    )
+                    for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
+                ],
+                package_units=package.units,
+            )
+            merged = merge_sub_tdp_state_into_production(production, state)
+            expected_revision = int(production["revision"])
+            merged["revision"] = expected_revision + 1
+            store.save_production(run_id, merged, expected_revision)
 
         if parent_only:
-            # Enter sub_tdps without driving children so attach can bind independently
-            # executed units. Pause the parent to prevent concurrent orchestration writes.
             from top_down_planning.domain.run_lifecycle import StopRecord
             from top_down_planning.orchestrator.phases import SUB_TDPS
             from top_down_planning.orchestrator.run_transitions import pause_run
 
             run = dict(_cli_load_run(store, run_id, stream_json=args.stream_json))
+            stop = run.get("stop") if isinstance(run.get("stop"), dict) else {}
+            if (
+                str(run.get("status") or "") == "paused"
+                and str(stop.get("code") or "") == "sub_tdps_awaiting_children"
+            ):
+                payload = {
+                    "ok": True,
+                    "run_id": run_id,
+                    "phase": SUB_TDPS,
+                    "status": run.get("status"),
+                    "parent_only": True,
+                    "package_id": package.manifest.get("package_id"),
+                    "runs_dir": str(resolved_runs.path),
+                }
+                emit_command_result(
+                    payload,
+                    human_message=(
+                        f"Created parent-only run {run_id} "
+                        f"(phase={SUB_TDPS}, status={run.get('status')})."
+                    ),
+                    stream_json=args.stream_json,
+                )
+                return
             expected_run = int(run["revision"])
             run["revision"] = expected_run + 1
             run["phase"] = SUB_TDPS
@@ -369,8 +395,29 @@ def handle_execute_command(args: Namespace) -> None:
             )
             return
     except PersistenceError as exc:
+        extra = {"run_id": run_id} if run_id else None
+        if extra is not None:
+            from core_tools.persistence import RunNotFoundError
+
+            code = "run_not_found" if isinstance(exc, RunNotFoundError) else "corrupt_run"
+            emit_error_with_fields(
+                str(exc),
+                code=code,
+                stream_json=args.stream_json,
+                extra=extra,
+            )
         emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
+        extra = {"run_id": run_id} if run_id else None
+        if extra is not None:
+            from top_down_planning.orchestrator.failure import sanitize_operational_error
+
+            emit_error_with_fields(
+                sanitize_operational_error(exc),
+                code="operational_error",
+                stream_json=args.stream_json,
+                extra=extra,
+            )
         emit_operational_error(exc, stream_json=args.stream_json)
 
     _drive_execution_run(
@@ -634,6 +681,8 @@ def _drive_execution_run(
             notifications=notifications,
             stream_json=args.stream_json,
         )
+    except (PersistenceError, OSError, RunOwnershipError) as exc:
+        emit_continue_run_error(exc, stream_json=args.stream_json)
     finally:
         observability.close()
 
