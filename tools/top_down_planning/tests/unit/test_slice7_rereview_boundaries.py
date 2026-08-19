@@ -6,6 +6,7 @@ import json
 import multiprocessing
 import os
 import shutil
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -42,6 +43,8 @@ from tests.unit.test_slice7_rereview_config_ops import (
     _assert_operational_error,
     _minimal_run_yaml,
 )
+from tests.unit.test_slice7_rereview_760_764 import _engine_patches
+from tests.unit.test_slice7_rereview_760_767 import _patch_prepare_plan_validated
 from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
 
 
@@ -198,12 +201,27 @@ def test_run_create_and_event_oserror_are_operational(tmp_path: Path) -> None:
         created["n"] += 1
         return original_create(self, *args, **kwargs)
 
-    with (
-        patch.object(FileRunStore, "create_run", _create),
-        patch.object(FileRunStore, "append_event", side_effect=OSError("journal full")),
-    ):
-        _assert_operational_both(argv)
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(FileRunStore, "create_run", _create))
+        stack.enter_context(
+            patch.object(FileRunStore, "append_event", side_effect=OSError("journal full"))
+        )
+        for item in _engine_patches(tmp_path):
+            stack.enter_context(item)
+        structured = run_cli([*argv, "--stream-json"])
+        human = run_cli(argv)
+    leftover = [
+        path
+        for path in (tmp_path / "runs").iterdir()
+        if path.is_dir() and path.name.startswith("run-")
+    ]
+    assert leftover
     assert created["n"] >= 1
+    assert structured.exit_code == 0
+    assert human.exit_code == 0
+    payload = json.loads(structured.stdout)
+    assert payload.get("error", {}).get("code") != "operational_error"
+    assert payload.get("ok") is True or payload.get("run_id")
 
 
 def test_prepare_create_and_event_oserror_are_operational(tmp_path: Path) -> None:
@@ -221,8 +239,26 @@ def test_prepare_create_and_event_oserror_are_operational(tmp_path: Path) -> Non
     ]
     with patch.object(FileRunStore, "create_run", side_effect=OSError("disk full")):
         _assert_operational_both(argv)
-    with patch.object(FileRunStore, "append_event", side_effect=OSError("journal full")):
-        _assert_operational_both(argv)
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch.object(FileRunStore, "append_event", side_effect=OSError("journal full"))
+        )
+        for item in _engine_patches(tmp_path):
+            stack.enter_context(item)
+        stack.enter_context(_patch_prepare_plan_validated())
+        structured = run_cli([*argv, "--stream-json"])
+        human = run_cli(argv)
+    leftover = [
+        path
+        for path in (tmp_path / "runs").iterdir()
+        if path.is_dir() and path.name.startswith("run-")
+    ]
+    assert leftover
+    assert structured.exit_code == 0
+    assert human.exit_code == 0
+    payload = json.loads(structured.stdout)
+    assert payload.get("error", {}).get("code") != "operational_error"
+    assert payload.get("ok") is True or payload.get("planning_run_id")
 
 
 def test_execute_save_oserror_is_operational(tmp_path: Path) -> None:

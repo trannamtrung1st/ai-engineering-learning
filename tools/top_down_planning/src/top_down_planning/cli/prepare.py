@@ -133,18 +133,15 @@ def handle_prepare_command(args: Namespace) -> None:
             workspace=str(workspace),
             invocation=invocation_dict,
             run_extras={"run_kind": RUN_KIND_PLANNING},
+            initial_events=[
+                {
+                    "type": "context_snapshot_collected",
+                    **snapshot_diag.to_event_fields(),
+                }
+            ],
         )
     except PersistenceError as exc:
         emit_create_run_error(exc, stream_json=args.stream_json)
-    except OSError as exc:
-        emit_operational_error(exc, stream_json=args.stream_json)
-    try:
-        store.append_event(
-            run_id,
-            {"type": "context_snapshot_collected", **snapshot_diag.to_event_fields()},
-        )
-    except PersistenceError as exc:
-        emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
 

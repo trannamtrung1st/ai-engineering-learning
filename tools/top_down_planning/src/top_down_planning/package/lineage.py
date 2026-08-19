@@ -796,7 +796,7 @@ def _package_initial_snapshot_from_binding(binding: dict[str, Any]) -> str | Non
             Path(manifest_path).parent,
             verify_workspace=False,
         )
-    except (OSError, ValueError, TypeError):
+    except (ValueError, TypeError):
         return None
     return str(
         (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
@@ -1123,12 +1123,16 @@ def revalidate_terminal_child_delivery(
     child_run: dict[str, Any],
     verify_evidence: bool = True,
 ) -> None:
-    """Re-check terminal child delivery before reuse."""
+    """Re-check terminal child delivery before reuse.
 
-    validate_accepted_child_delivery(
-        store=store,
-        child_run_id=child_run_id,
-        child_run=child_run,
+    ``child_run`` is ignored: validation always uses one locked canonical snapshot
+    so a torn run/production/reviews mix cannot pass or fail incorrectly.
+    """
+
+    del child_run
+    load_canonical_child_delivery(
+        store,
+        child_run_id,
         verify_evidence=verify_evidence,
     )
 

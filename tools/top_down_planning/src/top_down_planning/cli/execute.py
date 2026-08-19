@@ -498,22 +498,20 @@ def _execute_unit(
 
     from top_down_planning.orchestrator.execution_runtime import build_execution_runtime
 
-    runtime = build_execution_runtime(
-        store=store,
-        run_id=child_run_id,
-        resolved_runs=resolved_runs,
-        observability=observability,
-        workspace=workspace,
-    )
-    _provider_factory = runtime.create_provider
-
     continuation_ok = False
     cancelled = False
     try:
+        runtime = build_execution_runtime(
+            store=store,
+            run_id=child_run_id,
+            resolved_runs=resolved_runs,
+            observability=observability,
+            workspace=workspace,
+        )
         child_result = executor.drive_child_run(
             store,
             child_run_id,
-            create_provider=_provider_factory,
+            create_provider=runtime.create_provider,
             workspace=workspace,
             observability=observability,
         )
@@ -535,6 +533,17 @@ def _execute_unit(
             notifications=notifications,
             stream_json=args.stream_json,
         )
+    except ExecutionPackageError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=getattr(exc, "code", "package_invalid"),
+        )
+    except PersistenceError as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
     finally:
         observability.close()
 

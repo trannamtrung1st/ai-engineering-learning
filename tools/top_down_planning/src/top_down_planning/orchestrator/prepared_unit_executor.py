@@ -215,10 +215,10 @@ class PreparedUnitExecutor:
         workspace: Path,
         observability: Any | None = None,
     ) -> PreparedChildResult:
-        child_run = child_store.load_run(child_run_id)
-        if self._is_terminal(child_run):
-            self._revalidate_terminal_child_delivery(child_store, child_run_id, child_run)
-            return PreparedChildResult.from_run(child_run, ok=True)
+        snapshot = child_store.load_canonical_snapshot(child_run_id)
+        if self._is_terminal(snapshot.run):
+            snapshot = self._revalidate_terminal_child_delivery(child_store, child_run_id)
+            return PreparedChildResult.from_run(snapshot.run, ok=True)
         return continue_child_sub_tdp(
             child_store,
             child_run_id,
@@ -255,10 +255,6 @@ class PreparedUnitExecutor:
             orchestration_state=orchestration_state,
             explicit_upstream=explicit_upstream,
         )
-        child_run = child_store.load_run(child_run_id)
-        if self._is_terminal(child_run):
-            self._revalidate_terminal_child_delivery(child_store, child_run_id, child_run)
-            return PreparedChildResult.from_run(child_run, ok=True)
 
         if provider_factory_for_run is not None:
             create_provider = provider_factory_for_run(child_run_id)
@@ -1125,15 +1121,11 @@ class PreparedUnitExecutor:
     def _revalidate_terminal_child_delivery(
         child_store: FileRunStore,
         child_run_id: str,
-        child_run: dict[str, Any],
-    ) -> None:
-        from top_down_planning.package.lineage import revalidate_terminal_child_delivery
-
+    ):
         try:
-            revalidate_terminal_child_delivery(
-                store=child_store,
-                child_run_id=child_run_id,
-                child_run=child_run,
+            return load_canonical_child_delivery(
+                child_store,
+                child_run_id,
                 verify_evidence=True,
             )
         except ValueError as exc:

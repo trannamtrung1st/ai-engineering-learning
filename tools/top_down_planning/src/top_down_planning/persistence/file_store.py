@@ -257,8 +257,14 @@ class FileRunStore:
         workspace: str,
         invocation: dict[str, Any],
         run_extras: dict[str, Any] | None = None,
+        initial_events: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Create a run atomically with its initial ``run_created`` audit event."""
+        """Create a run atomically with its initial ``run_created`` audit event.
+
+        Optional ``initial_events`` are written into the same staging
+        ``events.jsonl`` as ``run_created`` so callers do not need a
+        post-publication append to record creation-time diagnostics.
+        """
 
         validated_run_id = validate_run_id(run_id)
         if not input_digest or not output_goal_digest or not context_spec_digest:
@@ -375,9 +381,26 @@ class FileRunStore:
                     production_payload,
                 )
                 atomic_write_json(staging_dir / "invocation.json", invocation)
+                event_records = [run_created_event]
+                for extra in initial_events or []:
+                    if not isinstance(extra, dict):
+                        raise PersistenceError(
+                            "create_run initial_events must be mappings"
+                        )
+                    payload = dict(extra)
+                    if not str(payload.get("type") or "").strip():
+                        raise PersistenceError(
+                            "create_run initial_events require type"
+                        )
+                    payload.setdefault("run_id", validated_run_id)
+                    payload.setdefault("ts", _utc_now())
+                    event_records.append(payload)
                 atomic_write_text(
                     staging_dir / "events.jsonl",
-                    json.dumps(run_created_event, sort_keys=True) + "\n",
+                    "".join(
+                        json.dumps(event, sort_keys=True) + "\n"
+                        for event in event_records
+                    ),
                 )
                 staging_dir.rename(final_run_dir)
                 remove_creation_lock = True
@@ -387,7 +410,10 @@ class FileRunStore:
                 raise
 
         if remove_creation_lock and creation_lock_path.exists():
-            creation_lock_path.unlink(missing_ok=True)
+            try:
+                creation_lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         if canonical_run is None:
             raise PersistenceError(

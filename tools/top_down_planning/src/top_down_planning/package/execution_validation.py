@@ -716,7 +716,7 @@ def baseline_auth_params_from_binding(
             Path(manifest_path).parent,
             verify_workspace=False,
         )
-    except (OSError, ValueError, TypeError) as exc:
+    except (ValueError, TypeError) as exc:
         raise ExecutionPackageError(
             f"failed to load package from manifest_path: {exc}",
             code="sub_tdp_upstream_invalid",

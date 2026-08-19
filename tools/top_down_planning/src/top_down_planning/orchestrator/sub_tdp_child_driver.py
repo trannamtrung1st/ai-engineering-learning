@@ -11,7 +11,7 @@ from core_tools.provider import Provider
 from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED
 from top_down_planning.orchestrator.prepare_resume import prepare_resume
-from top_down_planning.package.lineage import revalidate_terminal_child_delivery
+from top_down_planning.package.lineage import load_canonical_child_delivery
 from top_down_planning.package.loader import ExecutionPackageError
 from top_down_planning.persistence import FileRunStore
 
@@ -70,13 +70,13 @@ def continue_child_sub_tdp(
     workspace: Path,
     observability: Any | None = None,
 ) -> PreparedChildResult:
-    child_run = child_store.load_run(child_run_id)
+    snapshot = child_store.load_canonical_snapshot(child_run_id)
+    child_run = snapshot.run
     if _child_run_terminal(child_run):
         try:
-            revalidate_terminal_child_delivery(
-                store=child_store,
-                child_run_id=child_run_id,
-                child_run=child_run,
+            snapshot = load_canonical_child_delivery(
+                child_store,
+                child_run_id,
                 verify_evidence=True,
             )
         except ValueError as exc:
@@ -84,9 +84,9 @@ def continue_child_sub_tdp(
                 f"terminal child delivery invalid: {exc}",
                 code="sub_tdp_lineage_mismatch",
             ) from exc
-        return PreparedChildResult.from_run(child_run, ok=True)
+        return PreparedChildResult.from_run(snapshot.run, ok=True)
 
-    child_config = child_store.load_resolved_config(child_run_id)
+    child_config = snapshot.resolved_config
     _ = workspace  # workspace is applied via provider factory / run record
 
     if str(child_run.get("status") or "") == "paused":
