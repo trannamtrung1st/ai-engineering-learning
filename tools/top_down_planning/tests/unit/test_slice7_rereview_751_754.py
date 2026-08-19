@@ -247,13 +247,10 @@ def test_resume_parent_child_permission_error_is_operational(
 
 def _goal_reads_a_then_b(goal: Path):
     original = Path.read_text
-    counts: dict[str, object] = {"n": 0, "lock": None}
+    counts: dict[str, object] = {"n": 0}
 
     def read_text(self: Path, *args, **kwargs):
         if self.resolve() == goal.resolve():
-            locked = counts.get("lock")
-            if isinstance(locked, str):
-                return locked
             counts["n"] = int(counts["n"]) + 1
             if counts["n"] == 1:
                 return "Goal version A.\n"
@@ -291,12 +288,11 @@ def test_create_output_goal_text_and_digest_share_one_file_version(
     argv = [command, "--config", str(config_path), "--runs-dir", str(tmp_path / "runs")]
     if command == "prepare":
         argv.extend(["--output", str(tmp_path / "pkg")])
-    read_text, counts = _goal_reads_a_then_b(goal)
+    read_text, _counts = _goal_reads_a_then_b(goal)
 
     def create_wrapper(self, run_id, **kwargs):
         captured["plan_goal"] = kwargs["plan"].output_goal
         captured["digest"] = kwargs["output_goal_digest"]
-        counts["lock"] = kwargs["plan"].output_goal
         return real_create(self, run_id, **kwargs)
 
     with (
@@ -318,6 +314,13 @@ def test_create_output_goal_text_and_digest_share_one_file_version(
     assert "plan_goal" in captured
     assert captured["digest"] == digest_text(captured["plan_goal"])
     assert captured["plan_goal"].strip() == "Goal version A."
+    assert result.exit_code != 0
+    leftover = [
+        path
+        for path in (tmp_path / "runs").iterdir()
+        if path.is_dir() and path.name.startswith("run-")
+    ] if (tmp_path / "runs").exists() else []
+    assert leftover == []
 
 
 @pytest.mark.parametrize(

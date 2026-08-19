@@ -6,6 +6,7 @@ import copy
 from typing import Any
 
 from core_tools.config import resolve_workspace
+from core_tools.persistence import PersistenceError
 
 from top_down_planning.agent_tool.artifacts import verify_evidence_snapshot
 from top_down_planning.config import (
@@ -69,6 +70,7 @@ from top_down_planning.persistence.run_schema import (
     validate_run_digests,
     validate_run_schema_version,
 )
+from top_down_planning.persistence.snapshot import CanonicalRunSnapshot
 from top_down_planning.workspace import run_workspace
 
 
@@ -87,9 +89,9 @@ class PrepareResumeBlockedError(OrchestratorError):
 
 
 def _blocker_from_verify_exc(exc: BaseException, message: str) -> str:
-    """Translate semantic verify failures; let filesystem errors propagate."""
+    """Translate semantic verify failures; let access errors propagate."""
 
-    if isinstance(exc, OSError):
+    if isinstance(exc, (OSError, PersistenceError)):
         raise
     return message
 
@@ -194,6 +196,8 @@ def _verify_prepared_package_binding(
     run_id = str(run.get("id") or "").strip()
     try:
         actual_plan = store.load_plan_model(run_id)
+    except (OSError, PersistenceError):
+        raise
     except Exception as exc:
         return _blocker_from_verify_exc(exc, f"prepared plan reload failed: {exc}")
     if kind == RUN_KIND_SUB_TDP_EXECUTION:
@@ -712,11 +716,23 @@ def prepare_resume(
     *,
     allow_config_drift: bool = False,
     run: dict[str, Any] | None = None,
+    snapshot: CanonicalRunSnapshot | None = None,
 ) -> ResumePlan:
     """Build a read-only resume plan or raise when canonical invariants block resume."""
 
-    if run is None:
-        run = store.load_run(run_id)
+    if snapshot is not None:
+        run = snapshot.run
+        stored_config = snapshot.resolved_config
+        plan = snapshot.plan
+        production = snapshot.production
+        reviews = snapshot.reviews
+    else:
+        if run is None:
+            run = store.load_run(run_id)
+        stored_config = store.load_resolved_config(run_id)
+        plan = store.load_plan(run_id)
+        production = store.load_production(run_id)
+        reviews = store.list_reviews(run_id)
     validate_run_schema_version(run)
     validate_run_digests(run)
     validate_run_lifecycle_invariants(run)
@@ -739,7 +755,7 @@ def prepare_resume(
             expected_run_revision=expected_revision,
             state_transition=None,
             config_changes={},
-            session_policy=derive_session_policy(run, store.list_reviews(run_id)),
+            session_policy=derive_session_policy(run, reviews),
             validation=ResumePlanValidation(
                 contract_digest_valid=True,
                 plan_binding_valid=True,
@@ -758,11 +774,7 @@ def prepare_resume(
         except RunOwnershipError as exc:
             _raise_blocked(str(exc), code=exc.code)
 
-    stored_config = store.load_resolved_config(run_id)
     workspace = run_workspace(run)
-    plan = store.load_plan(run_id)
-    production = store.load_production(run_id)
-    reviews = store.list_reviews(run_id)
     plan_revision = int(plan.get("revision") or 0)
     has_whole_plan_approval = has_mandatory_whole_plan_approval(reviews, plan_revision)
     resolved_consumed_limits = consumed_limits or consumed_limits_from_run(run)
@@ -803,7 +815,9 @@ def prepare_resume(
 
             kind = resolve_run_kind(run)
             if kind == RUN_KIND_SUB_TDP_EXECUTION:
-                unit_plan = store.load_plan_model(run_id)
+                from top_down_planning.domain.models import Plan
+
+                unit_plan = Plan.from_dict(plan)
                 output_goal_digest = compute_unit_output_goal_digest(
                     unit_plan.output_goal
                 )

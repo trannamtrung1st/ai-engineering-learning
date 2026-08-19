@@ -10,6 +10,7 @@ from top_down_planning.cli.common import (
     emit_command_result,
     emit_error_message,
     emit_operational_error,
+    emit_run_access_error,
     format_run_startup_diagnostics,
     provider_extra_env,
     resolve_runs_dir_from_args,
@@ -40,7 +41,7 @@ from top_down_planning.observability import ObservabilityContext, build_observab
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.package.builder import ExecutionPackageBuilder
-from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence import FileRunStore, PersistenceError
 from top_down_planning.persistence.path_ids import new_run_id
 from core_tools.observability import ConsoleEvent
 
@@ -136,6 +137,8 @@ def handle_prepare_command(args: Namespace) -> None:
             run_id,
             {"type": "context_snapshot_collected", **snapshot_diag.to_event_fields()},
         )
+    except PersistenceError as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
 

@@ -427,6 +427,8 @@ def handle_run_command(args: Namespace) -> None:
                 **snapshot_diag.to_event_fields(),
             },
         )
+    except PersistenceError as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
 
@@ -560,8 +562,17 @@ def handle_resume_command(args: Namespace) -> None:
     store, resolved_runs = _open_run_store_for_command(args)
     try:
         reconcile_stale_running_run(store, args.run)
-        run = store.load_run(args.run)
+        canonical = store.load_canonical_snapshot(args.run)
+        run = canonical.run
         snapshot = run_resume_snapshot_from_run(run)
+    except UnsupportedPlanSchemaVersionError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
+        return
     except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
@@ -608,11 +619,7 @@ def handle_resume_command(args: Namespace) -> None:
     config_path = Path(args.config).resolve() if getattr(args, "config", None) else None
 
     try:
-        stored = store.load_resolved_config(args.run)
-    except (RunNotFoundError, PersistenceError, OSError) as exc:
-        emit_run_access_error(exc, stream_json=args.stream_json)
-
-    try:
+        stored = canonical.resolved_config
         candidate = resolve_resume_candidate_for_run(
             stored,
             config_path=config_path,
@@ -643,6 +650,7 @@ def handle_resume_command(args: Namespace) -> None:
             candidate,
             allow_config_drift=allow_config_drift,
             run=run,
+            snapshot=canonical,
         )
     except PrepareResumeBlockedError as exc:
         emit_error_message(
@@ -726,8 +734,8 @@ def handle_resume_command(args: Namespace) -> None:
             code=exc.code,
         )
         return
-    except OSError as exc:
-        emit_operational_error(exc, stream_json=args.stream_json)
+    except (RunNotFoundError, PersistenceError, OSError) as exc:
+        emit_run_access_error(exc, stream_json=args.stream_json)
 
     observability = build_observability_context(
         options=invocation.observability,
