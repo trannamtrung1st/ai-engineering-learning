@@ -1695,18 +1695,21 @@ def validate_canonical_run_artifacts(
             raise PersistenceError(missing)
         return data
 
+    def loads_utf8_json(data: bytes):
+        return json.loads(data.decode("utf-8"))
+
     try:
         require_non_symlink_run_boundary(run_dir)
-        run_payload = json.loads(require_bytes("run.json", "run.json missing"))
+        run_payload = loads_utf8_json(require_bytes("run.json", "run.json missing"))
         if not isinstance(run_payload, dict):
             raise PersistenceError("run.json must contain a JSON object")
         validate_canonical_run(run_id, run_payload)
 
         plan = canonicalize_persisted_plan(
-            json.loads(require_bytes("plan.json", "plan.json missing"))
+            loads_utf8_json(require_bytes("plan.json", "plan.json missing"))
         )
 
-        production_payload = json.loads(
+        production_payload = loads_utf8_json(
             require_bytes("production.json", "production.json missing")
         )
         validate_persisted_production(production_payload, plan=plan)
@@ -1740,7 +1743,9 @@ def validate_canonical_run_artifacts(
         validate_run_created_anchor(run_id, events)
 
         validate_persisted_invocation(
-            json.loads(require_bytes("invocation.json", "invocation.json missing"))
+            loads_utf8_json(
+                require_bytes("invocation.json", "invocation.json missing")
+            )
         )
 
         reviews_dir = run_dir / "reviews"
@@ -1751,7 +1756,7 @@ def validate_canonical_run_artifacts(
                 if key.startswith("reviews/") and key.endswith(".json")
             )
             for relative in review_keys:
-                review_payload = json.loads(overlay[relative])
+                review_payload = loads_utf8_json(overlay[relative])
                 canonicalize_persisted_review(Path(relative).stem, review_payload)
         elif reviews_dir.exists():
             if reviews_dir.is_symlink():
@@ -1763,7 +1768,7 @@ def validate_canonical_run_artifacts(
                     raise PersistenceError(
                         f"review path {review_path.name} must not be a symlink"
                     )
-                review_payload = json.loads(review_path.read_text(encoding="utf-8"))
+                review_payload = loads_utf8_json(review_path.read_bytes())
                 canonicalize_persisted_review(review_path.stem, review_payload)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise PersistenceError(f"canonical run artifacts are unreadable: {exc}") from exc

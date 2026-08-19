@@ -1509,3 +1509,86 @@ def test_doctor_treats_rollback_txn_as_recoverable_when_in_flight_plan_is_malfor
     _assert_doctor_run_healthy(store, run_id)
     assert json.loads((run_dir / "plan.json").read_text(encoding="utf-8")) == prior_plan
 
+
+def _rewrite_json_file_as_utf16(path: Path) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_bytes(json.dumps(payload).encode("utf-16"))
+
+
+def _plant_valid_review(run_dir: Path) -> Path:
+    from top_down_planning.domain.reviews import ReviewLoop
+
+    review_id = "review-utf16-01"
+    payload = ReviewLoop(
+        id=review_id,
+        type="focused_plan",
+        target_revision=0,
+        scope={"kind": "plan_item", "item_id": "item-root"},
+        status="pending",
+        revise_at="blocker",
+    ).to_dict()
+    reviews_dir = run_dir / "reviews"
+    reviews_dir.mkdir(exist_ok=True)
+    path = reviews_dir / f"{review_id}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["run.json", "plan.json", "production.json", "invocation.json"],
+)
+def test_doctor_reports_utf16_canonical_json_as_corrupt(
+    tmp_path: Path, relative: str
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111912-111912"
+    _create_planning_run(store, run_id)
+    run_dir = store.run_dir(run_id)
+    _wipe_txn_dirs(run_dir)
+    _rewrite_json_file_as_utf16(run_dir / relative)
+    _assert_doctor_marks_corrupt(store, run_id)
+
+
+def test_doctor_reports_utf16_review_record_as_corrupt(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111913-111913"
+    _create_planning_run(store, run_id)
+    run_dir = store.run_dir(run_id)
+    review_path = _plant_valid_review(run_dir)
+    _wipe_txn_dirs(run_dir)
+    _assert_doctor_run_healthy(store, run_id)
+    _rewrite_json_file_as_utf16(review_path)
+    _assert_doctor_marks_corrupt(store, run_id)
+
+
+def test_doctor_does_not_accept_utf16_json_behind_pending_transaction(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111914-111914"
+    _create_planning_run(store, run_id)
+    run_dir = _leave_prepared_transaction(store, run_id)
+    _rewrite_json_file_as_utf16(run_dir / "invocation.json")
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
+
+def test_doctor_does_not_accept_utf16_review_behind_pending_transaction(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T111915-111915"
+    _create_planning_run(store, run_id)
+    review_path = _plant_valid_review(store.run_dir(run_id))
+    run_dir = _leave_prepared_transaction(store, run_id)
+    _rewrite_json_file_as_utf16(review_path)
+    _assert_doctor_rejects_unrecoverable_without_outside_writes(
+        store,
+        run_id,
+        evidence_dir=run_dir,
+    )
+
