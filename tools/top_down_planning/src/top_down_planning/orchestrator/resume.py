@@ -36,6 +36,7 @@ __all__ = [
     "is_terminal_resume_snapshot",
     "load_run_resume_snapshot",
     "prepare_resume",
+    "run_resume_snapshot_from_run",
     "short_digest_for_observability",
 ]
 
@@ -74,17 +75,22 @@ class RunResumeSnapshot:
     stop: dict[str, Any] | None
 
 
-def load_run_resume_snapshot(store: RunStore, run_id: str) -> RunResumeSnapshot:
-    run = store.load_run(run_id)
+def run_resume_snapshot_from_run(run: dict[str, Any]) -> RunResumeSnapshot:
+    """Build a resume snapshot from an already-loaded run record."""
+
     stop = run.get("stop")
     outcome = run.get("outcome")
     return RunResumeSnapshot(
-        run_id=run_id,
+        run_id=str(run.get("id") or ""),
         phase=str(run.get("phase") or ""),
         status=str(run.get("status") or "running"),
         outcome=outcome if isinstance(outcome, str) else None,
         stop=dict(stop) if isinstance(stop, dict) else None,
     )
+
+
+def load_run_resume_snapshot(store: RunStore, run_id: str) -> RunResumeSnapshot:
+    return run_resume_snapshot_from_run(store.load_run(run_id))
 
 
 def is_terminal_resume_snapshot(snapshot: RunResumeSnapshot) -> bool:

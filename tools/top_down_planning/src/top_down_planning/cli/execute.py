@@ -30,7 +30,7 @@ from top_down_planning.config import (
     is_allowed_presentation_override_path,
     validate_presentation_config,
 )
-from core_tools.config import apply_cli_overrides, collect_leaf_paths, deep_merge, load_yaml_config
+from core_tools.config import apply_cli_overrides, deep_merge, load_yaml_config
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.invocation import invocation_options_from_args, invocation_to_dict
 from top_down_planning.notifications import NotificationContext
@@ -127,15 +127,46 @@ def _presentation_sets(set_overrides: list[str] | None) -> list[str]:
     return _validate_execute_presentation_sets(set_overrides)
 
 
+def _is_execute_presentation_node(path: str) -> bool:
+    """Allow exact presentation leaves or prefixes of those leaves."""
+
+    if _is_execute_presentation_path(path):
+        return True
+    from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS
+
+    return any(
+        allowed.startswith(f"{path}.") and _is_execute_presentation_path(allowed)
+        for allowed in ALLOWED_OVERRIDE_PATHS
+    )
+
+
+def _reject_non_presentation_overlay(value: Any, prefix: str = "") -> None:
+    """Reject any overlay node outside the presentation/runtime allowlist."""
+
+    if isinstance(value, dict):
+        if not value:
+            if prefix and not _is_execute_presentation_node(prefix):
+                raise ConfigError(
+                    f"execute --config path {prefix!r} is not allowed; "
+                    "semantic config is fixed by the execution package",
+                    path=prefix,
+                )
+            return
+        for key, child in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            _reject_non_presentation_overlay(child, path)
+        return
+    if prefix and not _is_execute_presentation_path(prefix):
+        raise ConfigError(
+            f"execute --config path {prefix!r} is not allowed; "
+            "semantic config is fixed by the execution package",
+            path=prefix,
+        )
+
+
 def _load_execute_presentation_overlay(config_path: Path) -> dict[str, Any]:
     overlay = load_yaml_config(config_path)
-    for path in sorted(collect_leaf_paths(overlay)):
-        if not _is_execute_presentation_path(path):
-            raise ConfigError(
-                f"execute --config path {path!r} is not allowed; "
-                "semantic config is fixed by the execution package",
-                path=path,
-            )
+    _reject_non_presentation_overlay(overlay)
     return overlay
 
 

@@ -31,6 +31,7 @@ from top_down_planning.config.execution import validate_execution_config
 __all__ = [
     "compute_input_digest",
     "compute_output_goal_digest",
+    "compute_output_goal_digest_from_text",
     "compute_unit_output_goal_digest",
     "finalize_resolved_config",
     "is_allowed_presentation_override_path",
@@ -501,10 +502,18 @@ def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
     return inline
 
 
-def compute_output_goal_digest(config: dict[str, Any], *, base_dir: Path) -> str:
+def compute_output_goal_digest_from_text(text: str) -> str:
+    """Digest already-resolved output-goal text without rereading the source file."""
+
     from core_tools.persistence.digests import digest_text
 
-    return digest_text(resolve_output_goal_text(config, base_dir=base_dir))
+    return digest_text(text)
+
+
+def compute_output_goal_digest(config: dict[str, Any], *, base_dir: Path) -> str:
+    return compute_output_goal_digest_from_text(
+        resolve_output_goal_text(config, base_dir=base_dir)
+    )
 
 
 def compute_unit_output_goal_digest(output_goal: str) -> str:

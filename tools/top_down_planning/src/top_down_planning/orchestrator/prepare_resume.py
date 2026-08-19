@@ -86,6 +86,14 @@ class PrepareResumeBlockedError(OrchestratorError):
         self.blockers = blockers
 
 
+def _blocker_from_verify_exc(exc: BaseException, message: str) -> str:
+    """Translate semantic verify failures; let filesystem errors propagate."""
+
+    if isinstance(exc, OSError):
+        raise
+    return message
+
+
 def _raise_blocked(message: str, *, code: str = "resume_preparation_blocked") -> None:
     raise PrepareResumeBlockedError(message, code=code, blockers=(message,))
 
@@ -104,7 +112,7 @@ def _verify_production_evidence(
         try:
             verify_evidence_snapshot(store, run_id, entry)
         except Exception as exc:
-            return f"evidence integrity failure: {exc}"
+            return _blocker_from_verify_exc(exc, f"evidence integrity failure: {exc}")
     for batch in production.get("batches") or []:
         if not isinstance(batch, dict):
             continue
@@ -121,7 +129,7 @@ def _verify_production_evidence(
             try:
                 verify_evidence_snapshot(store, run_id, output)
             except Exception as exc:
-                return f"evidence integrity failure: {exc}"
+                return _blocker_from_verify_exc(exc, f"evidence integrity failure: {exc}")
     return None
 
 
@@ -166,7 +174,9 @@ def _verify_prepared_package_binding(
             package_id=str(binding.get("package_id") or "").strip() or None,
         )
     except Exception as exc:
-        return f"prepared package manifest_path invalid: {exc}"
+        return _blocker_from_verify_exc(
+            exc, f"prepared package manifest_path invalid: {exc}"
+        )
     try:
         package = ExecutionPackageLoader().load_from_manifest(
             Path(manifest_path),
@@ -185,7 +195,7 @@ def _verify_prepared_package_binding(
     try:
         actual_plan = store.load_plan_model(run_id)
     except Exception as exc:
-        return f"prepared plan reload failed: {exc}"
+        return _blocker_from_verify_exc(exc, f"prepared plan reload failed: {exc}")
     if kind == RUN_KIND_SUB_TDP_EXECUTION:
         unit_id = str(
             binding.get("selected_unit_id") or binding.get("unit_id") or ""
@@ -258,7 +268,7 @@ def _verify_prepared_package_binding(
                         child_run=child_run,
                         child_production=child_production,
                     )
-                except (OSError, ValueError, KeyError) as exc:
+                except (ValueError, KeyError) as exc:
                     return (
                         f"parent sub_tdps child delivery invalid for "
                         f"{unit_record.get('plan_item_id')!r}: {exc}"
@@ -381,7 +391,7 @@ def _verify_child_upstream_bindings(
                 child_run=child_run,
                 child_production=child_production,
             )
-        except (OSError, ValueError, KeyError) as exc:
+        except (ValueError, KeyError) as exc:
             return f"prepared upstream child delivery invalid for {dep_id!r}: {exc}"
     if seen != set(expected_deps):
         missing = sorted(set(expected_deps) - seen)
@@ -407,7 +417,7 @@ def _verify_child_upstream_bindings(
                 package_digest=package_digest,
                 package_units=package.units,
             )
-        except (OSError, ValueError, KeyError) as exc:
+        except (ValueError, KeyError) as exc:
             return f"prepared workspace baseline attestation invalid: {exc}"
         digest = str(wrapper.get("accepted_result_digest") or "").strip()
         if not digest:
@@ -570,7 +580,7 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
                 child_run=child_run,
                 child_production=child_production,
             )
-        except (OSError, ValueError, KeyError) as exc:
+        except (ValueError, KeyError) as exc:
             raise ValueError(
                 f"parent sub_tdps child delivery invalid for {plan_item_id!r}: {exc}"
             ) from exc
@@ -701,10 +711,12 @@ def prepare_resume(
     consumed_limits: dict[str, int] | None = None,
     *,
     allow_config_drift: bool = False,
+    run: dict[str, Any] | None = None,
 ) -> ResumePlan:
     """Build a read-only resume plan or raise when canonical invariants block resume."""
 
-    run = store.load_run(run_id)
+    if run is None:
+        run = store.load_run(run_id)
     validate_run_schema_version(run)
     validate_run_digests(run)
     validate_run_lifecycle_invariants(run)

@@ -28,7 +28,7 @@ from top_down_planning.config import (
     ConfigError,
     build_initial_context_snapshot_binding_with_diagnostics,
     compute_input_digest,
-    compute_output_goal_digest,
+    compute_output_goal_digest_from_text,
     resolve_config,
     resolve_output_goal_text,
     resolve_workspace,
@@ -73,7 +73,7 @@ def handle_prepare_command(args: Namespace) -> None:
     try:
         output_goal = resolve_output_goal_text(resolved, base_dir=workspace)
         input_digest = compute_input_digest(resolved, base_dir=workspace)
-        output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
+        output_goal_digest = compute_output_goal_digest_from_text(output_goal)
         binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
             build_initial_context_snapshot_binding_with_diagnostics(
                 resolved,

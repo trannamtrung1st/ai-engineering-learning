@@ -61,6 +61,7 @@ from top_down_planning.config.defaults import (
 from top_down_planning.config.resolve import (
     compute_input_digest,
     compute_output_goal_digest,
+    compute_output_goal_digest_from_text,
     compute_unit_output_goal_digest,
     finalize_resolved_config,
     is_allowed_presentation_override_path,
@@ -159,6 +160,7 @@ __all__ = [
     "validate_run_production_snapshot_drift",
     "compute_input_digest",
     "compute_output_goal_digest",
+    "compute_output_goal_digest_from_text",
     "compute_unit_output_goal_digest",
     "finalize_resolved_config",
     "is_path_within_workspace",

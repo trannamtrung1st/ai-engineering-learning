@@ -31,7 +31,7 @@ from top_down_planning.config import (
     ConfigError,
     build_initial_context_snapshot_binding_with_diagnostics,
     compute_input_digest,
-    compute_output_goal_digest,
+    compute_output_goal_digest_from_text,
     resolve_config,
     resolve_output_goal_text,
     resolve_workspace,
@@ -67,15 +67,14 @@ from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
     cleanup_staging_dirs,
     reconcile_stale_running_run,
 )
-from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.config.resume_policy import resolve_resume_candidate_for_run
 from top_down_planning.orchestrator.resume import (
     ApplyResumeError,
     PrepareResumeBlockedError,
     apply_resume_plan_atomically,
     is_terminal_resume_snapshot,
-    load_run_resume_snapshot,
     prepare_resume,
+    run_resume_snapshot_from_run,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.invocation import (
@@ -355,7 +354,7 @@ def handle_run_command(args: Namespace) -> None:
     try:
         output_goal = resolve_output_goal_text(resolved, base_dir=workspace)
         input_digest = compute_input_digest(resolved, base_dir=workspace)
-        output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
+        output_goal_digest = compute_output_goal_digest_from_text(output_goal)
         binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
             build_initial_context_snapshot_binding_with_diagnostics(
                 resolved,
@@ -562,7 +561,7 @@ def handle_resume_command(args: Namespace) -> None:
     try:
         reconcile_stale_running_run(store, args.run)
         run = store.load_run(args.run)
-        snapshot = load_run_resume_snapshot(store, args.run)
+        snapshot = run_resume_snapshot_from_run(run)
     except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
@@ -642,8 +641,8 @@ def handle_resume_command(args: Namespace) -> None:
             store,
             args.run,
             candidate,
-            consumed_limits=consumed_limits_from_run(run),
             allow_config_drift=allow_config_drift,
+            run=run,
         )
     except PrepareResumeBlockedError as exc:
         emit_error_message(

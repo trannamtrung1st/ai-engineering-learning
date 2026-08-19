@@ -11,7 +11,6 @@ from core_tools.persistence import PersistenceError
 from top_down_planning.domain.resume_plan import ResumePlan, ResumePlanValidation
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
-from top_down_planning.orchestrator.resume import load_run_resume_snapshot
 from top_down_planning.package.loader import ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import CliResult, run_cli
@@ -79,17 +78,18 @@ def test_terminal_resume_late_load_run_is_traceback_free(tmp_path: Path, exc: Ba
     store.save_run(run_id, run, expected)
 
     armed = {"armed": False}
+    real_load = FileRunStore.load_run
 
-    def snapshot_wrapper(store, rid):
-        snap = load_run_resume_snapshot(store, rid)
-        armed["armed"] = True
-        return snap
+    def load_and_arm(self, rid):
+        if armed["armed"]:
+            raise exc
+        record = real_load(self, rid)
+        if record.get("status") == "completed":
+            armed["armed"] = True
+        return record
 
     argv = ["resume", "--run", run_id, "--runs-dir", str(store.root)]
-    with (
-        patch("top_down_planning.cli.user.load_run_resume_snapshot", snapshot_wrapper),
-        patch.object(FileRunStore, "load_run", _fail_load_run_after(armed, exc)),
-    ):
+    with patch.object(FileRunStore, "load_run", load_and_arm):
         structured = run_cli([*argv, "--stream-json"])
         human = run_cli(argv)
 
