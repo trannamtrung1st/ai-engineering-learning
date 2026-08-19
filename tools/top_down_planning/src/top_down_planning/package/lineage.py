@@ -998,6 +998,7 @@ def validate_accepted_child_delivery(
     child_run_id: str,
     child_run: dict[str, Any] | None = None,
     child_production: dict[str, Any] | None = None,
+    child_reviews: list[dict[str, Any]] | None = None,
     verify_evidence: bool = True,
 ) -> None:
     """Fail closed when child WOR attestation or evidence cannot be proven."""
@@ -1011,6 +1012,11 @@ def validate_accepted_child_delivery(
         child_production
         if child_production is not None
         else store.load_production(child_run_id)
+    )
+    reviews = (
+        child_reviews
+        if child_reviews is not None
+        else store.list_reviews(child_run_id)
     )
     status = str(run.get("status") or "")
     phase = str(run.get("phase") or "")
@@ -1032,7 +1038,7 @@ def validate_accepted_child_delivery(
     if not review_digest:
         raise ValueError("child whole_output_review_digest is missing")
     approval = find_whole_output_approval(
-        store.list_reviews(child_run_id),
+        reviews,
         int(production.get("output_revision") or 0),
     )
     if approval is None:

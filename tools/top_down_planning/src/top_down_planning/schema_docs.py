@@ -3257,6 +3257,10 @@ Paused runs resume through `prepare_resume()` (read-only) and
 - `tdp resume --run <id> --allow-config-drift --config <yaml>` — opt in to contract/model
   config changes on resume (see below)
 
+`tdp run` and `tdp prepare` report live input/output-goal drift during `create_run`
+as `creation_snapshot_changed` when no canonical run exists yet. Persistence errors
+against an existing run remain `corrupt_run`.
+
 By default, resume rejects contract drift (`run.output_goal`, prompts, review/planning
 settings, model, and other approval-meaning fields), non-model `context_spec` drift
 (guidance/resource/skill declarations and snapshot exclusion policy), and

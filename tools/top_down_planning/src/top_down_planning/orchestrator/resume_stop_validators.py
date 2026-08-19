@@ -39,21 +39,33 @@ def _require_phase_matches_stop(run: dict[str, Any], stop: dict[str, Any]) -> No
         )
 
 
+def _review_payload(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+    *,
+    reviews: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    if reviews is not None:
+        for payload in reviews:
+            if str(payload.get("id") or "").strip() == loop_id:
+                return payload
+        raise ResumeStopValidationError(f"review loop {loop_id!r} is missing")
+    return store.load_review(run_id, loop_id)
+
+
 def validate_review_incomplete_stop(
     store: RunStore,
     run_id: str,
     stop: dict[str, Any],
+    *,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> ReviewLoop:
     details = stop.get("details") or {}
     loop_id = str(details.get("loop_id") or "").strip()
     if not loop_id:
         raise ResumeStopValidationError("review_incomplete stop requires details.loop_id")
-    try:
-        payload = store.load_review(run_id, loop_id)
-    except Exception as exc:
-        raise ResumeStopValidationError(
-            f"review_incomplete loop {loop_id!r} is missing"
-        ) from exc
+    payload = _review_payload(store, run_id, loop_id, reviews=reviews)
     loop = ReviewLoop.from_dict(payload)
     if loop.review_incomplete is None and loop.status != "review_incomplete":
         raise ResumeStopValidationError(
@@ -69,6 +81,7 @@ def _validate_review_gate_turn_limit_exhausted(
     stop: dict[str, Any],
     *,
     details: dict[str, Any],
+    reviews: list[dict[str, Any]] | None = None,
 ) -> ReviewLoop:
     phase = str(run.get("phase") or stop.get("phase") or "")
     loop_id = str(details.get("loop_id") or "").strip()
@@ -77,12 +90,7 @@ def _validate_review_gate_turn_limit_exhausted(
             f"limit_exhausted stop for {_REVIEW_GATE_LIMIT_PATH!r} requires "
             "details.loop_id"
         )
-    try:
-        payload = store.load_review(run_id, loop_id)
-    except Exception as exc:
-        raise ResumeStopValidationError(
-            f"limit_exhausted loop {loop_id!r} is missing"
-        ) from exc
+    payload = _review_payload(store, run_id, loop_id, reviews=reviews)
     loop = ReviewLoop.from_dict(payload)
     mandatory_type = _PHASE_TO_MANDATORY_REVIEW_TYPE.get(phase)
     if mandatory_type is not None:
@@ -116,6 +124,8 @@ def validate_limit_exhausted_stop(
     run_id: str,
     run: dict[str, Any],
     stop: dict[str, Any],
+    *,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> ReviewLoop | None:
     """Return a review loop needing normalization on resume when applicable.
 
@@ -153,6 +163,7 @@ def validate_limit_exhausted_stop(
             run,
             stop,
             details=details,
+            reviews=reviews,
         )
 
     phase = str(run.get("phase") or stop.get("phase") or "")
@@ -171,12 +182,7 @@ def validate_limit_exhausted_stop(
             f"limit_exhausted stop limit must start with {expected_prefix!r}; "
             f"got {limit_path!r}"
         )
-    try:
-        payload = store.load_review(run_id, loop_id)
-    except Exception as exc:
-        raise ResumeStopValidationError(
-            f"limit_exhausted loop {loop_id!r} is missing"
-        ) from exc
+    payload = _review_payload(store, run_id, loop_id, reviews=reviews)
     loop = ReviewLoop.from_dict(payload)
     if loop.type != review_type:
         raise ResumeStopValidationError(
@@ -260,6 +266,8 @@ def validate_sub_tdps_awaiting_children_stop(
     store: RunStore,
     run_id: str,
     run: dict[str, Any],
+    *,
+    production: dict[str, Any] | None = None,
 ) -> None:
     from top_down_planning.domain.run_kind import (
         RUN_KIND_PARENT_EXECUTION,
@@ -278,8 +286,10 @@ def validate_sub_tdps_awaiting_children_stop(
         raise ResumeStopValidationError(
             "sub_tdps_awaiting_children resume requires parent_execution run_kind"
         )
-    production = store.load_production(run_id)
-    state = production.get("sub_tdps")
+    production_payload = (
+        production if production is not None else store.load_production(run_id)
+    )
+    state = production_payload.get("sub_tdps")
     if not isinstance(state, dict):
         raise ResumeStopValidationError(
             "sub_tdps_awaiting_children resume requires production.sub_tdps state"
@@ -291,6 +301,9 @@ def validate_stop_for_resume_apply(
     run_id: str,
     run: dict[str, Any],
     stop: dict[str, Any],
+    *,
+    production: dict[str, Any] | None = None,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> ReviewLoop | None:
     """Validate paused stop semantics before atomic resume apply or --check."""
 
@@ -298,13 +311,17 @@ def validate_stop_for_resume_apply(
     _require_phase_matches_stop(run, stop)
 
     if code == "limit_exhausted":
-        return validate_limit_exhausted_stop(store, run_id, run, stop)
+        return validate_limit_exhausted_stop(
+            store, run_id, run, stop, reviews=reviews
+        )
     if code == "amendment_pending":
-        production = store.load_production(run_id)
-        validate_amendment_pending_stop(run, production, stop)
+        production_payload = (
+            production if production is not None else store.load_production(run_id)
+        )
+        validate_amendment_pending_stop(run, production_payload, stop)
         return None
     if code == "review_incomplete":
-        return validate_review_incomplete_stop(store, run_id, stop)
+        return validate_review_incomplete_stop(store, run_id, stop, reviews=reviews)
     if code == "provider_unavailable":
         return None
     if code == "provider_turn_failed":
@@ -322,14 +339,18 @@ def validate_stop_for_resume_apply(
             "prepared_plan_amendment_required cannot be resumed; re-run tdp prepare"
         )
     if code == "sub_tdps_awaiting_children":
-        validate_sub_tdps_awaiting_children_stop(store, run_id, run)
+        validate_sub_tdps_awaiting_children_stop(
+            store, run_id, run, production=production
+        )
         return None
     if code in {
         "sub_tdp_dependency_unmet",
         "sub_tdp_child_failed",
         "sub_tdp_child_paused",
     }:
-        validate_sub_tdps_awaiting_children_stop(store, run_id, run)
+        validate_sub_tdps_awaiting_children_stop(
+            store, run_id, run, production=production
+        )
         return None
     raise ResumeStopValidationError(f"unsupported paused stop code for resume apply: {code!r}")
 

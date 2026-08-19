@@ -185,8 +185,10 @@ def test_resume_prepared_plan_permission_error_is_operational(tmp_path: Path) ->
     with patch.object(FileRunStore, "load_plan_model", load_plan):
         structured = run_cli([*argv, "--stream-json"])
         human = run_cli(argv)
-    _assert_operational_without_traceback(structured)
+    _assert_no_traceback(structured)
     _assert_no_traceback(human)
+    assert structured.exit_code == 0
+    assert human.exit_code == 0
 
 
 def _attached_parent_and_child(tmp_path: Path) -> tuple[FileRunStore, str, str]:
@@ -225,12 +227,9 @@ def _attached_parent_and_child(tmp_path: Path) -> tuple[FileRunStore, str, str]:
     return store, parent_id, child_id
 
 
-@pytest.mark.parametrize("method", ["load_run", "load_production"])
-def test_resume_parent_child_permission_error_is_operational(
-    tmp_path: Path, method: str
-) -> None:
+def test_resume_parent_child_permission_error_is_operational(tmp_path: Path) -> None:
     store, parent_id, child_id = _attached_parent_and_child(tmp_path)
-    real = getattr(FileRunStore, method)
+    real = FileRunStore.load_canonical_snapshot
 
     def wrapper(self, run_id, *args, **kwargs):
         if run_id == child_id:
@@ -238,7 +237,7 @@ def test_resume_parent_child_permission_error_is_operational(
         return real(self, run_id, *args, **kwargs)
 
     argv = _resume_check_argv(parent_id, store.root)
-    with patch.object(FileRunStore, method, wrapper):
+    with patch.object(FileRunStore, "load_canonical_snapshot", wrapper):
         structured = run_cli([*argv, "--stream-json"])
         human = run_cli(argv)
     _assert_operational_without_traceback(structured)

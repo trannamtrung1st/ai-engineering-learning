@@ -108,14 +108,8 @@ def test_resume_check_uses_one_canonical_snapshot_across_plan_run_bump(
     assert expected_rev in {before_rev, after_rev}
 
 
-@pytest.mark.parametrize("exc_factory, code", [
-    (lambda: PersistenceError("corrupt plan"), "corrupt_run"),
-    (lambda: RunNotFoundError("run-missing", "gone"), "run_not_found"),
-])
-def test_resume_prepared_plan_persistence_errors_keep_run_access_codes(
+def test_resume_check_prepared_plan_uses_snapshot_instead_of_plan_reload(
     tmp_path: Path,
-    exc_factory,
-    code: str,
 ) -> None:
     _, _, package = _built_package(tmp_path)
     with patch(
@@ -137,7 +131,7 @@ def test_resume_prepared_plan_persistence_errors_keep_run_access_codes(
 
     def load_plan(self, run_id):
         if run_id == parent_id:
-            raise exc_factory()
+            raise PersistenceError("corrupt plan")
         return real_load(self, run_id)
 
     argv = _resume_check_argv(parent_id, tmp_path / "runs")
@@ -145,11 +139,12 @@ def test_resume_prepared_plan_persistence_errors_keep_run_access_codes(
         structured = run_cli([*argv, "--stream-json"])
         human = run_cli(argv)
 
-    _assert_structured_error(structured, code)
+    _assert_no_traceback(structured)
     _assert_no_traceback(human)
-    assert human.exit_code != 0
+    assert structured.exit_code == 0
+    assert human.exit_code == 0
     assert "resume_preparation_blocked" not in structured.stdout
-    assert "resume_preparation_blocked" not in human.stderr
+    assert _stdout_json(structured).get("error", {}).get("code") != "corrupt_run"
 
 
 def _file_reads_a_then_b(target: Path, version_a: str, version_b: str):
@@ -234,7 +229,7 @@ def test_create_run_output_goal_drift_is_stable_error(
     if stream_json:
         payload = _stdout_json(result)
         assert payload["ok"] is False
-        assert payload["error"]["code"] == "corrupt_run"
+        assert payload["error"]["code"] == "creation_snapshot_changed"
     _assert_no_canonical_run(tmp_path / "runs")
 
 
@@ -280,7 +275,7 @@ def test_create_run_input_ref_drift_is_stable_error(
     if stream_json:
         payload = _stdout_json(result)
         assert payload["ok"] is False
-        assert payload["error"]["code"] == "corrupt_run"
+        assert payload["error"]["code"] == "creation_snapshot_changed"
     _assert_no_canonical_run(tmp_path / "runs")
 
 

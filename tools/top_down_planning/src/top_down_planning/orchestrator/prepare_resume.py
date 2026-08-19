@@ -135,9 +135,17 @@ def _verify_production_evidence(
     return None
 
 
+def _child_canonical_artifacts(store: RunStore, child_run_id: str):
+    snapshot = store.load_canonical_snapshot(child_run_id)
+    return snapshot.run, snapshot.production, snapshot.reviews
+
+
 def _verify_prepared_package_binding(
     store: RunStore,
     run: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+    production: dict[str, Any] | None = None,
 ) -> str | None:
     """Reload prepared package and verify binding digests for resume."""
 
@@ -194,12 +202,7 @@ def _verify_prepared_package_binding(
             f"expected {expected_digest}, got {actual_digest}"
         )
     run_id = str(run.get("id") or "").strip()
-    try:
-        actual_plan = store.load_plan_model(run_id)
-    except (OSError, PersistenceError):
-        raise
-    except Exception as exc:
-        return _blocker_from_verify_exc(exc, f"prepared plan reload failed: {exc}")
+    actual_plan = plan if plan is not None else store.load_plan(run_id)
     if kind == RUN_KIND_SUB_TDP_EXECUTION:
         unit_id = str(
             binding.get("selected_unit_id") or binding.get("unit_id") or ""
@@ -220,6 +223,7 @@ def _verify_prepared_package_binding(
             binding=binding,
             unit=unit,
             package=package,
+            production=production,
         )
         if upstream_error:
             return upstream_error
@@ -227,8 +231,10 @@ def _verify_prepared_package_binding(
         expected_plan_digest = compute_plan_digest(package.parent_plan)
         if compute_plan_digest(actual_plan) != expected_plan_digest:
             return "prepared persisted plan does not match package parent plan"
-        production = store.load_production(run_id)
-        state = production.get("sub_tdps")
+        production_payload = (
+            production if production is not None else store.load_production(run_id)
+        )
+        state = production_payload.get("sub_tdps")
         if isinstance(state, dict):
             for unit_record in state.get("units") or []:
                 if not isinstance(unit_record, dict):
@@ -258,13 +264,15 @@ def _verify_prepared_package_binding(
                         "accepted_result missing child_run_id"
                     )
                 try:
-                    child_run = store.load_run(child_run_id)
-                    child_production = store.load_production(child_run_id)
+                    child_run, child_production, child_reviews = _child_canonical_artifacts(
+                        store, child_run_id
+                    )
                     validate_accepted_child_delivery(
                         store=store,
                         child_run_id=child_run_id,
                         child_run=child_run,
                         child_production=child_production,
+                        child_reviews=child_reviews,
                         verify_evidence=True,
                     )
                     verify_accepted_result_matches_live_delivery(
@@ -311,6 +319,7 @@ def _verify_child_upstream_bindings(
     binding: dict[str, Any],
     unit,
     package,
+    production: dict[str, Any] | None = None,
 ) -> str | None:
     from top_down_planning.package.lineage import (
         validate_accepted_child_delivery,
@@ -373,13 +382,15 @@ def _verify_child_upstream_bindings(
                 f"prepared upstream wrapper for {dep_id!r} missing child_run_id"
             )
         try:
-            child_run = store.load_run(child_run_id)
-            child_production = store.load_production(child_run_id)
+            child_run, child_production, child_reviews = _child_canonical_artifacts(
+                store, child_run_id
+            )
             validate_accepted_child_delivery(
                 store=store,
                 child_run_id=child_run_id,
                 child_run=child_run,
                 child_production=child_production,
+                child_reviews=child_reviews,
                 verify_evidence=True,
             )
             verify_accepted_result_matches_live_delivery(
@@ -435,7 +446,9 @@ def _verify_child_upstream_bindings(
         expected_snapshot = str(
             (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
         )
-        production_overlay = store.load_production(run_id)
+        production_overlay = (
+            production if production is not None else store.load_production(run_id)
+        )
         try:
             verify_merged_baseline_workspace_bytes(
                 baseline_wrappers,
@@ -570,13 +583,15 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
                 f"parent sub_tdps unit {plan_item_id!r} accepted_result missing child_run_id"
             )
         try:
-            child_run = store.load_run(child_run_id)
-            child_production = store.load_production(child_run_id)
+            child_run, child_production, child_reviews = _child_canonical_artifacts(
+                store, child_run_id
+            )
             validate_accepted_child_delivery(
                 store=store,
                 child_run_id=child_run_id,
                 child_run=child_run,
                 child_production=child_production,
+                child_reviews=child_reviews,
                 verify_evidence=True,
             )
             live_accepted = verify_accepted_result_matches_live_delivery(
@@ -909,7 +924,9 @@ def prepare_resume(
     if evidence_error is not None:
         blockers.append(evidence_error)
 
-    package_error = _verify_prepared_package_binding(store, run)
+    package_error = _verify_prepared_package_binding(
+        store, run, plan=plan, production=production
+    )
     if package_error is not None:
         blockers.append(package_error)
 
@@ -917,7 +934,14 @@ def prepare_resume(
         stop = run.get("stop")
         if isinstance(stop, dict):
             try:
-                validate_stop_for_resume_apply(store, run_id, run, stop)
+                validate_stop_for_resume_apply(
+                    store,
+                    run_id,
+                    run,
+                    stop,
+                    production=production,
+                    reviews=reviews,
+                )
             except ResumeStopValidationError as exc:
                 blockers.append(str(exc))
         phase_action_id = run.get("phase_action_id")

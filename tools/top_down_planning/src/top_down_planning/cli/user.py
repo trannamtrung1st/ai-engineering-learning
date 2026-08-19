@@ -17,6 +17,7 @@ from top_down_planning.cli.common import (
     emit_operational_error,
     emit_payload,
     emit_run_access_error,
+    emit_create_run_error,
     run_access_boundary,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
@@ -420,6 +421,11 @@ def handle_run_command(args: Namespace) -> None:
             invocation=invocation_to_dict(invocation),
             run_extras={"run_kind": RUN_KIND_PLANNING},
         )
+    except PersistenceError as exc:
+        emit_create_run_error(exc, stream_json=args.stream_json)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
+    try:
         store.append_event(
             run_id,
             {

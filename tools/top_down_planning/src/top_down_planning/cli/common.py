@@ -291,6 +291,30 @@ def run_access_boundary(*, stream_json: bool) -> Iterator[None]:
         emit_run_access_error(exc, stream_json=stream_json)
 
 
+def emit_create_run_error(exc: BaseException, *, stream_json: bool) -> None:
+    """Normalize pre-canonical create_run failures (no persisted run to repair)."""
+
+    from core_tools.persistence import PersistenceError
+
+    if isinstance(exc, PersistenceError):
+        message = str(exc)
+        code = (
+            "creation_snapshot_changed"
+            if "does not match resolved-config snapshot" in message
+            or "does not match resolved config and workspace" in message
+            else "run_creation_failed"
+        )
+        emit_error_message(
+            message,
+            exit_code=1,
+            stream_json=stream_json,
+            code=code,
+        )
+    if isinstance(exc, OSError):
+        emit_operational_error(exc, stream_json=stream_json)
+    raise exc
+
+
 def emit_operational_error(exc: BaseException, *, stream_json: bool) -> None:
     """Normalize filesystem I/O failures for mutating user commands."""
 
@@ -320,6 +344,7 @@ __all__ = [
     "emit_message",
     "emit_payload",
     "emit_run_access_error",
+    "emit_create_run_error",
     "run_access_boundary",
     "emit_operational_error",
     "require_cli_run_id",
