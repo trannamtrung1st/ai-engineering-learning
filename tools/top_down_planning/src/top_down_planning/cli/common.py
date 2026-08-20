@@ -103,6 +103,22 @@ def close_observability_safe(
         return
     try:
         observability.close()
+    except KeyboardInterrupt:
+        if cli_response_committed():
+            return
+        locator = merge_cli_extra(extra) or {}
+        run_id = str(locator.get("run_id") or "").strip()
+        if run_id:
+            from top_down_planning.cli.user import _exit_for_command_interrupt
+
+            _exit_for_command_interrupt(run_id=run_id, stream_json=stream_json)
+        emit_error_with_fields(
+            "command interrupted by user",
+            exit_code=130,
+            stream_json=stream_json,
+            code="user_cancelled",
+            extra=locator or None,
+        )
     except OSError as exc:
         if cli_response_committed():
             from top_down_planning.orchestrator.failure import sanitize_operational_error
@@ -307,7 +323,7 @@ def open_run_store_for_cli(
     from top_down_planning.config import ConfigError
 
     try:
-        return open_run_store(args, resolved_config=resolved_config, create=create)
+        store, resolved = open_run_store(args, resolved_config=resolved_config, create=create)
     except ConfigError as exc:
         emit_error_message(
             str(exc),
@@ -324,6 +340,23 @@ def open_run_store_for_cli(
             stream_json=bool(getattr(args, "stream_json", False)),
             code="runs_store_not_found",
         )
+    extra: dict[str, Any] = {}
+    run_id = getattr(args, "run", None)
+    planning_run = getattr(args, "planning_run", None)
+    parent_id = getattr(args, "parent", None)
+    child_id = getattr(args, "child", None)
+    if run_id:
+        extra["run_id"] = run_id
+    if planning_run:
+        extra["planning_run_id"] = planning_run
+        extra.setdefault("run_id", planning_run)
+    if parent_id:
+        extra["parent_run_id"] = parent_id
+        extra.setdefault("run_id", parent_id)
+    if child_id:
+        extra["child_run_id"] = child_id
+    remember_cli_locator(resolved, args, extra=extra or None)
+    return store, resolved
 
 
 def require_cli_run_id(run_id: str | None, *, stream_json: bool) -> str:
@@ -599,6 +632,7 @@ def emit_error_with_fields(
         if extra:
             payload.update(extra)
         emit_payload(payload, exit_code=exit_code)
+    mark_cli_response_committed()
     lines = [message]
     if extra:
         run_id = str(extra.get("run_id") or "").strip()
@@ -664,6 +698,7 @@ __all__ = [
     "emit_error_with_fields",
     "recovery_fields",
     "remember_cli_locator",
+    "current_cli_locator",
     "reset_cli_protocol_state",
     "close_observability_safe",
     "format_recovery_next_command",

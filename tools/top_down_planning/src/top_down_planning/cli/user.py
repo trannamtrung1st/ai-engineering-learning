@@ -137,18 +137,43 @@ def _exit_for_cancel(
     if payload_run is not None:
         phase = payload_run.get("phase") if phase is None else phase
         status = payload_run.get("status") if status is None else status
+    from top_down_planning.cli.common import (
+        current_cli_locator,
+        format_recovery_next_command,
+        mark_cli_response_committed,
+        recovery_fields,
+    )
+
+    locator = current_cli_locator()
+    recovery = recovery_fields(
+        code="user_cancelled",
+        run_id=run_id,
+        runs_dir=str(locator.get("runs_dir") or "") or None,
+    )
     if stream_json:
-        emit_payload(
-            {
-                "ok": False,
-                "cancelled": True,
-                "run_id": run_id,
-                "phase": phase,
-                "status": status,
-                "reason": "cancelled by user",
-            },
-            exit_code=_CANCEL_EXIT_CODE,
-        )
+        payload = {
+            "ok": False,
+            "cancelled": True,
+            "run_id": run_id,
+            "phase": phase,
+            "status": status,
+            "reason": "cancelled by user",
+        }
+        if locator.get("runs_dir"):
+            payload["runs_dir"] = locator["runs_dir"]
+        if recovery:
+            payload["recovery"] = recovery
+        emit_payload(payload, exit_code=_CANCEL_EXIT_CODE)
+    mark_cli_response_committed()
+    lines = ["Cancelled by user.", f"Run: {run_id}"]
+    if status:
+        lines.append(f"Status: {status}")
+    next_command = format_recovery_next_command(
+        recovery or {"command": "status", "run_id": run_id}
+    )
+    if next_command:
+        lines.append(f"Next: {next_command}")
+    print("\n".join(lines), file=sys.stderr)
     raise SystemExit(_CANCEL_EXIT_CODE) from None
 
 
@@ -195,11 +220,14 @@ def _exit_for_command_interrupt(
         if recovery:
             payload["recovery"] = recovery
         emit_payload(payload, exit_code=_CANCEL_EXIT_CODE)
+    from top_down_planning.cli.common import mark_cli_response_committed
+
+    mark_cli_response_committed()
     lines = ["Command interrupted.", f"Run: {run_id}"]
     next_command = format_recovery_next_command(recovery or {"command": "status", "run_id": run_id})
     if next_command:
         lines.append(f"Next: {next_command}")
-    sys.stdout.write("\n".join(lines) + "\n")
+    print("\n".join(lines), file=sys.stderr)
     raise SystemExit(_CANCEL_EXIT_CODE) from None
 
 
@@ -224,12 +252,8 @@ def _handle_blocking_run_interrupt(
 
     extra = {"run_id": run_id}
     try:
-        with run_access_boundary(stream_json=stream_json, extra=extra):
-            run = store.load_run(run_id)
-    except SystemExit:
-        raise
-    except (PersistenceError, OSError, RunOwnershipError) as exc:
-        emit_continue_run_error(exc, stream_json=stream_json, extra=extra)
+        run = store.load_run(run_id)
+    except (PersistenceError, OSError, RunOwnershipError, RunNotFoundError):
         _exit_for_command_interrupt(run_id=run_id, stream_json=stream_json)
         return
 
@@ -526,6 +550,11 @@ def handle_run_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             extra={"run_id": run_id, **locator_fields(resolved_runs)},
         )
+    except KeyboardInterrupt:
+        _exit_for_command_interrupt(
+            run_id=run_id,
+            stream_json=args.stream_json,
+        )
 
     try:
         try:
@@ -820,24 +849,36 @@ def handle_resume_command(args: Namespace) -> None:
     except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
 
-    observability = build_observability_context(
-        options=invocation.observability,
-        run_id=args.run,
-        run_dir=resolved_runs.path / args.run,
-    )
-    notifications = NotificationContext(options=invocation.notifications)
-    observability.emit(
-        ConsoleEvent(
-            category="run:resume",
-            message=f"Resuming run {args.run}",
+    try:
+        observability = build_observability_context(
+            options=invocation.observability,
+            run_id=args.run,
+            run_dir=resolved_runs.path / args.run,
+        )
+        notifications = NotificationContext(options=invocation.notifications)
+        observability.emit(
+            ConsoleEvent(
+                category="run:resume",
+                message=f"Resuming run {args.run}",
+                run_id=args.run,
+            )
+        )
+        emit_resume_plan_diagnostics(
+            observability,
+            message=f"Applying resume plan for {args.run}",
             run_id=args.run,
         )
-    )
-    emit_resume_plan_diagnostics(
-        observability,
-        message=f"Applying resume plan for {args.run}",
-        run_id=args.run,
-    )
+    except OSError as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": args.run, **locator_fields(resolved_runs)},
+        )
+    except KeyboardInterrupt:
+        _exit_for_command_interrupt(
+            run_id=args.run,
+            stream_json=args.stream_json,
+        )
     try:
         try:
             engine = _build_run_engine(
@@ -958,11 +999,12 @@ def handle_status_command(args: Namespace) -> None:
         plan = snapshot.plan
     except RunNotFoundError as exc:
         if "production.json" in str(exc):
-            emit_error_message(
+            emit_error_with_fields(
                 f"run {args.run} is missing production.json",
                 exit_code=1,
                 stream_json=args.stream_json,
                 code="corrupt_run",
+                extra={"run_id": args.run},
             )
         emit_run_access_error(exc, stream_json=args.stream_json)
     except (PersistenceError, OSError) as exc:

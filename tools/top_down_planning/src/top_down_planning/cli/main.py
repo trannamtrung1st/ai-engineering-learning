@@ -9,8 +9,10 @@ from top_down_planning import __version__
 from top_down_planning.cli.common import (
     RUNS_DIR_HELP,
     RUNS_DIR_REQUIRED_HELP,
+    current_cli_locator,
     emit_continue_run_error,
     emit_error_message,
+    emit_error_with_fields,
     emit_operational_error,
     emit_run_access_error,
     reset_cli_protocol_state,
@@ -415,7 +417,7 @@ def main(argv: list[str] | None = None) -> None:
 
     from top_down_planning.config import ConfigError
     from top_down_planning.domain.run_ownership import RunOwnershipError
-    from top_down_planning.persistence import PersistenceError
+    from top_down_planning.persistence import PersistenceError, RunPublishedInterrupt
 
     reset_cli_protocol_state()
     try:
@@ -437,12 +439,40 @@ def main(argv: list[str] | None = None) -> None:
             exc,
             stream_json=bool(getattr(args, "stream_json", False)),
         )
+    except RunPublishedInterrupt as exc:
+        from top_down_planning.cli.user import _exit_for_command_interrupt
+
+        _exit_for_command_interrupt(
+            run_id=exc.run_id,
+            stream_json=bool(getattr(args, "stream_json", False)),
+            run=exc.run,
+        )
     except OSError as exc:
+        extra = current_cli_locator() or None
+        if extra:
+            from top_down_planning.orchestrator.failure import sanitize_operational_error
+
+            emit_error_with_fields(
+                sanitize_operational_error(exc),
+                exit_code=1,
+                stream_json=bool(getattr(args, "stream_json", False)),
+                code="operational_error",
+                extra=extra,
+            )
         emit_operational_error(
             exc,
             stream_json=bool(getattr(args, "stream_json", False)),
         )
     except KeyboardInterrupt:
+        extra = current_cli_locator() or None
+        if extra:
+            emit_error_with_fields(
+                "cancelled by user",
+                exit_code=130,
+                stream_json=bool(getattr(args, "stream_json", False)),
+                code="user_cancelled",
+                extra=extra,
+            )
         emit_error_message(
             "cancelled by user",
             exit_code=130,

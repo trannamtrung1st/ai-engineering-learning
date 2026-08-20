@@ -27,6 +27,7 @@ from top_down_planning.cli.user import (
     _build_run_engine,
     _cli_load_run,
     _exit_for_cancel,
+    _exit_for_command_interrupt,
     _handle_blocking_run_interrupt,
 )
 from top_down_planning.config import (
@@ -52,7 +53,7 @@ from top_down_planning.package.execution_validation import (
     verify_package_immutable_contract,
 )
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
-from top_down_planning.persistence import FileRunStore, PersistenceError
+from top_down_planning.persistence import FileRunStore, PersistenceError, RunPublishedInterrupt
 from top_down_planning.persistence.path_ids import validate_run_id
 from top_down_planning.persistence.sub_tdp_state import (
     initial_sub_tdp_state_from_package,
@@ -301,6 +302,7 @@ def handle_execute_command(args: Namespace) -> None:
             resolved_config=resolved,
             invocation=invocation_dict,
         )
+        remember_cli_locator(resolved_runs, args, extra={"run_id": run_id})
         production = store.load_production(run_id)
         if not isinstance(production.get("sub_tdps"), dict):
             parent_run = _cli_load_run(store, run_id, stream_json=args.stream_json)
@@ -397,6 +399,13 @@ def handle_execute_command(args: Namespace) -> None:
                 stream_json=args.stream_json,
             )
             return
+    except RunPublishedInterrupt as exc:
+        remember_cli_locator(resolved_runs, args, extra={"run_id": exc.run_id})
+        _exit_for_command_interrupt(
+            run_id=exc.run_id,
+            stream_json=args.stream_json,
+            run=exc.run,
+        )
     except ExecutionPackageError as exc:
         from top_down_planning.cli.common import recovery_fields
 
@@ -520,6 +529,14 @@ def _execute_unit(
             explicit_upstream_only=bool(upstream_bindings),
             explicit_baseline_run_ids=baseline_run_ids or None,
         )
+        remember_cli_locator(resolved_runs, args, extra={"run_id": child_run_id})
+    except RunPublishedInterrupt as exc:
+        remember_cli_locator(resolved_runs, args, extra={"run_id": exc.run_id})
+        _exit_for_command_interrupt(
+            run_id=exc.run_id,
+            stream_json=args.stream_json,
+            run=exc.run,
+        )
     except PreparedUnitExecutor.DependencyUnmetError as exc:
         emit_error_message(
             str(exc),
@@ -547,19 +564,31 @@ def _execute_unit(
         else {"runs_dir": str(resolved_runs.path)},
         )
 
-    observability = build_observability_context(
-        options=invocation_opts.observability,
-        run_id=child_run_id,
-        run_dir=resolved_runs.path / child_run_id,
-    )
-    observability.emit(
-        ConsoleEvent(
-            category="run:start",
-            message=f"Starting unit execution for {unit_id}.",
-            fields={"unit_id": unit_id, "package_id": package.manifest.get("package_id")},
+    try:
+        observability = build_observability_context(
+            options=invocation_opts.observability,
             run_id=child_run_id,
+            run_dir=resolved_runs.path / child_run_id,
         )
-    )
+        observability.emit(
+            ConsoleEvent(
+                category="run:start",
+                message=f"Starting unit execution for {unit_id}.",
+                fields={"unit_id": unit_id, "package_id": package.manifest.get("package_id")},
+                run_id=child_run_id,
+            )
+        )
+    except OSError as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id, "runs_dir": str(resolved_runs.path)},
+        )
+    except KeyboardInterrupt:
+        _exit_for_command_interrupt(
+            run_id=child_run_id,
+            stream_json=args.stream_json,
+        )
 
     from top_down_planning.orchestrator.execution_runtime import build_execution_runtime
 
@@ -677,33 +706,45 @@ def _drive_execution_run(
     invocation,
     package,
 ) -> None:
-    diagnostics = run_startup_diagnostics_payload(
-        cwd=Path.cwd().resolve(),
-        config_path=Path(args.config).resolve()
-        if getattr(args, "config", None)
-        else package.manifest_path,
-        workspace=package.workspace_path,
-        resolved_runs=resolved_runs,
-        run_id=run_id,
-        store=store,
-    )
-    observability = build_observability_context(
-        options=invocation.observability,
-        run_id=run_id,
-        run_dir=resolved_runs.path / run_id,
-    )
-    notifications = NotificationContext(options=invocation.notifications)
-    observability.emit(
-        ConsoleEvent(
-            category="run:start",
-            message=(
-                "Starting parent execution from prepared package.\n"
-                f"{format_run_startup_diagnostics(diagnostics)}"
-            ),
-            fields={"until": invocation.until or "completed"},
+    try:
+        diagnostics = run_startup_diagnostics_payload(
+            cwd=Path.cwd().resolve(),
+            config_path=Path(args.config).resolve()
+            if getattr(args, "config", None)
+            else package.manifest_path,
+            workspace=package.workspace_path,
+            resolved_runs=resolved_runs,
             run_id=run_id,
+            store=store,
         )
-    )
+        observability = build_observability_context(
+            options=invocation.observability,
+            run_id=run_id,
+            run_dir=resolved_runs.path / run_id,
+        )
+        notifications = NotificationContext(options=invocation.notifications)
+        observability.emit(
+            ConsoleEvent(
+                category="run:start",
+                message=(
+                    "Starting parent execution from prepared package.\n"
+                    f"{format_run_startup_diagnostics(diagnostics)}"
+                ),
+                fields={"until": invocation.until or "completed"},
+                run_id=run_id,
+            )
+        )
+    except OSError as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": run_id, "runs_dir": str(resolved_runs.path)},
+        )
+    except KeyboardInterrupt:
+        _exit_for_command_interrupt(
+            run_id=run_id,
+            stream_json=args.stream_json,
+        )
 
     try:
         engine = _build_run_engine(

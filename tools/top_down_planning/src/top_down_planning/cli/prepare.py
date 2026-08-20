@@ -227,6 +227,9 @@ def handle_prepare_command(args: Namespace) -> None:
             ],
         )
         run_id = str(created.get("id") or run_id)
+        remember_cli_locator(
+            resolved_runs, args, extra={"run_id": run_id, "planning_run_id": run_id}
+        )
     except PersistenceError as exc:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
@@ -280,6 +283,11 @@ def handle_prepare_command(args: Namespace) -> None:
                 "planning_run_id": run_id,
                 **locator_fields(resolved_runs, args),
             },
+        )
+    except KeyboardInterrupt:
+        _exit_for_command_interrupt(
+            run_id=run_id,
+            stream_json=args.stream_json,
         )
 
     try:
