@@ -85,15 +85,14 @@ class ColorizedConsoleSink:
         self._streaming_line_open = False
         self._display_category: str | None = None
         self._display_session: str | None = None
-        self._redactors: dict[str, StreamingRedactor] = {}
-        self._session_category: dict[str, str] = {}
+        self._redactors: dict[tuple[str, str], StreamingRedactor] = {}
 
     def emit(self, event: ConsoleEvent) -> None:
         if event.category in _STREAMING_CATEGORIES:
             self._emit_stream_delta(event)
             return
 
-        self._flush_session(_session_key(event.session_id), close_line=True)
+        self._flush_session_blocks(_session_key(event.session_id), close_line=True)
         if self._streaming_line_open:
             self._stream.write("\n")
             self._streaming_line_open = False
@@ -130,17 +129,15 @@ class ColorizedConsoleSink:
     def _emit_stream_delta(self, event: ConsoleEvent) -> None:
         if not event.message:
             return
-        key = _session_key(event.session_id)
+        session = _session_key(event.session_id)
+        block = (session, event.category)
+        current = (self._display_session or "", self._display_category or "")
+        if self._streaming_line_open and current != block:
+            self._flush_block(current, close_line=True)
         redactor = self._redactors.setdefault(
-            key,
+            block,
             StreamingRedactor(max_len=self._policy.max_message_length),
         )
-        self._session_category[key] = event.category
-        if self._streaming_line_open and (
-            self._display_session != key or self._display_category != event.category
-        ):
-            self._stream.write("\n")
-            self._streaming_line_open = False
         piece = redactor.ingest(_sanitize_terminal_text(event.message))
         if not piece:
             return
@@ -162,33 +159,48 @@ class ColorizedConsoleSink:
 
     def flush_stream(self, session_id: str | None = None) -> None:
         if session_id is None:
-            for key in list(self._redactors):
-                self._flush_session(key, close_line=True)
+            for block in list(self._redactors):
+                self._flush_block(block, close_line=True)
             if self._streaming_line_open:
                 self._stream.write("\n")
                 self._streaming_line_open = False
             return
-        self._flush_session(_session_key(session_id), close_line=True)
+        self._flush_session_blocks(_session_key(session_id), close_line=True)
 
-    def _flush_session(self, key: str, *, close_line: bool) -> None:
-        redactor = self._redactors.get(key)
+    def _flush_session_blocks(self, session: str, *, close_line: bool) -> None:
+        for block in list(self._redactors):
+            if block[0] == session:
+                self._flush_block(block, close_line=close_line)
+
+    def _flush_block(self, block: tuple[str, str], *, close_line: bool) -> None:
+        session, category = block
+        redactor = self._redactors.get(block)
         if redactor is None:
+            if close_line and self._streaming_line_open and (
+                self._display_session == session and self._display_category == category
+            ):
+                self._stream.write("\n")
+                self._streaming_line_open = False
+                self._display_category = None
+                self._display_session = None
             return
         rest = redactor.flush()
         redactor.reset()
         if rest:
             event = ConsoleEvent(
-                category=self._session_category.get(key, "response"),
+                category=category or "response",
                 message=rest,
-                session_id=key or None,
+                session_id=session or None,
             )
             if self._streaming_line_open and (
-                self._display_session != key or self._display_category != event.category
+                self._display_session != session or self._display_category != category
             ):
                 self._stream.write("\n")
                 self._streaming_line_open = False
             self._write_stream_piece(event, rest)
-        if close_line and self._streaming_line_open and self._display_session == key:
+        if close_line and self._streaming_line_open and (
+            self._display_session == session and self._display_category == category
+        ):
             self._stream.write("\n")
             self._streaming_line_open = False
             self._display_category = None

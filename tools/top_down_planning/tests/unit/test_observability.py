@@ -548,6 +548,13 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
                 run_id="run-20260101T001010-001010",
             )
         )
+        context.emit(
+            ConsoleEvent(
+                category="tool:start",
+                message="""curl -d '{"password":"json-pass-secret"}'""",
+                run_id="run-20260101T001010-001010",
+            )
+        )
         context.close()
 
     stderr_text = stderr.getvalue()
@@ -561,6 +568,7 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
         "access-token-secret",
         "client-secret-value",
         "authz-bearer-secret",
+        "json-pass-secret",
     ):
         assert secret not in stderr_text
         assert secret not in transcript

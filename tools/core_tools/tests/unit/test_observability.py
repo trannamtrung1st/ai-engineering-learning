@@ -259,6 +259,34 @@ def test_redaction_strips_embedded_env_and_cli_secret_forms() -> None:
     assert serialized.count("[REDACTED]") >= 6
 
 
+def test_redaction_strips_json_quoted_secret_keys() -> None:
+    payload = {
+        "curl": """curl -d '{"password":"json-pass-secret"}'""",
+        "tool": """tool --json '{"api_key":"json-api-secret"}'""",
+        "auth": '{"Authorization":"Bearer json-auth-secret"}',
+        "escaped": r'password="abc\"def-escaped-secret"',
+    }
+    redacted = redact_value(payload)
+    serialized = json.dumps(redacted)
+    for secret in (
+        "json-pass-secret",
+        "json-api-secret",
+        "json-auth-secret",
+        "def-escaped-secret",
+    ):
+        assert secret not in serialized
+    assert serialized.count("[REDACTED]") >= 4
+
+
+def test_redaction_keeps_benign_assignment_identifiers() -> None:
+    text = "tokenizer=bert-base secretary=Alice notsecret=value"
+    safe = redact_value(text)
+    assert "bert-base" in safe
+    assert "Alice" in safe
+    assert "value" in safe
+    assert "[REDACTED]" not in safe
+
+
 def test_redaction_happens_before_truncation_near_secret() -> None:
     secret = "VISIBLE_SECRET_FRAGMENT"
     text = "prefix api_key=" + secret + ("x" * 40)
@@ -421,11 +449,19 @@ _SPLIT_SECRET_FORMS = (
     ("token=token-split-secret", "token-split-secret"),
     ("password=password-split-secret", "password-split-secret"),
     ("secret=plain-split-secret", "plain-split-secret"),
+    ("password = ws-assign-secret", "ws-assign-secret"),
+    ("api_key : ws-colon-secret", "ws-colon-secret"),
+    ("Authorization : Token header-ws-secret", "header-ws-secret"),
     ("Authorization: Token header-token-secret", "header-token-secret"),
     ("OPENAI_API_KEY=openai-split-secret", "openai-split-secret"),
     ("AWS_SECRET_ACCESS_KEY=aws-split-secret", "aws-split-secret"),
     ("--api-key cli-split-secret", "cli-split-secret"),
+    ('password="quoted space secret"', "quoted space secret"),
+    (r'password="abc\"def-escaped-secret"', "def-escaped-secret"),
+    ("""{"password":"json-pass-secret"}""", "json-pass-secret"),
+    ("""{"api_key":"json-api-secret"}""", "json-api-secret"),
     ("cap-abc123.deadbeef", "deadbeef"),
+    ("AWS_SECRET_ACCESS_KEY_" + ("x" * 100) + "=long-key-secret", "long-key-secret"),
 )
 
 
@@ -496,6 +532,66 @@ def test_jsonl_sink_keeps_secret_context_across_other_session(tmp_path) -> None:
     assert by_session["s2"] == "hello"
     assert "jsonl-interleave-secret" not in by_session["s1"]
     assert "[REDACTED]" in by_session["s1"]
+
+
+def test_streaming_redactor_redacts_quoted_value_after_separator_chunk() -> None:
+    redactor = StreamingRedactor()
+    output = (
+        redactor.ingest("password=")
+        + redactor.ingest('"hello world" tail')
+        + redactor.flush()
+    )
+    assert output == "password=[REDACTED] tail"
+    assert "hello" not in output
+    assert "world" not in output
+
+
+def test_streaming_redactor_redacts_cli_quoted_value_after_space_chunk() -> None:
+    redactor = StreamingRedactor()
+    output = (
+        redactor.ingest("--password ")
+        + redactor.ingest('"hello world" done')
+        + redactor.flush()
+    )
+    assert "hello" not in output
+    assert "world" not in output
+    assert output.startswith("--password ")
+    assert "[REDACTED]" in output
+    assert output.endswith(" done")
+
+
+def test_console_sink_keeps_thinking_and_response_streams_independent() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="thinking", message="I need to"))
+    sink.emit(ConsoleEvent(category="response", message="do it"))
+    sink.flush_stream()
+    output = stderr.getvalue()
+    assert "[thinking] I need to" in output
+    assert "[response] do it" in output
+    assert "todo it" not in output
+
+
+def test_console_sink_does_not_treat_response_as_thinking_secret_value() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="thinking", message="password="))
+    sink.emit(ConsoleEvent(category="response", message="hello world"))
+    sink.flush_stream()
+    output = stderr.getvalue()
+    assert "hello world" in output
+    assert "password=[REDACTED]" in output
+
+
+def test_console_sink_replaces_surrogates_in_stream_deltas() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="ok" + chr(0xD800) + "bad"))
+    sink.flush_stream()
+    output = stderr.getvalue()
+    assert not any(0xD800 <= ord(ch) <= 0xDFFF for ch in output)
+    assert "ok" in output
+    assert "bad" in output
 
 
 def test_streaming_redactor_emits_exact_sanitized_assignment_without_duplication() -> None:

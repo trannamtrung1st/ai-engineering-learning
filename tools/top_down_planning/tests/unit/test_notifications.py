@@ -255,7 +255,7 @@ def test_handle_audit_event_redacts_secrets_in_notification_body(bridge_send_moc
     handle_audit_event(
         {
             "type": "run_failed",
-            "reason": "password=hunter2-password api_key=sk-example-key",
+            "reason": """password=hunter2-password api_key=sk-example-key curl -d '{"password":"json-pass-secret"}'""",
         },
         run_id="run-1",
         options=options,
@@ -267,6 +267,7 @@ def test_handle_audit_event_redacts_secrets_in_notification_body(bridge_send_moc
     assert token not in combined
     assert "hunter2-password" not in combined
     assert "sk-example-key" not in combined
+    assert "json-pass-secret" not in combined
     assert "[REDACTED]" in combined
 
 
