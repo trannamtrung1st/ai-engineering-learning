@@ -19,10 +19,13 @@ ALL_RUN_KINDS = frozenset(
 )
 
 
+_PLANNING_DEFAULT_PHASES = frozenset({"planning", "plan_validated", "whole_plan_review"})
+
+
 def default_run_kind_for_phase(phase: str) -> str:
     """Canonical run_kind assigned at run creation when callers omit one."""
 
-    if str(phase or "") == "planning":
+    if str(phase or "") in _PLANNING_DEFAULT_PHASES:
         return RUN_KIND_PLANNING
     return RUN_KIND_SINGLE_EXECUTION
 

@@ -106,19 +106,32 @@ class PreparedRunFactory:
         resolved_config: dict[str, Any],
         invocation: dict[str, Any],
     ) -> str:
-        existing = self._find_parent_run(store, package)
-        if existing is not None:
-            return existing
-        return self._create_prepared_run(
-            store,
-            package,
-            plan=package.parent_plan,
-            run_kind=RUN_KIND_PARENT_EXECUTION,
-            resolved_config=resolved_config,
-            invocation=invocation,
-            selected_unit_id=None,
-            unit_record=None,
-        )
+        digest = str(package.manifest.get("package_digest") or "").strip()
+        if not digest:
+            return self._create_prepared_run(
+                store,
+                package,
+                plan=package.parent_plan,
+                run_kind=RUN_KIND_PARENT_EXECUTION,
+                resolved_config=resolved_config,
+                invocation=invocation,
+                selected_unit_id=None,
+                unit_record=None,
+            )
+        with store.identity_creation_lock(f"parent:{digest}"):
+            existing = self._find_parent_run(store, package)
+            if existing is not None:
+                return existing
+            return self._create_prepared_run(
+                store,
+                package,
+                plan=package.parent_plan,
+                run_kind=RUN_KIND_PARENT_EXECUTION,
+                resolved_config=resolved_config,
+                invocation=invocation,
+                selected_unit_id=None,
+                unit_record=None,
+            )
 
     @staticmethod
     def _find_parent_run(

@@ -481,7 +481,14 @@ def handle_run_command(args: Namespace) -> None:
                 stream_json=args.stream_json,
             )
         except (PersistenceError, OSError, RunOwnershipError) as exc:
-            emit_continue_run_error(exc, stream_json=args.stream_json)
+            emit_continue_run_error(
+                exc,
+                stream_json=args.stream_json,
+                extra={
+                    "run_id": run_id,
+                    "recovery": {"command": "resume", "run_id": run_id},
+                },
+            )
     finally:
         observability.close()
 

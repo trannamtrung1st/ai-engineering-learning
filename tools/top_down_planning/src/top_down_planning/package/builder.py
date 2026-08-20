@@ -57,16 +57,35 @@ def build_input_ref_inventory(
     workspace: Path,
     aggregate_digest: str,
 ) -> dict[str, Any]:
+    import json
+
+    from core_tools.persistence.digests import digest_text
+
     refs: list[dict[str, Any]] = []
+    digest_entries: list[dict[str, str]] = []
     for ref in input_refs:
-        path = (workspace / ref).resolve()
-        entry: dict[str, Any] = {"path": ref, "sha256": "", "size": 0}
+        ref_text = str(ref)
+        path = (workspace / ref_text).resolve()
+        entry: dict[str, Any] = {"path": ref_text, "sha256": "", "size": 0}
         if path.is_file():
-            entry["sha256"] = digest_file(path)
+            sha = digest_file(path)
+            entry["sha256"] = sha
             entry["size"] = path.stat().st_size
+            digest_entries.append({"ref": ref_text, "digest": sha})
+        else:
+            digest_entries.append({"ref": ref_text, "digest": digest_text(ref_text)})
         refs.append(entry)
+    computed_aggregate = digest_text(
+        json.dumps(digest_entries, sort_keys=True, separators=(",", ":"))
+    )
+    approved = str(aggregate_digest or "").strip()
+    if approved and computed_aggregate != approved:
+        raise ValueError(
+            "input refs changed after approval; live inventory digest does not "
+            "match the approved run input digest"
+        )
     return {
-        "aggregate_digest": aggregate_digest,
+        "aggregate_digest": computed_aggregate,
         "refs": refs,
     }
 
@@ -111,6 +130,12 @@ class ExecutionPackageBuilder:
     ) -> BuiltExecutionPackage:
         snapshot = store.load_canonical_snapshot(planning_run_id)
         run = snapshot.run
+        from top_down_planning.domain.run_kind import RUN_KIND_PLANNING, resolve_run_kind
+
+        if resolve_run_kind(run) != RUN_KIND_PLANNING:
+            raise ValueError(
+                "execution packages can only be materialized from a planning run"
+            )
         plan = Plan.from_dict(snapshot.plan)
         config = snapshot.resolved_config
         reviews = snapshot.reviews

@@ -136,6 +136,12 @@ def test_prepare_final_load_run_oserror_is_operational_not_traceback(tmp_path: P
     built = SimpleNamespace(
         package_id="pkg-prepare-1",
         manifest_path=output_dir / "manifest.json",
+        manifest={
+            "planning_run": {
+                "approved_plan_revision": 0,
+                "approved_plan_digest": "a" * 64,
+            }
+        },
     )
     continuation = SimpleNamespace(cancelled=False, reason=None)
 

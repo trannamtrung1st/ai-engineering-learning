@@ -169,22 +169,34 @@ class PreparedUnitExecutor:
             )
             child_run_id = None
             if creation_key:
-                existing = self._find_child_by_creation_key(child_store, creation_key)
-                if existing is not None:
-                    mismatches = ExecutionLineageValidator().validate_resume(
-                        parent_package=package,
-                        child_run=existing,
-                        expected_unit_id=unit_id,
-                    )
-                    if mismatches:
-                        detail = mismatches[0]
-                        raise ExecutionPackageError(
-                            f"existing child lineage mismatch on {detail.field}: "
-                            f"expected {detail.expected}, got {detail.actual}",
-                            code="sub_tdp_lineage_mismatch",
+                with child_store.identity_creation_lock(f"child:{creation_key}"):
+                    existing = self._find_child_by_creation_key(child_store, creation_key)
+                    if existing is not None:
+                        mismatches = ExecutionLineageValidator().validate_resume(
+                            parent_package=package,
+                            child_run=existing,
+                            expected_unit_id=unit_id,
                         )
-                    child_run_id = str(existing.get("id") or "")
-
+                        if mismatches:
+                            detail = mismatches[0]
+                            raise ExecutionPackageError(
+                                f"existing child lineage mismatch on {detail.field}: "
+                                f"expected {detail.expected}, got {detail.actual}",
+                                code="sub_tdp_lineage_mismatch",
+                            )
+                        child_run_id = str(existing.get("id") or "")
+                    if child_run_id is None:
+                        child_run_id = self._run_factory.create_child_run(
+                            child_store,
+                            package,
+                            unit,
+                            resolved_config=resolved_config,
+                            invocation=self._child_invocation(
+                                invocation, parent_run_id, unit_id
+                            ),
+                            upstream_accepted_results=upstream,
+                            workspace_baseline_results=baseline,
+                        )
             if child_run_id is None:
                 child_run_id = self._run_factory.create_child_run(
                     child_store,

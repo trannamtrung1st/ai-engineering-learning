@@ -167,7 +167,7 @@ def test_resource_globs_require_workspace_containment(tmp_path: Path) -> None:
     _run("*.md")
 
 
-def test_guidance_read_oserror_is_config_error(tmp_path: Path) -> None:
+def test_guidance_read_oserror_is_operational(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
     guide = workspace / "guide.md"
@@ -201,8 +201,8 @@ def test_guidance_read_oserror_is_config_error(tmp_path: Path) -> None:
                 "--stream-json",
             ]
         )
-    _assert_config_error(human, structured=False)
-    _assert_config_error(structured, structured=True)
+    _assert_operational_error(human, structured=False)
+    _assert_operational_error(structured, structured=True)
 
 
 def test_parse_upstream_rejects_trailing_run_id_whitespace() -> None:

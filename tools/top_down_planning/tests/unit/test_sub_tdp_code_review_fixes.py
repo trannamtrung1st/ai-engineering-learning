@@ -216,8 +216,12 @@ def test_attach_rejects_child_built_against_different_upstream_result(tmp_path: 
     )
     accept_child_run(store, b_id, claim_assessment="B against A1")
 
-    a2 = PreparedUnitExecutor().create_or_load_child_run(
-        store, package, "item-a", resolved_config=config, invocation={"command": "execute"}
+    a2 = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-a"],
+        resolved_config=config,
+        invocation={"command": "execute"},
     )
     accept_child_run(store, a2, claim_assessment="A2")
     a2_production = store.load_production(a2)

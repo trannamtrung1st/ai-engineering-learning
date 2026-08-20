@@ -71,8 +71,16 @@ def _build_package(tmp_path: Path) -> tuple[FileRunStore, Path, Plan]:
     store = FileRunStore(tmp_path / "runs")
     run_id = "run-20260101T004001-004001"
     plan = _dependent_plan(run_id)
+    from top_down_planning.domain.run_kind import RUN_KIND_PLANNING
+
     kwargs = create_run_kwargs(tmp_path)
-    store.create_run(run_id, plan=plan, phase="plan_validated", **kwargs)
+    store.create_run(
+        run_id,
+        plan=plan,
+        phase="plan_validated",
+        run_extras={"run_kind": RUN_KIND_PLANNING},
+        **kwargs,
+    )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
     output_dir = tmp_path / "pkg"
     ExecutionPackageBuilder().build_from_planning_run(

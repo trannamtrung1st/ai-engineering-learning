@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -202,6 +203,15 @@ class FileRunStore:
 
     def _assert_contained(self, path: Path) -> Path:
         return lexical_store_owned_path(self._root, path)
+
+    @contextmanager
+    def identity_creation_lock(self, identity_key: str) -> Iterator[None]:
+        """Serialize find-or-create for a stable identity (package digest / creation key)."""
+
+        digest = hashlib.sha256(str(identity_key).encode("utf-8")).hexdigest()
+        lock_path = self._assert_contained(self._root / ".identity.lock.d" / f"{digest}.lock")
+        with exclusive_file_lock(lock_path):
+            yield
 
     def _owned_run_file(self, run_id: str, name: str) -> Path:
         run_dir = self.run_dir(run_id)

@@ -258,26 +258,60 @@ def require_cli_run_id(run_id: str | None, *, stream_json: bool) -> str:
         raise
 
 
-def emit_run_access_error(exc: BaseException, *, stream_json: bool) -> None:
+def emit_run_access_error(
+    exc: BaseException,
+    *,
+    stream_json: bool,
+    extra: dict[str, Any] | None = None,
+) -> None:
     """Normalize missing runs vs persisted-state corruption for user commands."""
 
-    from core_tools.persistence import PersistenceError, RunNotFoundError
+    from core_tools.persistence import PersistenceError, RunNotFoundError, StoreRevisionConflictError
+    from top_down_planning.persistence.commit import StoreAuthorizationConflictError
 
     if isinstance(exc, RunNotFoundError):
-        emit_error_message(
+        emit_error_with_fields(
             str(exc),
             exit_code=1,
             stream_json=stream_json,
             code="run_not_found",
+            extra=extra,
+        )
+    if isinstance(exc, StoreRevisionConflictError):
+        emit_error_with_fields(
+            str(exc),
+            exit_code=1,
+            stream_json=stream_json,
+            code="run_revision_conflict",
+            extra=extra,
+        )
+    if isinstance(exc, StoreAuthorizationConflictError):
+        emit_error_with_fields(
+            str(exc),
+            exit_code=1,
+            stream_json=stream_json,
+            code="store_authorization_conflict",
+            extra=extra,
         )
     if isinstance(exc, PersistenceError):
-        emit_error_message(
+        emit_error_with_fields(
             str(exc),
             exit_code=1,
             stream_json=stream_json,
             code="corrupt_run",
+            extra=extra,
         )
     if isinstance(exc, OSError):
+        if extra:
+            from top_down_planning.orchestrator.failure import sanitize_operational_error
+
+            emit_error_with_fields(
+                sanitize_operational_error(exc),
+                exit_code=1,
+                stream_json=stream_json,
+                code="operational_error",
+                extra=extra,
+            )
         emit_operational_error(exc, stream_json=stream_json)
     raise exc
 
@@ -351,22 +385,28 @@ def emit_error_with_fields(
     raise SystemExit(exit_code)
 
 
-def emit_continue_run_error(exc: BaseException, *, stream_json: bool) -> None:
+def emit_continue_run_error(
+    exc: BaseException,
+    *,
+    stream_json: bool,
+    extra: dict[str, Any] | None = None,
+) -> None:
     """Normalize engine-boundary failures for blocking CLI commands."""
 
     from top_down_planning.domain.run_ownership import RunOwnershipError
 
     if isinstance(exc, RunOwnershipError):
-        emit_error_message(
+        emit_error_with_fields(
             str(exc),
             exit_code=1,
             stream_json=stream_json,
             code=exc.code,
+            extra=extra,
         )
     if isinstance(exc, PersistenceError):
-        emit_run_access_error(exc, stream_json=stream_json)
+        emit_run_access_error(exc, stream_json=stream_json, extra=extra)
     if isinstance(exc, OSError):
-        emit_operational_error(exc, stream_json=stream_json)
+        emit_run_access_error(exc, stream_json=stream_json, extra=extra)
     raise exc
 
 

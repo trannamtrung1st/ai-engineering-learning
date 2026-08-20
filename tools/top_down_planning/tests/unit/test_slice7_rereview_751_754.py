@@ -304,6 +304,12 @@ def test_create_output_goal_text_and_digest_share_one_file_version(
             return_value=SimpleNamespace(
                 package_id="pkg-x",
                 manifest_path=tmp_path / "pkg" / "manifest.json",
+                manifest={
+                    "planning_run": {
+                        "approved_plan_revision": 0,
+                        "approved_plan_digest": "a" * 64,
+                    }
+                },
             ),
         ),
     ):

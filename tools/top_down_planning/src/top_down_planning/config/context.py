@@ -573,11 +573,6 @@ def _read_guidance_file_content(
         )
     try:
         content = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ConfigError(
-            f"{entry_field}.file cannot be read: {path}",
-            path=f"{entry_field}.file",
-        ) from exc
     except UnicodeDecodeError as exc:
         raise ConfigError(
             f"{entry_field}.file must be UTF-8 text: {path}",

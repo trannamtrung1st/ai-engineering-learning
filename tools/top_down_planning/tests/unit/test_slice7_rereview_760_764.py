@@ -193,6 +193,12 @@ def _engine_patches(tmp_path: Path):
             return_value=SimpleNamespace(
                 package_id="pkg-x",
                 manifest_path=tmp_path / "pkg" / "manifest.json",
+                manifest={
+                    "planning_run": {
+                        "approved_plan_revision": 0,
+                        "approved_plan_digest": "a" * 64,
+                    }
+                },
             ),
         ),
     ]

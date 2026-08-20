@@ -144,20 +144,6 @@ def _publish_valid_paused_production_revision(store: FileRunStore, run_id: str) 
     )
 
 
-def _list_reviews_then_bump_production(run_id: str):
-    bumped = {"done": False}
-    real_list = FileRunStore.list_reviews
-
-    def list_reviews_then_bump(self, rid, *args, **kwargs):
-        reviews = real_list(self, rid)
-        if rid == run_id and not bumped["done"]:
-            bumped["done"] = True
-            _publish_valid_paused_production_revision(self, rid)
-        return reviews
-
-    return list_reviews_then_bump
-
-
 def test_paused_child_resume_uses_driver_snapshot(tmp_path: Path) -> None:
     store, output_dir, _ = _dependent_build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
@@ -169,7 +155,16 @@ def test_paused_child_resume_uses_driver_snapshot(tmp_path: Path) -> None:
         invocation={"command": "execute"},
     )
     _pause_child_for_resume(store, child_id)
-    list_reviews_then_bump = _list_reviews_then_bump_production(child_id)
+    real_snapshot = FileRunStore.load_canonical_snapshot
+    bumped = {"done": False}
+
+    def snapshot_then_bump(self, rid):
+        snapshot = real_snapshot(self, rid)
+        if rid == child_id and not bumped["done"]:
+            bumped["done"] = True
+            _publish_valid_paused_production_revision(self, rid)
+        return snapshot
+
     engine = MagicMock()
     engine.continue_run.return_value = RunContinuationResult(
         ok=False,
@@ -192,7 +187,7 @@ def test_paused_child_resume_uses_driver_snapshot(tmp_path: Path) -> None:
         "--stream-json",
     ]
     with (
-        patch.object(FileRunStore, "list_reviews", list_reviews_then_bump),
+        patch.object(FileRunStore, "load_canonical_snapshot", snapshot_then_bump),
         patch("top_down_planning.cli.execute._build_run_engine", return_value=engine),
         patch(
             "top_down_planning.orchestrator.engine.RunEngine.continue_run",
@@ -201,6 +196,7 @@ def test_paused_child_resume_uses_driver_snapshot(tmp_path: Path) -> None:
     ):
         result = run_cli(argv)
     _assert_no_traceback(result)
+    assert bumped["done"] is True
     text = result.stdout + result.stderr
     assert "resume_preparation_blocked" not in text
     assert result.exit_code in {0, 1}
@@ -323,27 +319,24 @@ def test_prepared_create_survives_inherited_review_write_failure(tmp_path: Path)
         str(tmp_path / "runs"),
         "--stream-json",
     ]
+    from core_tools.persistence import atomic_write_json as real_atomic
+
+    def fail_review_stage(path, payload, **kwargs):
+        if "reviews" in Path(path).parts:
+            raise PersistenceError("review stage failed")
+        return real_atomic(path, payload, **kwargs)
+
     def reuse_drive(self, child_store, child_run_id, **kwargs):
         return PreparedChildResult.from_run(child_store.load_run(child_run_id), ok=True)
 
     with (
-        patch.object(
-            FileRunStore, "save_review", side_effect=PersistenceError("review write failed")
-        ),
+        patch("top_down_planning.persistence.file_store.atomic_write_json", fail_review_stage),
         patch.object(PreparedUnitExecutor, "drive_child_run", reuse_drive),
     ):
         first = run_cli(argv)
-        second = run_cli(argv)
     leftover = _run_dirs(tmp_path / "runs")
-    execution = [
-        path
-        for path in leftover
-        if (path / "run.json").exists()
-        and "parent_execution" not in (path / "run.json").read_text(encoding="utf-8")
-        and "planning" not in path.name
-    ]
-    children = []
     store = FileRunStore(tmp_path / "runs")
+    children = []
     for path in leftover:
         try:
             run = store.load_run(path.name)
@@ -351,14 +344,18 @@ def test_prepared_create_survives_inherited_review_write_failure(tmp_path: Path)
             continue
         if str(run.get("run_kind") or "") == "sub_tdp_execution":
             children.append(path.name)
-            assert store.list_reviews(path.name)
     _assert_no_traceback(first)
+    assert first.exit_code != 0
+    assert children == []
+    second = run_cli(argv)
     _assert_no_traceback(second)
-    assert len(children) == 1
-    if first.exit_code != 0:
-        payload = _stdout_json(first)
-        assert payload.get("run_id") == children[0] or payload.get("ok") is False
-    _ = execution
+    after = [
+        path.name
+        for path in _run_dirs(tmp_path / "runs")
+        if str(store.load_run(path.name).get("run_kind") or "") == "sub_tdp_execution"
+    ]
+    assert len(after) == 1
+    assert store.list_reviews(after[0])
 
 
 def test_parent_only_post_create_failure_identifies_run_and_retry_reuses_it(
@@ -443,6 +440,14 @@ def test_prepare_package_build_failure_identifies_planning_run_for_retry(
     payload = _stdout_json(first)
     assert payload["error"]["code"] == "package_build_failed"
     assert payload.get("planning_run_id") == planning_run_id
+    from top_down_planning.orchestrator.phases import PLAN_VALIDATED
+
+    store = FileRunStore(tmp_path / "runs")
+    persisted = dict(store.load_run(planning_run_id))
+    expected = int(persisted["revision"])
+    persisted["revision"] = expected + 1
+    persisted["phase"] = PLAN_VALIDATED
+    store.save_run(planning_run_id, persisted, expected)
     retry = [
         "prepare",
         "--config",
@@ -465,6 +470,12 @@ def test_prepare_package_build_failure_identifies_planning_run_for_retry(
                 return_value=SimpleNamespace(
                     package_id="pkg-retry",
                     manifest_path=tmp_path / "pkg" / "manifest.json",
+                    manifest={
+                        "planning_run": {
+                            "approved_plan_revision": 0,
+                            "approved_plan_digest": "a" * 64,
+                        }
+                    },
                 ),
             )
         )

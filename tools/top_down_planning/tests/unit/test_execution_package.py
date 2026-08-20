@@ -57,12 +57,15 @@ def _approved_parent_plan(run_id: str) -> Plan:
 
 
 def _planning_run_at_validated(store: FileRunStore, workspace: Path, run_id: str) -> None:
+    from top_down_planning.domain.run_kind import RUN_KIND_PLANNING
+
     config = create_run_kwargs(workspace)["resolved_config"]
     kwargs = create_run_kwargs(workspace, resolved_config=config)
     store.create_run(
         run_id,
         plan=_approved_parent_plan(run_id),
         phase="plan_validated",
+        run_extras={"run_kind": RUN_KIND_PLANNING},
         **kwargs,
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))

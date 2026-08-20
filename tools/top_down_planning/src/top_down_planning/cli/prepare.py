@@ -34,16 +34,16 @@ from top_down_planning.config import (
     build_initial_context_snapshot_binding_with_diagnostics,
     compute_input_digest,
     compute_output_goal_digest_from_text,
+    is_allowed_presentation_override_path,
     resolve_config,
     resolve_output_goal_text,
     resolve_workspace,
 )
-from top_down_planning.domain.run_kind import RUN_KIND_PLANNING
+from top_down_planning.domain.run_kind import RUN_KIND_PLANNING, resolve_run_kind
 from top_down_planning.domain.run_ownership import RunOwnershipError
 from top_down_planning.invocation import invocation_options_from_args, invocation_to_dict
 from top_down_planning.notifications import NotificationContext, wrap_run_store
 from top_down_planning.observability import ObservabilityContext, build_observability_context
-from top_down_planning.orchestrator.engine import RunContinuationResult
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.package.builder import ExecutionPackageBuilder
@@ -76,6 +76,62 @@ def handle_prepare_command(args: Namespace) -> None:
 
     output_dir = Path(args.output).resolve() if args.output else Path(".tdp/execution").resolve()
     cwd = Path.cwd().resolve()
+    resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
+    if resolved_runs.source == "default":
+        emit_error_message(
+            "tdp prepare requires an explicit run store: set runtime.runs_dir in the "
+            "config, pass --runs-dir, or export TDP_RUNS_DIR",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="missing_runs_dir",
+        )
+
+    store = FileRunStore(resolved_runs.path)
+    try:
+        store.root.mkdir(parents=True, exist_ok=True)
+        cleanup_staging_dirs(store)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
+
+    planning_run = str(getattr(args, "planning_run", "") or "").strip()
+    if planning_run:
+        for raw in list(getattr(args, "set", None) or []):
+            path = str(raw).split("=", 1)[0].strip()
+            if path and not is_allowed_presentation_override_path(path):
+                emit_error_message(
+                    f"--planning-run rejects semantic override {path}",
+                    exit_code=2,
+                    stream_json=args.stream_json,
+                    code="config_error",
+                )
+        run_id = require_cli_run_id(planning_run, stream_json=args.stream_json)
+        try:
+            with run_access_boundary(stream_json=args.stream_json):
+                snapshot = store.load_canonical_snapshot(run_id)
+        except SystemExit:
+            raise
+        if resolve_run_kind(snapshot.run) != RUN_KIND_PLANNING:
+            emit_error_message(
+                f"run {run_id} is not a planning run",
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="invalid_planning_run",
+            )
+        if str(snapshot.run.get("phase") or "") != PLAN_VALIDATED:
+            emit_error_message(
+                f"planning run {run_id} is not at plan_validated",
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="invalid_planning_run",
+            )
+        _materialize_prepare_package(
+            args,
+            store=store,
+            run_id=run_id,
+            output_dir=output_dir,
+        )
+        return
+
     workspace = resolve_workspace(resolved, cwd=cwd)
     try:
         output_goal = resolve_output_goal_text(resolved, base_dir=workspace)
@@ -96,22 +152,6 @@ def handle_prepare_command(args: Namespace) -> None:
         )
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
-    resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
-    if resolved_runs.source == "default":
-        emit_error_message(
-            "tdp prepare requires an explicit run store: set runtime.runs_dir in the "
-            "config, pass --runs-dir, or export TDP_RUNS_DIR",
-            exit_code=2,
-            stream_json=args.stream_json,
-            code="missing_runs_dir",
-        )
-
-    store = FileRunStore(resolved_runs.path)
-    try:
-        store.root.mkdir(parents=True, exist_ok=True)
-        cleanup_staging_dirs(store)
-    except OSError as exc:
-        emit_operational_error(exc, stream_json=args.stream_json)
 
     invocation = invocation_options_from_args(
         args,
@@ -122,36 +162,32 @@ def handle_prepare_command(args: Namespace) -> None:
     invocation_dict["command"] = "prepare"
     invocation_dict["until"] = "validated"
 
-    planning_run = str(getattr(args, "planning_run", "") or "").strip()
-    if planning_run:
-        run_id = require_cli_run_id(planning_run, stream_json=args.stream_json)
-    else:
-        run_id = new_run_id()
-        plan = _initial_plan(run_id, resolved, output_goal=output_goal)
-        try:
-            store.create_run(
-                run_id,
-                plan=plan,
-                resolved_config=resolved,
-                input_digest=input_digest,
-                output_goal_digest=output_goal_digest,
-                context_spec_digest=context_spec_digest,
-                context_snapshot_digest=context_snapshot_digest,
-                context_snapshot_binding=binding,
-                workspace=str(workspace),
-                invocation=invocation_dict,
-                run_extras={"run_kind": RUN_KIND_PLANNING},
-                initial_events=[
-                    {
-                        "type": "context_snapshot_collected",
-                        **snapshot_diag.to_event_fields(),
-                    }
-                ],
-            )
-        except PersistenceError as exc:
-            emit_create_run_error(exc, stream_json=args.stream_json)
-        except OSError as exc:
-            emit_operational_error(exc, stream_json=args.stream_json)
+    run_id = new_run_id()
+    plan = _initial_plan(run_id, resolved, output_goal=output_goal)
+    try:
+        store.create_run(
+            run_id,
+            plan=plan,
+            resolved_config=resolved,
+            input_digest=input_digest,
+            output_goal_digest=output_goal_digest,
+            context_spec_digest=context_spec_digest,
+            context_snapshot_digest=context_snapshot_digest,
+            context_snapshot_binding=binding,
+            workspace=str(workspace),
+            invocation=invocation_dict,
+            run_extras={"run_kind": RUN_KIND_PLANNING},
+            initial_events=[
+                {
+                    "type": "context_snapshot_collected",
+                    **snapshot_diag.to_event_fields(),
+                }
+            ],
+        )
+    except PersistenceError as exc:
+        emit_create_run_error(exc, stream_json=args.stream_json)
+    except OSError as exc:
+        emit_operational_error(exc, stream_json=args.stream_json)
 
     diagnostics = run_startup_diagnostics_payload(
         cwd=cwd,
@@ -180,37 +216,14 @@ def handle_prepare_command(args: Namespace) -> None:
     )
 
     try:
-        if planning_run:
-            existing = _cli_load_run(store, run_id, stream_json=args.stream_json)
-            if str(existing.get("phase") or "") == PLAN_VALIDATED:
-                continuation = RunContinuationResult(
-                    ok=True,
-                    run_id=run_id,
-                    phase=PLAN_VALIDATED,
-                    status=str(existing.get("status") or "running"),
-                    outcome=existing.get("outcome"),
-                    reason=None,
-                    cancelled=False,
-                    target_reached=True,
-                )
-            else:
-                engine = _build_run_engine(
-                    store,
-                    resolved_runs,
-                    run_id=run_id,
-                    observability=observability,
-                    notifications=notifications,
-                )
-                continuation = engine.continue_run(run_id, until="validated")
-        else:
-            engine = _build_run_engine(
-                store,
-                resolved_runs,
-                run_id=run_id,
-                observability=observability,
-                notifications=notifications,
-            )
-            continuation = engine.continue_run(run_id, until="validated")
+        engine = _build_run_engine(
+            store,
+            resolved_runs,
+            run_id=run_id,
+            observability=observability,
+            notifications=notifications,
+        )
+        continuation = engine.continue_run(run_id, until="validated")
     except KeyboardInterrupt:
         _handle_blocking_run_interrupt(
             run_id=run_id,
@@ -220,7 +233,18 @@ def handle_prepare_command(args: Namespace) -> None:
             stream_json=args.stream_json,
         )
     except (PersistenceError, OSError, RunOwnershipError) as exc:
-        emit_continue_run_error(exc, stream_json=args.stream_json)
+        emit_continue_run_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={
+                "planning_run_id": run_id,
+                "run_id": run_id,
+                "recovery": {
+                    "command": "prepare",
+                    "planning_run_id": run_id,
+                },
+            },
+        )
     finally:
         observability.close()
 
@@ -241,6 +265,21 @@ def handle_prepare_command(args: Namespace) -> None:
             code="prepare_incomplete",
         )
 
+    _materialize_prepare_package(
+        args,
+        store=store,
+        run_id=run_id,
+        output_dir=output_dir,
+    )
+
+
+def _materialize_prepare_package(
+    args: Namespace,
+    *,
+    store: FileRunStore,
+    run_id: str,
+    output_dir: Path,
+) -> None:
     try:
         built = ExecutionPackageBuilder().build_from_planning_run(
             store,
@@ -277,20 +316,14 @@ def handle_prepare_command(args: Namespace) -> None:
             },
         )
 
-    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
-    digests = dict(run_record.get("digests") or {})
-    try:
-        with run_access_boundary(stream_json=args.stream_json):
-            plan_revision = store.load_plan(run_id).get("revision")
-    except SystemExit:
-        raise
+    planning = built.manifest.get("planning_run") or {}
     payload: dict[str, Any] = {
         "ok": True,
         "planning_run_id": run_id,
         "package_id": built.package_id,
         "manifest": str(built.manifest_path),
-        "plan_revision": plan_revision,
-        "plan_digest": digests.get("plan"),
+        "plan_revision": planning.get("approved_plan_revision"),
+        "plan_digest": planning.get("approved_plan_digest"),
     }
     emit_command_result(
         payload,

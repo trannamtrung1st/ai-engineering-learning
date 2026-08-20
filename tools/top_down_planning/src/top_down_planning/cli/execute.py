@@ -581,16 +581,24 @@ def _execute_unit(
             stream_json=args.stream_json,
         )
     except ExecutionPackageError as exc:
-        emit_error_message(
+        emit_error_with_fields(
             str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
             code=getattr(exc, "code", "package_invalid"),
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id, "recovery": {"command": "resume", "run_id": child_run_id}},
         )
     except PersistenceError as exc:
-        emit_run_access_error(exc, stream_json=args.stream_json)
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id, "recovery": {"command": "resume", "run_id": child_run_id}},
+        )
     except OSError as exc:
-        emit_operational_error(exc, stream_json=args.stream_json)
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id, "recovery": {"command": "resume", "run_id": child_run_id}},
+        )
     finally:
         observability.close()
 
@@ -682,7 +690,14 @@ def _drive_execution_run(
             stream_json=args.stream_json,
         )
     except (PersistenceError, OSError, RunOwnershipError) as exc:
-        emit_continue_run_error(exc, stream_json=args.stream_json)
+        emit_continue_run_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={
+                "run_id": run_id,
+                "recovery": {"command": "resume", "run_id": run_id},
+            },
+        )
     finally:
         observability.close()
 
