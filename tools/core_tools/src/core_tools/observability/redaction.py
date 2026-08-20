@@ -19,7 +19,7 @@ _SENSITIVE_NAME = (
     r"authorization|api[_-]?key)"
 )
 _AUTH_HEADER_RE = re.compile(
-    rf"(?i)((?:[A-Za-z][A-Za-z0-9_-]*_)?authorization\s*[=:]\s*(?:Bearer|Basic)\s+)\S+"
+    r"(?i)((?:[A-Za-z][A-Za-z0-9_-]*[_-])?authorization\s*[=:]\s*)([^\r\n]+)"
 )
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     rf"(?i)\b({_SENSITIVE_NAME})\s*([=:])\s*(?:[\"'][^\"']+[\"']|\S+)"
@@ -37,8 +37,7 @@ _PARTIAL_CAP_RE = re.compile(
     re.IGNORECASE,
 )
 _INCOMPLETE_AUTH_RE = re.compile(
-    rf"(?i)((?:[A-Za-z][A-Za-z0-9_-]*_)?authorization\s*[=:]\s*"
-    rf"(?:Bearer|Basic)?(?:\s+\S*)?)$"
+    r"(?i)((?:[A-Za-z][A-Za-z0-9_-]*[_-])?authorization\s*[=:]\s*[^\r\n]*)$"
 )
 _INCOMPLETE_ASSIGNMENT_RE = re.compile(
     rf"(?i)({_SENSITIVE_NAME}\s*[=:]\s*(?:[\"'][^\"']*|[^\s,;]*)?)$"
@@ -127,7 +126,7 @@ def _ident_looks_sensitive(ident: str) -> bool:
         atom_n = atom.replace("-", "_")
         if len(lower) >= 3 and atom_n.startswith(lower):
             return True
-        if lower.endswith(atom_n) or atom_n in lower:
+        if lower.endswith(atom_n):
             return True
     return False
 
@@ -159,36 +158,63 @@ def _secret_hold_length(text: str) -> int:
 
 
 class StreamingRedactor:
-    """Hold incomplete secret prefixes, then redact committed streaming text."""
+    """Sanitize a stream using an immutable emitted prefix and a pending tail."""
 
     def __init__(self, *, max_len: int | None = None) -> None:
         self._max_len = max_len
-        self._raw = ""
-        self._emitted = ""
+        self._pending = ""
+        self._emitted_len = 0
+        self._truncated = False
 
     def ingest(self, delta: str) -> str:
         if not delta:
             return ""
-        self._raw += delta
+        if self._truncated:
+            return ""
+        self._pending += delta
         return self._release(flush=False)
 
     def flush(self) -> str:
         return self._release(flush=True)
 
     def reset(self) -> None:
-        self._raw = ""
-        self._emitted = ""
+        self._pending = ""
+        self._emitted_len = 0
+        self._truncated = False
 
     def _release(self, *, flush: bool) -> str:
-        hold = 0 if flush else _secret_hold_length(self._raw)
-        committed = self._raw if hold == 0 else self._raw[:-hold]
-        redacted = truncate_text(_redact_string(committed), self._max_len)
-        if redacted.startswith(self._emitted):
-            new = redacted[len(self._emitted) :]
+        if self._truncated:
+            self._pending = ""
+            return ""
+        hold = 0 if flush else _secret_hold_length(self._pending)
+        if hold == len(self._pending) and not flush:
+            return ""
+        committed = self._pending if hold == 0 else self._pending[:-hold]
+        self._pending = "" if hold == 0 else self._pending[-hold:]
+        return self._apply_truncation(_redact_string(committed))
+
+    def _apply_truncation(self, piece: str) -> str:
+        if not piece:
+            return ""
+        if self._max_len is None:
+            self._emitted_len += len(piece)
+            return piece
+        remaining = self._max_len - self._emitted_len
+        if remaining <= 0:
+            self._truncated = True
+            self._pending = ""
+            return ""
+        if len(piece) <= remaining:
+            self._emitted_len += len(piece)
+            return piece
+        self._truncated = True
+        self._pending = ""
+        if remaining >= 3:
+            out = piece[: remaining - 3] + "..."
         else:
-            new = redacted
-        self._emitted = redacted
-        return new
+            out = piece[:remaining]
+        self._emitted_len += len(out)
+        return out
 
 
 def _truncate(text: str, max_len: int) -> str:

@@ -217,38 +217,37 @@ class ProviderToConsoleBridge:
 
     def __init__(self, context: ObservabilityContext) -> None:
         self._context = context
-        self._agent_text = AgentTextStreamController()
-        self._seen_tool_starts: set[str] = set()
-        self._seen_tool_ends: set[str] = set()
+        self._sessions: dict[str, _ProviderSessionObs] = {}
 
     def handle(self, event: dict[str, Any]) -> None:
         event_type = str(event.get("type") or "")
         session_id = event.get("session_id")
         session = str(session_id) if session_id else None
+        state = self._session_state(session)
         if event_type == "thinking":
             self._emit_delta(
                 "thinking",
-                self._agent_text.ingest_thinking(str(event.get("text") or "")),
+                state.agent_text.ingest_thinking(str(event.get("text") or "")),
                 session_id=session,
             )
             return
         if event_type == "assistant":
             self._emit_delta(
                 "response",
-                self._agent_text.ingest_response(str(event.get("text") or "")),
+                state.agent_text.ingest_response(str(event.get("text") or "")),
                 session_id=session,
             )
             return
         if event_type == "tool_call":
             if is_tool_call_start(event):
-                self._agent_text.reset_turn_buffers()
-                self._emit_tool_event("tool:start", event, session_id=session)
+                state.agent_text.reset_turn_buffers()
+                self._emit_tool_event("tool:start", event, session_id=session, state=state)
             elif is_tool_call_end(event):
-                self._emit_tool_event("tool:end", event, session_id=session)
+                self._emit_tool_event("tool:end", event, session_id=session, state=state)
             return
         if event_type == "retry":
             self._context.flush_stream()
-            self._agent_text.reset_turn_buffers()
+            state.agent_text.reset_turn_buffers()
             fields = self._provider_fields(event)
             fields.update(
                 {
@@ -275,9 +274,9 @@ class ProviderToConsoleBridge:
             )
             return
         if event_type == "done":
-            self._agent_text.reset_turn_buffers()
-            self._seen_tool_starts.clear()
-            self._seen_tool_ends.clear()
+            state.agent_text.reset_turn_buffers()
+            state.seen_tool_starts.clear()
+            state.seen_tool_ends.clear()
             if event.get("is_error"):
                 self._context.emit(
                     ConsoleEvent(
@@ -290,6 +289,14 @@ class ProviderToConsoleBridge:
             else:
                 self._context.flush_stream()
             return
+
+    def _session_state(self, session_id: str | None) -> _ProviderSessionObs:
+        key = session_id or ""
+        stored = self._sessions.get(key)
+        if stored is None:
+            stored = _ProviderSessionObs()
+            self._sessions[key] = stored
+        return stored
 
     def _provider_fields(self, event: dict[str, Any]) -> dict[str, str]:
         model = event.get("model")
@@ -320,12 +327,13 @@ class ProviderToConsoleBridge:
         event: dict[str, Any],
         *,
         session_id: str | None,
+        state: _ProviderSessionObs,
     ) -> None:
         summary = str(event.get("summary") or "")
         if not summary:
             return
         key = _tool_call_key(event, summary)
-        seen = self._seen_tool_starts if category == "tool:start" else self._seen_tool_ends
+        seen = state.seen_tool_starts if category == "tool:start" else state.seen_tool_ends
         if key in seen:
             return
         seen.add(key)
@@ -341,6 +349,13 @@ class ProviderToConsoleBridge:
                 fields=self._provider_fields(event),
             )
         )
+
+
+@dataclass
+class _ProviderSessionObs:
+    agent_text: AgentTextStreamController = field(default_factory=AgentTextStreamController)
+    seen_tool_starts: set[str] = field(default_factory=set)
+    seen_tool_ends: set[str] = field(default_factory=set)
 
 
 def _tool_call_key(event: dict[str, Any], summary: str) -> str:

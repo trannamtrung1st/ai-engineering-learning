@@ -688,6 +688,80 @@ def test_provider_bridge_drops_exact_duplicate_assistant_text() -> None:
     assert responses == ["same reply"]
 
 
+def test_provider_bridge_isolates_cumulative_text_across_sessions() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "assistant", "text": "Hello", "session_id": "s1"})
+    bridge.handle({"type": "assistant", "text": "Hello world", "session_id": "s2"})
+    responses = [
+        (event.session_id, event.message)
+        for event in collector.events
+        if event.category == "response"
+    ]
+    assert responses == [("s1", "Hello"), ("s2", "Hello world")]
+
+
+def test_provider_bridge_emits_identical_responses_on_separate_sessions() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "assistant", "text": "Hello", "session_id": "s1"})
+    bridge.handle({"type": "assistant", "text": "Hello", "session_id": "s2"})
+    responses = [
+        (event.session_id, event.message)
+        for event in collector.events
+        if event.category == "response"
+    ]
+    assert responses == [("s1", "Hello"), ("s2", "Hello")]
+
+
+def test_provider_bridge_normalizes_interleaved_cumulative_updates_per_session() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "assistant", "text": "Hello", "session_id": "s1"})
+    bridge.handle({"type": "assistant", "text": "Hi", "session_id": "s2"})
+    bridge.handle({"type": "assistant", "text": "Hello there", "session_id": "s1"})
+    bridge.handle({"type": "assistant", "text": "Hi world", "session_id": "s2"})
+    responses = [
+        (event.session_id, event.message)
+        for event in collector.events
+        if event.category == "response"
+    ]
+    assert responses == [
+        ("s1", "Hello"),
+        ("s2", "Hi"),
+        ("s1", " there"),
+        ("s2", " world"),
+    ]
+
+
+def test_provider_bridge_isolates_thinking_and_done_across_sessions() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "thinking", "text": "plan A", "session_id": "s1"})
+    bridge.handle({"type": "thinking", "text": "plan A extra", "session_id": "s2"})
+    bridge.handle({"type": "assistant", "text": "Hello", "session_id": "s1"})
+    bridge.handle(
+        {"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"}
+    )
+    bridge.handle({"type": "assistant", "text": "Hello", "session_id": "s2"})
+    thinking = [
+        (event.session_id, event.message)
+        for event in collector.events
+        if event.category == "thinking"
+    ]
+    responses = [
+        (event.session_id, event.message)
+        for event in collector.events
+        if event.category == "response"
+    ]
+    assert thinking == [("s1", "plan A"), ("s2", "plan A extra")]
+    assert responses == [("s1", "Hello"), ("s2", "Hello")]
+
+
 def test_provider_bridge_redacts_capability_token_split_across_chunks() -> None:
     stderr = io.StringIO()
     token = "cap-abc123.deadbeef"

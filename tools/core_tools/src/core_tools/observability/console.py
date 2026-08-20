@@ -27,6 +27,7 @@ from core_tools.observability.redaction import (
 )
 
 _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
+_PRESERVED_CONSOLE_CHARS = frozenset({"\n", "\t"})
 
 _CATEGORY_STYLES: dict[str, str] = {
     "phase:start": "cyan",
@@ -93,17 +94,28 @@ class ColorizedConsoleSink:
         self._end_streaming_line()
         safe = redact_event(event, policy=self._policy)
         tag = category_tag(safe.category)
-        body = _format_message(safe)
+        body = _sanitize_terminal_text(_format_message(safe))
         prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
         lines = body.splitlines() or [""]
         style = _CATEGORY_STYLES.get(safe.category, "")
 
         for index, line in enumerate(lines):
             content = f"{prefix}{line}" if index == 0 else line
-            text = Text(content)
+            self._print_preserving_tabs(content, style, end="\n")
+
+    def _print_preserving_tabs(self, content: str, style: str, *, end: str = "") -> None:
+        segments = content.split("\t")
+        for index, segment in enumerate(segments):
+            if index:
+                self._stream.write("\t")
+            if not segment:
+                continue
+            text = Text(segment)
             if self._use_color and style:
                 text.stylize(style)
-            self._console.print(text, soft_wrap=True)
+            self._console.print(text, end="", soft_wrap=True)
+        if end:
+            self._stream.write(end)
 
     def _emit_stream_delta(self, event: ConsoleEvent) -> None:
         if not event.message:
@@ -121,7 +133,7 @@ class ColorizedConsoleSink:
                 self._streaming_block_category = event.category
                 self._streaming_session_id = event.session_id
             return
-        self._write_stream_piece(event, piece)
+        self._write_stream_piece(event, _sanitize_terminal_text(piece))
 
     def _write_stream_piece(self, event: ConsoleEvent, piece: str) -> None:
         tag = category_tag(event.category)
@@ -130,14 +142,8 @@ class ColorizedConsoleSink:
 
         if show_prefix:
             prefix = _build_prefix(event.ts, tag, show_timestamps=self._show_timestamps)
-            prefix_text = Text(prefix)
-            if self._use_color and style:
-                prefix_text.stylize(style)
-            self._console.print(prefix_text, end="", soft_wrap=True)
-        delta_text = Text(piece)
-        if self._use_color and style:
-            delta_text.stylize(style)
-        self._console.print(delta_text, end="", soft_wrap=True)
+            self._print_preserving_tabs(prefix, style, end="")
+        self._print_preserving_tabs(piece, style, end="")
 
         self._streaming_line_open = True
         self._streaming_block_category = event.category
@@ -154,7 +160,7 @@ class ColorizedConsoleSink:
                 message=rest,
                 session_id=self._streaming_session_id,
             )
-            self._write_stream_piece(event, rest)
+            self._write_stream_piece(event, _sanitize_terminal_text(rest))
         self._stream_redactor.reset()
         if self._streaming_line_open:
             self._stream.write("\n")
@@ -192,3 +198,18 @@ def _format_fields(fields: dict[str, Any]) -> str:
         else:
             parts.append(f"{key}={value}")
     return " ".join(parts)
+
+
+def _sanitize_terminal_text(text: str) -> str:
+    """Escape C0/C1 controls except newline and tab so they cannot drive the TTY."""
+
+    rendered: list[str] = []
+    for char in text:
+        code = ord(char)
+        if char in _PRESERVED_CONSOLE_CHARS:
+            rendered.append(char)
+        elif code < 32 or code == 127 or 0x80 <= code <= 0x9F:
+            rendered.append(f"\\x{code:02x}")
+        else:
+            rendered.append(char)
+    return "".join(rendered)

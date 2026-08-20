@@ -12,7 +12,12 @@ from core_tools.observability.color import resolve_color_mode
 from core_tools.observability.console import ColorizedConsoleSink
 from core_tools.observability.events import ConsoleEvent
 from core_tools.observability.jsonl import JsonlEventSink
-from core_tools.observability.redaction import RedactionPolicy, redact_event, redact_value
+from core_tools.observability.redaction import (
+    RedactionPolicy,
+    StreamingRedactor,
+    redact_event,
+    redact_value,
+)
 from core_tools.observability.sink import CompositeSink, FilteredSink, NullSink
 
 
@@ -208,6 +213,28 @@ def test_redaction_strips_prefixed_credential_assignments() -> None:
     assert serialized.count("[REDACTED]") >= 7
 
 
+def test_redaction_strips_authorization_header_regardless_of_scheme() -> None:
+    headers = [
+        "Authorization: Token token-scheme-secret",
+        'Authorization: Digest username="u", nonce="digest-secret"',
+        "Authorization: Negotiate negotiate-secret",
+        "Proxy-Authorization: Basic proxy-basic-secret",
+        "Authorization: Acme custom-scheme-secret",
+    ]
+    redacted = [redact_value(header) for header in headers]
+    serialized = json.dumps(redacted)
+    for secret in (
+        "token-scheme-secret",
+        "digest-secret",
+        "negotiate-secret",
+        "proxy-basic-secret",
+        "custom-scheme-secret",
+    ):
+        assert secret not in serialized
+    assert all(item.endswith("[REDACTED]") for item in redacted)
+    assert serialized.count("[REDACTED]") == 5
+
+
 def test_redaction_happens_before_truncation_near_secret() -> None:
     secret = "VISIBLE_SECRET_FRAGMENT"
     text = "prefix api_key=" + secret + ("x" * 40)
@@ -397,13 +424,85 @@ def test_console_sink_redacts_secrets_split_across_stream_deltas(
         if fragment in secret:
             assert fragment not in output
     assert "[REDACTED]" in output
+
+
+def test_streaming_redactor_emits_exact_sanitized_assignment_without_duplication() -> None:
+    redactor = StreamingRedactor()
+    output = (
+        redactor.ingest("OPENAI_")
+        + redactor.ingest("API_KEY=sk-secret")
+        + redactor.flush()
+    )
+    assert output == "OPENAI_API_KEY=[REDACTED]"
+    assert "sk-secret" not in output
+
+
+def test_streaming_redactor_does_not_duplicate_benign_secretary() -> None:
+    redactor = StreamingRedactor()
+    output = redactor.ingest("se") + redactor.ingest("cretary") + redactor.flush()
+    assert output == "secretary"
+
+
+def test_streaming_redactor_truncation_does_not_rewrite_or_exceed_cap() -> None:
+    redactor = StreamingRedactor(max_len=10)
+    output = redactor.ingest("abcdefgh") + redactor.ingest("xyz") + redactor.flush()
+    assert "abcdefghabcdefg" not in output
+    assert output.startswith("abcdefgh")
+    assert len(output) <= 10
+
+
+def test_streaming_redactor_long_benign_stream_is_linear_and_exact() -> None:
+    redactor = StreamingRedactor()
+    pieces: list[str] = []
+    for _ in range(4000):
+        pieces.append(redactor.ingest("ab"))
+    pieces.append(redactor.flush())
+    assert "".join(pieces) == "ab" * 4000
+
+
+def test_console_sink_neutralizes_terminal_control_characters() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")
-    sink.emit(ConsoleEvent(category="response", message="partial reply"))
-    sink.emit(ConsoleEvent(category="session:cancel", message="cancelled by user"))
-    lines = [line for line in stderr.getvalue().splitlines() if line]
-    assert lines[0].startswith("[response] partial reply")
-    assert lines[1].startswith("[session:cancel] cancelled by user")
+    sink.emit(
+        ConsoleEvent(
+            category="error",
+            message="alert\x07ansi\x1b[31mred\x1b]0;title\x07nul\x00cr\rover\ttab\nnext",
+        )
+    )
+    output = stderr.getvalue()
+    assert "\x1b" not in output
+    assert "\x07" not in output
+    assert "\x00" not in output
+    assert "\r" not in output
+    assert "\\x1b" in output
+    assert "\\x07" in output
+    assert "\\x00" in output
+    assert "\\x0d" in output
+    assert "\t" in output
+    assert "\n" in output
+
+
+def test_console_sink_neutralizes_control_characters_in_stream_deltas() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="ok\x1b[0m"))
+    sink.emit(ConsoleEvent(category="response", message="\x07done"))
+    sink.flush_stream()
+    output = stderr.getvalue()
+    assert "\x1b" not in output
+    assert "\x07" not in output
+    assert "\\x1b" in output
+    assert "\\x07" in output
+
+
+def test_jsonl_sink_keeps_control_characters_as_valid_json(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    message = "ansi\x1b[0m\x07\x00\rover\ttab\nnext"
+    sink.emit(ConsoleEvent(category="response", message=message))
+    sink.close()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["message"] == message
 
 
 def test_console_sink_writes_to_stderr_not_stdout() -> None:
