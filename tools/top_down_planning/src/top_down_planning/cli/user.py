@@ -848,6 +848,11 @@ def handle_resume_command(args: Namespace) -> None:
         return
     except (RunNotFoundError, PersistenceError, OSError) as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
+    except KeyboardInterrupt:
+        _exit_for_command_interrupt(
+            run_id=args.run,
+            stream_json=args.stream_json,
+        )
 
     try:
         observability = build_observability_context(

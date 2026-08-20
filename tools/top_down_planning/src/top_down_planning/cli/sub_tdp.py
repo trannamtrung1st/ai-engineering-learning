@@ -10,6 +10,7 @@ from top_down_planning.cli.common import (
     emit_error_message,
     emit_run_access_error,
     open_run_store_for_cli,
+    remember_cli_locator,
     require_cli_run_id,
 )
 from top_down_planning.domain.run_kind import (
@@ -47,11 +48,36 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
 
     store, resolved_runs = open_run_store_for_cli(args, resolved_config=None)
 
+    attach_context = {
+        "parent_run_id": parent_run_id,
+        "child_run_id": child_run_id,
+        "runs_dir": str(resolved_runs.path),
+    }
     try:
+        remember_cli_locator(
+            resolved_runs, args, extra={**attach_context, "run_id": parent_run_id}
+        )
         parent_run_dir = resolve_run_dir(store, parent_run_id)
+    except Exception as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={**attach_context, "run_id": parent_run_id},
+        )
+    try:
+        remember_cli_locator(
+            resolved_runs, args, extra={**attach_context, "run_id": child_run_id}
+        )
         child_run_dir = resolve_run_dir(store, child_run_id)
     except Exception as exc:
-        emit_run_access_error(exc, stream_json=args.stream_json)
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={**attach_context, "run_id": child_run_id},
+        )
+    remember_cli_locator(
+        resolved_runs, args, extra={**attach_context, "run_id": parent_run_id}
+    )
     if parent_run_dir is None:
         emit_error_message(
             f"parent run directory not found for {parent_run_id!r}",
@@ -83,6 +109,13 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             exit_code=1,
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
+        )
+    except KeyboardInterrupt:
+        from top_down_planning.cli.user import _exit_for_command_interrupt
+
+        _exit_for_command_interrupt(
+            run_id=parent_run_id,
+            stream_json=args.stream_json,
         )
     except Exception as exc:
         emit_run_access_error(exc, stream_json=args.stream_json)
@@ -226,6 +259,16 @@ def _attach_child_under_ownership(
                 code="sub_tdp_attach_rejected",
             )
 
+    remember_cli_locator(
+        resolved_runs,
+        args,
+        extra={
+            "run_id": child_run_id,
+            "parent_run_id": parent_run_id,
+            "child_run_id": child_run_id,
+            "runs_dir": str(resolved_runs.path),
+        },
+    )
     child_run = store.load_run(child_run_id)
     if resolve_run_kind(child_run) != RUN_KIND_SUB_TDP_EXECUTION:
         emit_error_message(
@@ -351,6 +394,16 @@ def _attach_child_under_ownership(
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
     merged["revision"] = expected_revision + 1
+    remember_cli_locator(
+        resolved_runs,
+        args,
+        extra={
+            "run_id": parent_run_id,
+            "parent_run_id": parent_run_id,
+            "child_run_id": child_run_id,
+            "runs_dir": str(resolved_runs.path),
+        },
+    )
     store.commit(
         parent_run_id,
         CommitSpec(

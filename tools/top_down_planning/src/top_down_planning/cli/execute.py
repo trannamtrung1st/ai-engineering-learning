@@ -429,7 +429,10 @@ def handle_execute_command(args: Namespace) -> None:
         extra = {"run_id": run_id, "runs_dir": str(resolved_runs.path)} if run_id else {"runs_dir": str(resolved_runs.path)}
         emit_run_access_error(exc, stream_json=args.stream_json, extra=extra)
     except KeyboardInterrupt:
-        extra = {"run_id": run_id, "runs_dir": str(resolved_runs.path)} if run_id else {"runs_dir": str(resolved_runs.path)}
+        if run_id:
+            remember_cli_locator(resolved_runs, args, extra={"run_id": run_id})
+            _exit_for_command_interrupt(run_id=run_id, stream_json=args.stream_json)
+        extra = {"runs_dir": str(resolved_runs.path)}
         emit_error_with_fields(
             "cancelled by user",
             exit_code=130,

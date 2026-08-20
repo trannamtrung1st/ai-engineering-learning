@@ -465,13 +465,13 @@ def main(argv: list[str] | None = None) -> None:
         )
     except KeyboardInterrupt:
         extra = current_cli_locator() or None
-        if extra:
-            emit_error_with_fields(
-                "cancelled by user",
-                exit_code=130,
+        run_id = str((extra or {}).get("run_id") or "").strip()
+        if run_id:
+            from top_down_planning.cli.user import _exit_for_command_interrupt
+
+            _exit_for_command_interrupt(
+                run_id=run_id,
                 stream_json=bool(getattr(args, "stream_json", False)),
-                code="user_cancelled",
-                extra=extra,
             )
         emit_error_message(
             "cancelled by user",
