@@ -21,7 +21,12 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.stub import StubProvider
-from tests.conftest import _is_pytest_infrastructure, tracked_turn_proc, wait_published_pid
+from tests.conftest import (
+    _ignore_leftover_python_descendant,
+    _is_pytest_infrastructure,
+    tracked_turn_proc,
+    wait_published_pid,
+)
 
 
 def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:
@@ -34,6 +39,14 @@ def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:
         "python -c from multiprocessing.spawn import spawn_main; spawn_main()"
     )
     assert not _is_pytest_infrastructure("python -c import time; time.sleep(60)")
+
+
+def test_leftover_scan_ignores_defunct_python_zombies() -> None:
+    assert _ignore_leftover_python_descendant("[python] <defunct>")
+    assert _ignore_leftover_python_descendant("python <defunct>")
+    assert not _ignore_leftover_python_descendant(
+        "python -c import time; time.sleep(60)"
+    )
 
 
 def test_wait_published_pid_ignores_empty_file_until_integer(tmp_path: Path) -> None:

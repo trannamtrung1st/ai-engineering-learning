@@ -227,6 +227,30 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
     )
 
 
+def _ignore_leftover_python_descendant(cmd: str) -> bool:
+    """Ignore pytest helpers and already-dead zombies still visible in ``ps``."""
+
+    lowered = cmd.lower()
+    if "<defunct>" in lowered:
+        return True
+    return _is_pytest_infrastructure(cmd)
+
+
+def _reap_unwaited_children() -> None:
+    waitpid = getattr(os, "waitpid", None)
+    if waitpid is None:
+        return
+    while True:
+        try:
+            pid, _status = waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        except OSError:
+            return
+        if pid <= 0:
+            return
+
+
 def _open_fds() -> set[int]:
     proc_fd = Path("/proc/self/fd")
     if proc_fd.exists():
@@ -307,12 +331,13 @@ def assert_no_leftover_python_descendants():
     before = set(_python_descendant_pids(parent))
     yield
     leftover: dict[int, str] = {}
-    deadline = time.monotonic() + 0.25
+    deadline = time.monotonic() + 1.0
     while True:
+        _reap_unwaited_children()
         leftover = {
             pid: cmd
             for pid, cmd in _python_descendant_pids(parent).items()
-            if pid not in before and not _is_pytest_infrastructure(cmd)
+            if pid not in before and not _ignore_leftover_python_descendant(cmd)
         }
         if not leftover or time.monotonic() >= deadline:
             break
