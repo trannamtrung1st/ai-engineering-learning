@@ -17,6 +17,7 @@ from core_tools.observability.redaction import (
     StreamingRedactor,
     redact_event,
     redact_value,
+    truncate_text,
 )
 from core_tools.observability.sink import CompositeSink, FilteredSink, NullSink
 
@@ -235,6 +236,29 @@ def test_redaction_strips_authorization_header_regardless_of_scheme() -> None:
     assert serialized.count("[REDACTED]") == 5
 
 
+def test_redaction_strips_embedded_env_and_cli_secret_forms() -> None:
+    payload = {
+        "aws": "AWS_SECRET_ACCESS_KEY=aws-access-secret",
+        "api": "--api-key cli-api-secret",
+        "token": "--token cli-token-secret",
+        "password": "--password cli-password-secret",
+        "client": "--client-secret cli-client-secret",
+        "eq": "--api-key=cli-eq-secret",
+    }
+    redacted = redact_value(payload)
+    serialized = json.dumps(redacted)
+    for secret in (
+        "aws-access-secret",
+        "cli-api-secret",
+        "cli-token-secret",
+        "cli-password-secret",
+        "cli-client-secret",
+        "cli-eq-secret",
+    ):
+        assert secret not in serialized
+    assert serialized.count("[REDACTED]") >= 6
+
+
 def test_redaction_happens_before_truncation_near_secret() -> None:
     secret = "VISIBLE_SECRET_FRAGMENT"
     text = "prefix api_key=" + secret + ("x" * 40)
@@ -257,6 +281,13 @@ def test_redaction_truncates_oversized_strings() -> None:
     safe = redact_event(event, policy=policy)
     assert len(safe.message) == 20
     assert safe.message.endswith("...")
+
+
+@pytest.mark.parametrize("max_len", [1, 2, 3])
+def test_truncate_text_respects_limits_below_ellipsis_width(max_len: int) -> None:
+    safe = truncate_text("abcdef", max_len)
+    assert len(safe) <= max_len
+    assert safe == "abcdef"[:max_len]
 
 
 def test_redaction_unlimited_by_default() -> None:
@@ -386,44 +417,85 @@ def test_console_sink_ends_open_stream_before_cancel() -> None:
     assert lines[1].startswith("[session:cancel] cancelled by user")
 
 
-@pytest.mark.parametrize(
-    ("secret", "split_at"),
-    [
-        ("cap-abc123.deadbeef", 4),
-        ("cap-abc123.deadbeef", 11),
-        ("cap-abc123.deadbeef", 12),
-        ("Authorization: Bearer SUPER_SECRET_BEARER", 22),
-        ("Authorization: Bearer SUPER_SECRET_BEARER", 28),
-        ("OPENAI_API_KEY=sk-openai-secret", 15),
-        ("OPENAI_API_KEY=sk-openai-secret", 16),
-        ("access_token=access-token-secret", 13),
-        ("client_secret=client-secret-value", 14),
-        ("authorization=Bearer authz-bearer-secret", 14),
-        ("authorization=Bearer authz-bearer-secret", 21),
-    ],
+_SPLIT_SECRET_FORMS = (
+    ("token=token-split-secret", "token-split-secret"),
+    ("password=password-split-secret", "password-split-secret"),
+    ("secret=plain-split-secret", "plain-split-secret"),
+    ("Authorization: Token header-token-secret", "header-token-secret"),
+    ("OPENAI_API_KEY=openai-split-secret", "openai-split-secret"),
+    ("AWS_SECRET_ACCESS_KEY=aws-split-secret", "aws-split-secret"),
+    ("--api-key cli-split-secret", "cli-split-secret"),
+    ("cap-abc123.deadbeef", "deadbeef"),
 )
+
+
+@pytest.mark.parametrize(("form", "secret"), _SPLIT_SECRET_FORMS)
+def test_streaming_redactor_redacts_every_split_position(form: str, secret: str) -> None:
+    for split_at in range(1, len(form)):
+        redactor = StreamingRedactor()
+        output = redactor.ingest(form[:split_at]) + redactor.ingest(form[split_at:]) + redactor.flush()
+        assert secret not in output, f"leaked at split {split_at}"
+        assert "[REDACTED]" in output
+
+
+@pytest.mark.parametrize(("form", "secret"), _SPLIT_SECRET_FORMS)
 def test_console_sink_redacts_secrets_split_across_stream_deltas(
+    form: str,
     secret: str,
-    split_at: int,
 ) -> None:
+    for split_at in range(1, len(form)):
+        stderr = io.StringIO()
+        sink = ColorizedConsoleSink(stream=stderr, color="never")
+        sink.emit(ConsoleEvent(category="response", message=form[:split_at]))
+        sink.emit(ConsoleEvent(category="response", message=form[split_at:]))
+        sink.flush_stream()
+        output = stderr.getvalue()
+        assert form not in output
+        assert secret not in output, f"leaked at split {split_at}"
+        assert "[REDACTED]" in output
+
+
+def test_console_sink_keeps_secret_context_across_other_session() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")
-    sink.emit(ConsoleEvent(category="response", message=secret[:split_at]))
-    sink.emit(ConsoleEvent(category="response", message=secret[split_at:]))
-    sink.flush_stream()
+    sink.emit(ConsoleEvent(category="response", message="tok", session_id="s1"))
+    sink.emit(ConsoleEvent(category="response", message="hello", session_id="s2"))
+    sink.emit(ConsoleEvent(category="response", message="en=interleave-secret", session_id="s1"))
+    sink.flush_stream("s1")
+    sink.flush_stream("s2")
     output = stderr.getvalue()
-    assert secret not in output
-    for fragment in (
-        "deadbeef",
-        "SUPER_SECRET_BEARER",
-        "sk-openai-secret",
-        "access-token-secret",
-        "client-secret-value",
-        "authz-bearer-secret",
-    ):
-        if fragment in secret:
-            assert fragment not in output
+    assert "interleave-secret" not in output
+    assert "hello" in output
     assert "[REDACTED]" in output
+
+
+def test_console_sink_done_flush_does_not_cut_other_session_secret() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="tok", session_id="s2"))
+    sink.flush_stream("s1")
+    sink.emit(ConsoleEvent(category="response", message="en=other-session-secret", session_id="s2"))
+    sink.flush_stream("s2")
+    output = stderr.getvalue()
+    assert "other-session-secret" not in output
+    assert "[REDACTED]" in output
+
+
+def test_jsonl_sink_keeps_secret_context_across_other_session(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(ConsoleEvent(category="response", message="tok", session_id="s1"))
+    sink.emit(ConsoleEvent(category="response", message="hello", session_id="s2"))
+    sink.emit(ConsoleEvent(category="response", message="en=jsonl-interleave-secret", session_id="s1"))
+    sink.flush_stream("s1")
+    sink.close()
+    raw = path.read_text(encoding="utf-8")
+    assert "jsonl-interleave-secret" not in raw
+    records = [json.loads(line) for line in raw.splitlines()]
+    by_session = {record["session_id"]: record["message"] for record in records}
+    assert by_session["s2"] == "hello"
+    assert "jsonl-interleave-secret" not in by_session["s1"]
+    assert "[REDACTED]" in by_session["s1"]
 
 
 def test_streaming_redactor_emits_exact_sanitized_assignment_without_duplication() -> None:
@@ -446,9 +518,28 @@ def test_streaming_redactor_does_not_duplicate_benign_secretary() -> None:
 def test_streaming_redactor_truncation_does_not_rewrite_or_exceed_cap() -> None:
     redactor = StreamingRedactor(max_len=10)
     output = redactor.ingest("abcdefgh") + redactor.ingest("xyz") + redactor.flush()
-    assert "abcdefghabcdefg" not in output
-    assert output.startswith("abcdefgh")
+    assert output == "abcdefg..."
     assert len(output) <= 10
+
+
+def test_streaming_redactor_truncation_is_chunk_invariant() -> None:
+    whole = StreamingRedactor(max_len=10)
+    split = StreamingRedactor(max_len=10)
+    assert whole.ingest("abcdefghxyz") + whole.flush() == "abcdefg..."
+    assert split.ingest("abcdefgh") + split.ingest("xyz") + split.flush() == "abcdefg..."
+
+
+def test_streaming_redactor_discards_unbounded_secret_value_incrementally() -> None:
+    redactor = StreamingRedactor()
+    pieces = [redactor.ingest("password=")]
+    for _ in range(4000):
+        pieces.append(redactor.ingest("xy"))
+    pieces.append(redactor.ingest(" "))
+    pieces.append(redactor.ingest("ok"))
+    pieces.append(redactor.flush())
+    output = "".join(pieces)
+    assert "xy" not in output
+    assert output == "password=[REDACTED] ok"
 
 
 def test_streaming_redactor_long_benign_stream_is_linear_and_exact() -> None:
@@ -480,6 +571,19 @@ def test_console_sink_neutralizes_terminal_control_characters() -> None:
     assert "\\x0d" in output
     assert "\t" in output
     assert "\n" in output
+
+
+def test_console_truncation_counts_escaped_control_characters() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(
+        stream=stderr,
+        color="never",
+        policy=RedactionPolicy(max_message_length=10),
+    )
+    sink.emit(ConsoleEvent(category="error", message="\x1b" * 10))
+    body = stderr.getvalue().split(" ", 1)[1]
+    assert "\x1b" not in body
+    assert len(body.replace("\n", "")) <= 10
 
 
 def test_console_sink_neutralizes_control_characters_in_stream_deltas() -> None:

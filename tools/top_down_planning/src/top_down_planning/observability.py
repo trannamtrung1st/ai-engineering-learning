@@ -132,8 +132,8 @@ class ObservabilityContext:
             )
         self.sink.emit(event)
 
-    def flush_stream(self) -> None:
-        flush_stream(self.sink)
+    def flush_stream(self, session_id: str | None = None) -> None:
+        flush_stream(self.sink, session_id)
 
     def provider_callback(self) -> Any:
         bridge = self._ensure_provider_bridge()
@@ -246,7 +246,7 @@ class ProviderToConsoleBridge:
                 self._emit_tool_event("tool:end", event, session_id=session, state=state)
             return
         if event_type == "retry":
-            self._context.flush_stream()
+            self._context.flush_stream(session)
             state.agent_text.reset_turn_buffers()
             fields = self._provider_fields(event)
             fields.update(
@@ -259,6 +259,7 @@ class ProviderToConsoleBridge:
                 ConsoleEvent(
                     category="retry",
                     message=str(event.get("text") or "provider retry"),
+                    session_id=session,
                     fields=fields,
                 )
             )
@@ -287,7 +288,7 @@ class ProviderToConsoleBridge:
                     )
                 )
             else:
-                self._context.flush_stream()
+                self._context.flush_stream(session)
             return
 
     def _session_state(self, session_id: str | None) -> _ProviderSessionObs:

@@ -688,6 +688,35 @@ def test_provider_bridge_drops_exact_duplicate_assistant_text() -> None:
     assert responses == ["same reply"]
 
 
+def test_provider_bridge_redacts_interleaved_session_secrets_in_console_and_transcript(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-20260101T001020-001020"
+    stderr = io.StringIO()
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(color="never", agent_transcript=True),
+            run_id="run-20260101T001020-001020",
+            run_dir=run_dir,
+        )
+        bridge = ProviderToConsoleBridge(context)
+        bridge.handle({"type": "assistant", "text": "tok", "session_id": "s1"})
+        bridge.handle({"type": "assistant", "text": "hello", "session_id": "s2"})
+        bridge.handle({"type": "assistant", "text": "token=bridge-interleave-secret", "session_id": "s1"})
+        bridge.handle(
+            {"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"}
+        )
+        context.close()
+
+    output = stderr.getvalue()
+    transcript = (run_dir / "agent-transcript.jsonl").read_text(encoding="utf-8")
+    assert "bridge-interleave-secret" not in output
+    assert "bridge-interleave-secret" not in transcript
+    assert "hello" in output
+    assert "[REDACTED]" in output
+    assert "[REDACTED]" in transcript
+
+
 def test_provider_bridge_isolates_cumulative_text_across_sessions() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
@@ -796,10 +825,17 @@ def test_provider_bridge_keeps_transcript_boundaries_after_retry_and_error(
             run_dir=run_dir,
         )
         bridge = ProviderToConsoleBridge(context)
-        bridge.handle({"type": "assistant", "text": "before retry"})
-        bridge.handle({"type": "retry", "text": "provider retry", "attempt": 1})
-        bridge.handle({"type": "assistant", "text": "after retry"})
-        bridge.handle({"type": "error", "text": "provider error"})
+        bridge.handle({"type": "assistant", "text": "before retry", "session_id": "s-retry"})
+        bridge.handle(
+            {
+                "type": "retry",
+                "text": "provider retry",
+                "attempt": 1,
+                "session_id": "s-retry",
+            }
+        )
+        bridge.handle({"type": "assistant", "text": "after retry", "session_id": "s-retry"})
+        bridge.handle({"type": "error", "text": "provider error", "session_id": "s-retry"})
         context.close()
 
     records = [
@@ -814,6 +850,8 @@ def test_provider_bridge_keeps_transcript_boundaries_after_retry_and_error(
     ]
     assert records[0]["message"] == "before retry"
     assert records[2]["message"] == "after retry"
+    assert records[1]["session_id"] == "s-retry"
+    assert all(record.get("session_id") == "s-retry" for record in records)
 
 
 def test_provider_bridge_resets_text_normalization_on_retry() -> None:

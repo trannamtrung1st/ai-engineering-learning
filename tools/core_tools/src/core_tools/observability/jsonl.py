@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
@@ -10,6 +11,13 @@ from core_tools.observability.events import ConsoleEvent
 from core_tools.observability.redaction import RedactionPolicy, redact_event
 
 _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
+
+
+@dataclass
+class _StreamBuffer:
+    category: str
+    message: str
+    event: ConsoleEvent
 
 
 class JsonlEventSink:
@@ -29,51 +37,58 @@ class JsonlEventSink:
         else:
             self._handle = target
             self._owns_handle = False
-        self._stream_buffer_category: str | None = None
-        self._stream_buffer_message: str = ""
-        self._stream_buffer_event: ConsoleEvent | None = None
+        self._streams: dict[str, _StreamBuffer] = {}
 
     def emit(self, event: ConsoleEvent) -> None:
+        key = _session_key(event.session_id)
         if event.category in _STREAMING_CATEGORIES:
-            if self._stream_buffer_event is not None and (
-                self._stream_buffer_category != event.category
-                or self._stream_buffer_event.session_id != event.session_id
-            ):
-                self._flush_stream_buffer()
-            self._stream_buffer_category = event.category
-            self._stream_buffer_message += event.message
-            self._stream_buffer_event = event
+            buffered = self._streams.get(key)
+            if buffered is not None and buffered.category != event.category:
+                self._flush_key(key)
+                buffered = None
+            if buffered is None:
+                self._streams[key] = _StreamBuffer(event.category, event.message, event)
+            else:
+                buffered.message += event.message
+                buffered.event = event
             return
 
-        self._flush_stream_buffer()
+        self._flush_key(key)
         self._write_event(event)
 
-    def flush_stream(self) -> None:
-        self._flush_stream_buffer()
+    def flush_stream(self, session_id: str | None = None) -> None:
+        if session_id is None:
+            for key in list(self._streams):
+                self._flush_key(key)
+            return
+        self._flush_key(_session_key(session_id))
 
     def close(self) -> None:
-        self._flush_stream_buffer()
+        self.flush_stream()
         if self._owns_handle:
             self._handle.close()
 
-    def _flush_stream_buffer(self) -> None:
-        if self._stream_buffer_event is None:
+    def _flush_key(self, key: str) -> None:
+        buffered = self._streams.pop(key, None)
+        if buffered is None:
             return
-        buffered = ConsoleEvent(
-            category=self._stream_buffer_category or self._stream_buffer_event.category,
-            message=self._stream_buffer_message,
-            ts=self._stream_buffer_event.ts,
-            fields=dict(self._stream_buffer_event.fields),
-            level=self._stream_buffer_event.level,
-            run_id=self._stream_buffer_event.run_id,
-            session_id=self._stream_buffer_event.session_id,
+        self._write_event(
+            ConsoleEvent(
+                category=buffered.category,
+                message=buffered.message,
+                ts=buffered.event.ts,
+                fields=dict(buffered.event.fields),
+                level=buffered.event.level,
+                run_id=buffered.event.run_id,
+                session_id=buffered.event.session_id,
+            )
         )
-        self._stream_buffer_category = None
-        self._stream_buffer_message = ""
-        self._stream_buffer_event = None
-        self._write_event(buffered)
 
     def _write_event(self, event: ConsoleEvent) -> None:
         safe = redact_event(event, policy=self._policy)
         self._handle.write(json.dumps(safe.to_dict(), sort_keys=True) + "\n")
         self._handle.flush()
+
+
+def _session_key(session_id: str | None) -> str:
+    return session_id or ""

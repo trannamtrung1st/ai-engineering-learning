@@ -24,6 +24,7 @@ from core_tools.observability.redaction import (
     RedactionPolicy,
     StreamingRedactor,
     redact_event,
+    truncate_text,
 )
 
 _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
@@ -82,19 +83,28 @@ class ColorizedConsoleSink:
             color_system="standard" if self._use_color else None,
         )
         self._streaming_line_open = False
-        self._streaming_block_category: str | None = None
-        self._streaming_session_id: str | None = None
-        self._stream_redactor = StreamingRedactor(max_len=self._policy.max_message_length)
+        self._display_category: str | None = None
+        self._display_session: str | None = None
+        self._redactors: dict[str, StreamingRedactor] = {}
+        self._session_category: dict[str, str] = {}
 
     def emit(self, event: ConsoleEvent) -> None:
         if event.category in _STREAMING_CATEGORIES:
             self._emit_stream_delta(event)
             return
 
-        self._end_streaming_line()
-        safe = redact_event(event, policy=self._policy)
+        self._flush_session(_session_key(event.session_id), close_line=True)
+        if self._streaming_line_open:
+            self._stream.write("\n")
+            self._streaming_line_open = False
+            self._display_category = None
+            self._display_session = None
+        safe = redact_event(event, policy=RedactionPolicy())
         tag = category_tag(safe.category)
-        body = _sanitize_terminal_text(_format_message(safe))
+        body = truncate_text(
+            _sanitize_terminal_text(_format_message(safe)),
+            self._policy.max_message_length,
+        )
         prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
         lines = body.splitlines() or [""]
         style = _CATEGORY_STYLES.get(safe.category, "")
@@ -120,20 +130,21 @@ class ColorizedConsoleSink:
     def _emit_stream_delta(self, event: ConsoleEvent) -> None:
         if not event.message:
             return
-
-        if self._streaming_block_category is not None and (
-            self._streaming_block_category != event.category
-            or self._streaming_session_id != event.session_id
+        key = _session_key(event.session_id)
+        redactor = self._redactors.setdefault(
+            key,
+            StreamingRedactor(max_len=self._policy.max_message_length),
+        )
+        self._session_category[key] = event.category
+        if self._streaming_line_open and (
+            self._display_session != key or self._display_category != event.category
         ):
-            self._end_streaming_line()
-
-        piece = self._stream_redactor.ingest(event.message)
+            self._stream.write("\n")
+            self._streaming_line_open = False
+        piece = redactor.ingest(_sanitize_terminal_text(event.message))
         if not piece:
-            if self._streaming_block_category is None:
-                self._streaming_block_category = event.category
-                self._streaming_session_id = event.session_id
             return
-        self._write_stream_piece(event, _sanitize_terminal_text(piece))
+        self._write_stream_piece(event, piece)
 
     def _write_stream_piece(self, event: ConsoleEvent, piece: str) -> None:
         tag = category_tag(event.category)
@@ -146,27 +157,42 @@ class ColorizedConsoleSink:
         self._print_preserving_tabs(piece, style, end="")
 
         self._streaming_line_open = True
-        self._streaming_block_category = event.category
-        self._streaming_session_id = event.session_id
+        self._display_category = event.category
+        self._display_session = _session_key(event.session_id)
 
-    def flush_stream(self) -> None:
-        self._end_streaming_line()
+    def flush_stream(self, session_id: str | None = None) -> None:
+        if session_id is None:
+            for key in list(self._redactors):
+                self._flush_session(key, close_line=True)
+            if self._streaming_line_open:
+                self._stream.write("\n")
+                self._streaming_line_open = False
+            return
+        self._flush_session(_session_key(session_id), close_line=True)
 
-    def _end_streaming_line(self) -> None:
-        rest = self._stream_redactor.flush()
+    def _flush_session(self, key: str, *, close_line: bool) -> None:
+        redactor = self._redactors.get(key)
+        if redactor is None:
+            return
+        rest = redactor.flush()
+        redactor.reset()
         if rest:
             event = ConsoleEvent(
-                category=self._streaming_block_category or "response",
+                category=self._session_category.get(key, "response"),
                 message=rest,
-                session_id=self._streaming_session_id,
+                session_id=key or None,
             )
-            self._write_stream_piece(event, _sanitize_terminal_text(rest))
-        self._stream_redactor.reset()
-        if self._streaming_line_open:
+            if self._streaming_line_open and (
+                self._display_session != key or self._display_category != event.category
+            ):
+                self._stream.write("\n")
+                self._streaming_line_open = False
+            self._write_stream_piece(event, rest)
+        if close_line and self._streaming_line_open and self._display_session == key:
             self._stream.write("\n")
             self._streaming_line_open = False
-        self._streaming_block_category = None
-        self._streaming_session_id = None
+            self._display_category = None
+            self._display_session = None
 
 
 def _build_prefix(ts: datetime, tag: str, *, show_timestamps: bool) -> str:
@@ -198,6 +224,10 @@ def _format_fields(fields: dict[str, Any]) -> str:
         else:
             parts.append(f"{key}={value}")
     return " ".join(parts)
+
+
+def _session_key(session_id: str | None) -> str:
+    return session_id or ""
 
 
 def _sanitize_terminal_text(text: str) -> str:

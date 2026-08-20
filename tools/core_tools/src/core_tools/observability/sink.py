@@ -13,16 +13,16 @@ class EventSink(Protocol):
     def emit(self, event: ConsoleEvent) -> None:
         """Handle a single event."""
 
-    def flush_stream(self) -> None:
-        """Close any open streaming block without emitting a user-facing event."""
+    def flush_stream(self, session_id: str | None = None) -> None:
+        """Close an open streaming block; omit session_id to flush every session."""
 
 
-def flush_stream(sink: EventSink) -> None:
+def flush_stream(sink: EventSink, session_id: str | None = None) -> None:
     """Flush buffered streaming output when the sink supports it."""
 
     flusher = getattr(sink, "flush_stream", None)
     if flusher is not None:
-        flusher()
+        flusher(session_id)
 
 
 class NullSink:
@@ -31,7 +31,7 @@ class NullSink:
     def emit(self, event: ConsoleEvent) -> None:
         return None
 
-    def flush_stream(self) -> None:
+    def flush_stream(self, session_id: str | None = None) -> None:
         return None
 
 
@@ -45,9 +45,9 @@ class CompositeSink:
         for sink in self._sinks:
             sink.emit(event)
 
-    def flush_stream(self) -> None:
+    def flush_stream(self, session_id: str | None = None) -> None:
         for sink in self._sinks:
-            flush_stream(sink)
+            flush_stream(sink, session_id)
 
 
 class FilteredSink:
@@ -75,5 +75,5 @@ class FilteredSink:
             return
         self._sink.emit(event)
 
-    def flush_stream(self) -> None:
-        flush_stream(self._sink)
+    def flush_stream(self, session_id: str | None = None) -> None:
+        flush_stream(self._sink, session_id)
