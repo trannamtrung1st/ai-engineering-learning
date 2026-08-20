@@ -68,7 +68,12 @@ def parse_override_value(raw: str) -> Any:
             except json.JSONDecodeError:
                 pass
         return load_yaml(stripped)
-    if stripped[0] in {'"', "'"} or "\n" in stripped or ":" in stripped:
+    if stripped[0] in {'"', "'"}:
+        wrapped = load_yaml(f"value: {stripped}")
+        if not isinstance(wrapped, dict) or "value" not in wrapped:
+            raise ConfigError(f"failed to parse override value: {raw!r}")
+        return wrapped["value"]
+    if "\n" in stripped or ":" in stripped:
         return load_yaml(stripped)
 
     wrapped = load_yaml(f"value: {stripped}")

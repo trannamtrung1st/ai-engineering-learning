@@ -108,6 +108,28 @@ def test_override_values_parse_yaml_types(tmp_path: Path) -> None:
     assert resolved["run"]["input_refs"] == ["README.md", "docs/guide.md"]
 
 
+def test_set_override_keeps_unquoted_hash_in_output_goal(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
+    resolved = resolve_config(config_path, ["run.output_goal=issue#123"])
+    assert resolved["run"]["output_goal"] == "issue#123"
+    stripped_comment = resolve_config(
+        config_path,
+        ["run.output_goal=abc # comment"],
+    )
+    assert stripped_comment["run"]["output_goal"] == "abc"
+    quoted = resolve_config(config_path, ['run.output_goal="abc # literal"'])
+    assert quoted["run"]["output_goal"] == "abc # literal"
+
+
+def test_yaml_config_keeps_unquoted_hash_in_output_goal(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "base.yaml",
+        "run:\n  output_goal: Fix issue#123\n",
+    )
+    resolved = resolve_config(config_path)
+    assert resolved["run"]["output_goal"] == "Fix issue#123"
+
+
 def test_input_digest_uses_file_content_when_ref_exists(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -94,6 +94,24 @@ def test_load_yaml_keeps_hash_inside_quoted_string() -> None:
     assert parsed["run"]["output_goal"] == "Keep # hash"
 
 
+def test_load_yaml_keeps_unquoted_hash_that_belongs_to_the_scalar() -> None:
+    parsed = load_yaml(
+        """
+run:
+  output_goal: Fix issue#123
+url: https://example.test/page#section
+plain: abc#123
+commented: abc # comment
+quoted: "abc # literal"
+"""
+    )
+    assert parsed["run"]["output_goal"] == "Fix issue#123"
+    assert parsed["url"] == "https://example.test/page#section"
+    assert parsed["plain"] == "abc#123"
+    assert parsed["commented"] == "abc"
+    assert parsed["quoted"] == "abc # literal"
+
+
 def test_load_yaml_rejects_unexpected_indentation() -> None:
     with pytest.raises(ValueError, match="unexpected indentation"):
         load_yaml(

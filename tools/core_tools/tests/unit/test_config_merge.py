@@ -28,6 +28,15 @@ def test_parse_override_value_yaml_types() -> None:
     assert parse_override_value("[a, b]") == ["a", "b"]
 
 
+def test_parse_override_value_keeps_unquoted_hash_in_scalar() -> None:
+    assert parse_override_value("issue#123") == "issue#123"
+    assert parse_override_value("abc # comment") == "abc"
+    assert parse_override_value('"abc # literal"') == "abc # literal"
+    assert parse_override_value('"https://example.test/page#section"') == (
+        "https://example.test/page#section"
+    )
+
+
 def test_set_nested_path_rejects_unknown_when_allowed_paths_set() -> None:
     config: dict[str, object] = {}
     with pytest.raises(ConfigError, match="unknown config path"):
