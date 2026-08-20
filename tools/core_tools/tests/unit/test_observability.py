@@ -287,6 +287,29 @@ def test_redaction_keeps_benign_assignment_identifiers() -> None:
     assert "[REDACTED]" not in safe
 
 
+def test_redaction_strips_camelcase_secret_keys() -> None:
+    payload = {
+        "assign": "accessToken=camel-access-secret",
+        "client": "clientSecret=camel-client-secret",
+        "auth": "authToken=camel-auth-secret",
+        "cli": "--accessToken camel-cli-secret",
+        "json": '{"accessToken":"camel-json-secret"}',
+        "unicode": r'{"pass\u0077ord":"camel-unicode-secret"}',
+    }
+    redacted = redact_value(payload)
+    serialized = json.dumps(redacted)
+    for secret in (
+        "camel-access-secret",
+        "camel-client-secret",
+        "camel-auth-secret",
+        "camel-cli-secret",
+        "camel-json-secret",
+        "camel-unicode-secret",
+    ):
+        assert secret not in serialized
+    assert serialized.count("[REDACTED]") >= 6
+
+
 def test_redaction_happens_before_truncation_near_secret() -> None:
     secret = "VISIBLE_SECRET_FRAGMENT"
     text = "prefix api_key=" + secret + ("x" * 40)
@@ -460,6 +483,10 @@ _SPLIT_SECRET_FORMS = (
     (r'password="abc\"def-escaped-secret"', "def-escaped-secret"),
     ("""{"password":"json-pass-secret"}""", "json-pass-secret"),
     ("""{"api_key":"json-api-secret"}""", "json-api-secret"),
+    ('{"accessToken":"camel-json-split-secret"}', "camel-json-split-secret"),
+    (r'{"pass\u0077ord":"unicode-json-split-secret"}', "unicode-json-split-secret"),
+    ("accessToken=camel-assign-split-secret", "camel-assign-split-secret"),
+    ("--accessToken camel-cli-split-secret", "camel-cli-split-secret"),
     ("cap-abc123.deadbeef", "deadbeef"),
     ("AWS_SECRET_ACCESS_KEY_" + ("x" * 100) + "=long-key-secret", "long-key-secret"),
 )
@@ -505,6 +532,34 @@ def test_console_sink_keeps_secret_context_across_other_session() -> None:
     assert "[REDACTED]" in output
 
 
+def test_console_sink_keeps_held_ident_after_other_session_visible_prefix() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="prefix tok", session_id="s1"))
+    sink.emit(ConsoleEvent(category="response", message="hello", session_id="s2"))
+    sink.emit(ConsoleEvent(category="response", message="en=held-interleave-secret", session_id="s1"))
+    sink.flush_stream("s1")
+    sink.flush_stream("s2")
+    output = stderr.getvalue()
+    assert "held-interleave-secret" not in output
+    assert "hello" in output
+    assert "[REDACTED]" in output
+
+
+def test_console_sink_keeps_value_state_after_other_session_visible_prefix() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="prefix password=", session_id="s1"))
+    sink.emit(ConsoleEvent(category="response", message="hello", session_id="s2"))
+    sink.emit(ConsoleEvent(category="response", message="SUPER_SECRET", session_id="s1"))
+    sink.flush_stream("s1")
+    sink.flush_stream("s2")
+    output = stderr.getvalue()
+    assert "SUPER_SECRET" not in output
+    assert "hello" in output
+    assert "password=[REDACTED]" in output
+
+
 def test_console_sink_done_flush_does_not_cut_other_session_secret() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")
@@ -532,6 +587,22 @@ def test_jsonl_sink_keeps_secret_context_across_other_session(tmp_path) -> None:
     assert by_session["s2"] == "hello"
     assert "jsonl-interleave-secret" not in by_session["s1"]
     assert "[REDACTED]" in by_session["s1"]
+
+
+def test_jsonl_sink_redacts_camelcase_secret_keys(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(
+        ConsoleEvent(
+            category="response",
+            message='accessToken=jsonl-camel-secret {"clientSecret":"jsonl-camel-json"}',
+        )
+    )
+    sink.close()
+    raw = path.read_text(encoding="utf-8")
+    assert "jsonl-camel-secret" not in raw
+    assert "jsonl-camel-json" not in raw
+    assert "[REDACTED]" in raw
 
 
 def test_streaming_redactor_redacts_quoted_value_after_separator_chunk() -> None:
@@ -611,6 +682,31 @@ def test_streaming_redactor_does_not_duplicate_benign_secretary() -> None:
     assert output == "secretary"
 
 
+def test_streaming_redactor_keeps_benign_tokenizer_and_secretary_assignments() -> None:
+    redactor = StreamingRedactor()
+    output = (
+        redactor.ingest("tokenizer=")
+        + redactor.ingest("bert-base secretary=Alice")
+        + redactor.flush()
+    )
+    assert output == "tokenizer=bert-base secretary=Alice"
+    assert "[REDACTED]" not in output
+
+
+def test_streaming_redactor_preserves_benign_quoted_escapes() -> None:
+    cases = (
+        r'say "a\"b" done',
+        r'say "C:\\temp\\file" done',
+        'code {"foo":"bar"} done',
+        'say "unclosed',
+    )
+    for text in cases:
+        redactor = StreamingRedactor()
+        output = "".join(redactor.ingest(char) for char in text) + redactor.flush()
+        assert output == text
+        assert redactor.pending_span() <= 32
+
+
 def test_streaming_redactor_truncation_does_not_rewrite_or_exceed_cap() -> None:
     redactor = StreamingRedactor(max_len=10)
     output = redactor.ingest("abcdefgh") + redactor.ingest("xyz") + redactor.flush()
@@ -643,8 +739,17 @@ def test_streaming_redactor_long_benign_stream_is_linear_and_exact() -> None:
     pieces: list[str] = []
     for _ in range(4000):
         pieces.append(redactor.ingest("ab"))
+        assert redactor.pending_span() <= 32
     pieces.append(redactor.flush())
     assert "".join(pieces) == "ab" * 4000
+
+
+def test_streaming_redactor_long_quoted_prose_stays_bounded_and_exact() -> None:
+    redactor = StreamingRedactor()
+    text = '"' + ("ab" * 4000) + '"'
+    output = "".join(redactor.ingest(char) for char in text) + redactor.flush()
+    assert output == text
+    assert redactor.pending_span() <= 32
 
 
 def test_console_sink_neutralizes_terminal_control_characters() -> None:

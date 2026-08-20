@@ -1,7 +1,7 @@
 """Structured console observability for agent orchestration tools."""
 
 from core_tools.observability.color import ColorMode, resolve_color_mode
-from core_tools.observability.console import ColorizedConsoleSink
+from core_tools.observability.console import ColorizedConsoleSink, sanitize_terminal_text
 from core_tools.observability.events import (
     CATEGORY_TAGS,
     ConsoleEvent,
@@ -42,5 +42,6 @@ __all__ = [
     "redact_event",
     "redact_value",
     "resolve_color_mode",
+    "sanitize_terminal_text",
     "truncate_text",
 ]

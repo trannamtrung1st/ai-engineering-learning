@@ -8,37 +8,8 @@ from typing import Any
 
 from core_tools.observability.events import ConsoleEvent
 
-_CAPABILITY_TOKEN_RE = re.compile(r"cap-[A-Za-z0-9._-]+\.[A-Za-z0-9]+")
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
-_SENSITIVE_ATOM = (
-    r"(?:password|passwd|secret|token|credential|authorization|api[_-]?key)"
-)
-_SENSITIVE_IDENT = rf"(?:[A-Za-z][A-Za-z0-9]*[_-])*{_SENSITIVE_ATOM}(?:[_-][A-Za-z0-9]+)*"
-_QUOTED_VALUE = r"(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')"
-_AUTH_HEADER_RE = re.compile(
-    rf"(?i)((?:[\"'])?(?:[A-Za-z][A-Za-z0-9_-]*[_-])?authorization(?:[\"'])?\s*[=:]\s*)(?:{_QUOTED_VALUE}|[^\r\n]+)"
-)
-_SENSITIVE_ASSIGNMENT_RE = re.compile(
-    rf"(?i)(?<![A-Za-z0-9])([\"']?)({_SENSITIVE_IDENT})\1\s*([=:])\s*(?:{_QUOTED_VALUE}|\S+)"
-)
-_CLI_SECRET_RE = re.compile(
-    rf"(?i)(--{_SENSITIVE_IDENT})(\s+|=)(?:{_QUOTED_VALUE}|\S+)"
-)
-_BARE_CREDENTIAL_RE = re.compile(
-    r"\b(credential)\s+[A-Za-z0-9._\-+=/]{4,}",
-    re.IGNORECASE,
-)
 _REDACTED = "[REDACTED]"
-_SENSITIVE_ATOMS = (
-    "authorization",
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "credential",
-    "api_key",
-    "apikey",
-)
 _SURROGATE_MIN = 0xD800
 _SURROGATE_MAX = 0xDFFF
 
@@ -93,11 +64,8 @@ def _sanitize_surrogates(text: str) -> str:
 
 def _redact_string(text: str) -> str:
     text = _sanitize_surrogates(text)
-    text = _CAPABILITY_TOKEN_RE.sub(_REDACTED, text)
-    text = _AUTH_HEADER_RE.sub(rf"\1{_REDACTED}", text)
-    text = _CLI_SECRET_RE.sub(rf"\1\2{_REDACTED}", text)
-    text = _SENSITIVE_ASSIGNMENT_RE.sub(rf"\1\2\3{_REDACTED}", text)
-    return _BARE_CREDENTIAL_RE.sub(rf"\1 {_REDACTED}", text)
+    redactor = StreamingRedactor()
+    return redactor.ingest(text) + redactor.flush()
 
 
 _CAMEL_SPLIT_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
@@ -138,32 +106,56 @@ def _ident_is_sensitive(ident: str) -> bool:
     return False
 
 
-def _should_hold_ident(ident: str) -> bool:
-    if not ident:
-        return False
-    if _ident_is_sensitive(ident):
-        return False
-    if ident.endswith(("_", "-")):
-        return True
-    lower = ident.lower().replace("-", "_")
-    for atom in (*_SENSITIVE_ATOMS, "cap"):
+_HOLD_ATOMS = (
+    "authorization",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "credential",
+    "api_key",
+    "apikey",
+    "cap",
+)
+_MAX_ATOM = max(len(atom) for atom in _HOLD_ATOMS)
+_SIMPLE_ESCAPES = {
+    '"': '"',
+    "'": "'",
+    "\\": "\\",
+    "/": "/",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
+
+
+def _hold_suffix_len(component: str) -> int:
+    if not component:
+        return 0
+    lower = component.lower()
+    best = 0
+    for atom in _HOLD_ATOMS:
         if atom.startswith(lower):
-            return True
+            return len(component)
         for size in range(1, min(len(lower), len(atom)) + 1):
             if atom.startswith(lower[-size:]):
-                return True
-    return False
+                best = max(best, size)
+    return best
 
 
 class StreamingRedactor:
-    """Streaming lexer with semantic identifier state and quoted-value awareness."""
+    """Streaming lexer with incremental identifier components and quoted-value awareness."""
 
     def __init__(self, *, max_len: int | None = None) -> None:
         self._max_len = max_len
         self._state = "normal"
-        self._ident = ""
+        self._component = ""
+        self._emitted = 0
+        self._component_intact = True
         self._sensitive = False
-        self._emitted_len = 0
+        self._prev_was_api = False
+        self._bare_credential = False
+        self._auth_key = False
         self._ws = ""
         self._key_quote = ""
         self._cli = False
@@ -171,6 +163,7 @@ class StreamingRedactor:
         self._dash = False
         self._value_quote = ""
         self._escape = False
+        self._unicode_hex: str | None = None
         self._content_emitted = 0
         self._trunc_hold = ""
         self._truncated = False
@@ -185,9 +178,13 @@ class StreamingRedactor:
 
     def reset(self) -> None:
         self._state = "normal"
-        self._ident = ""
+        self._component = ""
+        self._emitted = 0
+        self._component_intact = True
         self._sensitive = False
-        self._emitted_len = 0
+        self._prev_was_api = False
+        self._bare_credential = False
+        self._auth_key = False
         self._ws = ""
         self._key_quote = ""
         self._cli = False
@@ -195,9 +192,15 @@ class StreamingRedactor:
         self._dash = False
         self._value_quote = ""
         self._escape = False
+        self._unicode_hex = None
         self._content_emitted = 0
         self._trunc_hold = ""
         self._truncated = False
+
+    def pending_span(self) -> int:
+        held = max(0, len(self._component) - self._emitted)
+        unicode_len = len(self._unicode_hex) if self._unicode_hex is not None else 0
+        return held + len(self._ws) + len(self._trunc_hold) + unicode_len + int(self._dash) + int(self._escape)
 
     def _lex(self, incoming: str, *, flush: bool) -> str:
         outgoing = [self._step(char) for char in incoming]
@@ -237,12 +240,10 @@ class StreamingRedactor:
             self._dash = True
             return ""
         if char in "\"'":
+            self._begin_ident(cli=False)
             self._state = "quoted_key"
             self._key_quote = char
-            self._ident = ""
-            self._sensitive = False
-            self._emitted_len = 0
-            return ""
+            return char
         if char.isalpha():
             self._begin_ident(cli=False)
             return self._step_ident(char)
@@ -250,65 +251,175 @@ class StreamingRedactor:
 
     def _begin_ident(self, *, cli: bool) -> None:
         self._state = "ident"
-        self._ident = ""
+        self._start_component()
         self._sensitive = False
-        self._emitted_len = 0
+        self._prev_was_api = False
+        self._bare_credential = False
+        self._auth_key = False
         self._ws = ""
         self._key_quote = ""
         self._cli = cli
         self._auth = False
+        self._unicode_hex = None
+        self._escape = False
+
+    def _start_component(self) -> None:
+        self._component = ""
+        self._emitted = 0
+        self._component_intact = True
 
     def _step_ident(self, char: str) -> str:
+        if (
+            char == "-"
+            and not self._cli
+            and self._component_intact
+            and self._component.lower() == "cap"
+        ):
+            self._start_component()
+            self._state = "cap"
+            return _REDACTED
         if _is_ident_char(char):
-            self._ident += char
-            self._sensitive = self._sensitive or _ident_is_sensitive(self._ident)
-            if self._ident == "cap-" and not self._cli:
-                self._state = "cap"
-                self._emitted_len = len(self._ident)
-                return _REDACTED
-            if self._sensitive or not _should_hold_ident(self._ident):
-                return self._emit_ident_tail()
-            return ""
+            return self._feed_ident_char(char)
+        outgoing = self._complete_component()
         if char in " \t":
-            if self._cli and self._sensitive:
-                return self._open_value(char)
+            if self._sensitive and (self._cli or self._bare_credential):
+                return outgoing + self._open_value(char)
             if self._sensitive:
                 self._ws = char
                 self._state = "after_ident"
-                return self._release_ident()
-            emitted = self._release_ident()
+                return outgoing
             self._reset_ident()
-            return f"{emitted}{char}"
+            return f"{outgoing}{char}"
         if char in "=:":
             if self._sensitive:
-                return self._open_value(char)
-            emitted = self._release_ident()
+                return outgoing + self._open_value(char)
             self._reset_ident()
-            return f"{emitted}{char}"
-        emitted = self._release_ident()
+            return f"{outgoing}{char}"
         self._reset_ident()
-        return f"{emitted}{char}"
+        return f"{outgoing}{char}"
+
+    def _feed_ident_char(self, char: str) -> str:
+        outgoing = ""
+        if char in "_-":
+            outgoing += self._complete_component()
+            self._start_component()
+            if self._key_quote:
+                return outgoing
+            return f"{outgoing}{char}"
+        if self._component:
+            last = self._component[-1]
+            if char.isdigit() and last.isalpha():
+                outgoing += self._complete_component()
+                self._start_component()
+            elif char.isalpha() and last.isdigit():
+                outgoing += self._complete_component()
+                self._start_component()
+            elif char.isupper() and any(part.islower() for part in self._component):
+                outgoing += self._complete_component()
+                self._start_component()
+            elif (
+                char.islower()
+                and self._component.isupper()
+                and len(self._component) >= 2
+            ):
+                saved = self._component[-1]
+                self._component = self._component[:-1]
+                if self._emitted > len(self._component):
+                    self._emitted = len(self._component)
+                outgoing += self._complete_component()
+                self._start_component()
+                outgoing += self._push_char(saved)
+                outgoing += self._push_char(char)
+                return outgoing
+        return outgoing + self._push_char(char)
+
+    def _push_char(self, char: str) -> str:
+        if not self._component_intact:
+            return "" if self._key_quote else char
+        self._component += char
+        if len(self._component) > _MAX_ATOM:
+            self._component_intact = False
+            outgoing = "" if self._key_quote else self._component[self._emitted :]
+            self._start_component()
+            self._component_intact = False
+            return outgoing
+        return self._release_hold()
+
+    def _release_hold(self) -> str:
+        if self._key_quote:
+            return ""
+        hold = _hold_suffix_len(self._component)
+        available = len(self._component) - hold
+        if available <= self._emitted:
+            return ""
+        outgoing = self._component[self._emitted : available]
+        self._emitted = available
+        return outgoing
+
+    def _apply_component_sensitivity(self) -> None:
+        if not self._component_intact:
+            self._prev_was_api = False
+            return
+        lower = self._component.lower()
+        if lower in _SENSITIVE_PARTS:
+            self._sensitive = True
+        if self._prev_was_api and lower == "key":
+            self._sensitive = True
+        if lower == "credential":
+            self._bare_credential = True
+        if lower == "authorization":
+            self._auth_key = True
+        self._prev_was_api = lower == "api"
+
+    def _complete_component(self) -> str:
+        self._apply_component_sensitivity()
+        outgoing = "" if self._key_quote else self._component[self._emitted :]
+        self._start_component()
+        return outgoing
 
     def _step_quoted_key(self, char: str) -> str:
+        if self._unicode_hex is not None:
+            self._unicode_hex += char
+            if len(self._unicode_hex) == 4:
+                try:
+                    decoded = chr(int(self._unicode_hex, 16))
+                except ValueError:
+                    decoded = ""
+                self._unicode_hex = None
+                if decoded:
+                    self._feed_quoted_decoded(decoded)
+            return char
         if self._escape:
             self._escape = False
-            self._ident += char
-            self._sensitive = self._sensitive or _ident_is_sensitive(self._ident)
-            return ""
+            if char == "u":
+                self._unicode_hex = ""
+                return char
+            self._feed_quoted_decoded(_SIMPLE_ESCAPES.get(char, char))
+            return char
         if char == "\\":
             self._escape = True
-            return ""
+            return char
         if char == self._key_quote:
+            self._complete_component()
             if self._sensitive:
                 self._state = "after_ident"
                 self._ws = ""
-                return ""
-            emitted = f"{self._key_quote}{self._ident}{self._key_quote}"
+                return char
             self._reset_ident()
-            return emitted
-        self._ident += char
-        self._sensitive = self._sensitive or _ident_is_sensitive(self._ident)
-        return ""
+            return char
+        if not _is_ident_char(char):
+            self._complete_component()
+            self._reset_ident()
+            return self._step_normal(char)
+        self._feed_quoted_decoded(char)
+        return char
+
+    def _feed_quoted_decoded(self, char: str) -> None:
+        if _is_ident_char(char):
+            self._feed_ident_char(char)
+            return
+        self._complete_component()
+        self._start_component()
 
     def _step_after_ident(self, char: str) -> str:
         if char in " \t":
@@ -316,7 +427,7 @@ class StreamingRedactor:
             return ""
         if char in "=:":
             return self._open_value(char)
-        emitted = f"{self._format_key()}{self._ws}"
+        emitted = f"{self._component[self._emitted :]}{self._ws}" if not self._key_quote else self._ws
         self._reset_ident()
         return f"{emitted}{self._step_normal(char)}"
 
@@ -366,59 +477,47 @@ class StreamingRedactor:
         return char
 
     def _open_value(self, separator: str) -> str:
-        auth = "authorization" in _ident_components(self._ident)
-        emitted = f"{self._format_key()}{self._ws}{separator}{_REDACTED}"
+        rest = "" if self._key_quote else self._component[self._emitted :]
+        emitted = f"{rest}{self._ws}{separator}{_REDACTED}"
+        auth = self._auth_key
         self._reset_ident()
         self._auth = auth
         self._state = "value_start"
         return emitted
 
-    def _emit_ident_tail(self) -> str:
-        piece = self._ident[self._emitted_len :]
-        self._emitted_len = len(self._ident)
-        return piece
-
-    def _format_key(self) -> str:
-        if self._cli:
-            return "" if self._emitted_len else f"--{self._ident}"
-        if self._key_quote:
-            return f"{self._key_quote}{self._ident}{self._key_quote}"
-        return "" if self._emitted_len else self._ident
-
-    def _release_ident(self) -> str:
-        if self._key_quote and not self._emitted_len:
-            return f"{self._key_quote}{self._ident}{self._key_quote}"
-        return self._emit_ident_tail()
-
     def _reset_ident(self) -> None:
         self._state = "normal"
-        self._ident = ""
+        self._start_component()
         self._sensitive = False
-        self._emitted_len = 0
+        self._prev_was_api = False
+        self._bare_credential = False
+        self._auth_key = False
         self._ws = ""
         self._key_quote = ""
         self._cli = False
         self._auth = False
+        self._unicode_hex = None
+        self._escape = False
 
     def _flush_state(self) -> str:
         if self._dash:
             self._dash = False
             return "-"
         if self._state == "ident":
-            emitted = self._release_ident()
+            emitted = self._complete_component()
             self._reset_ident()
             return emitted
         if self._state == "quoted_key":
-            emitted = f"{self._key_quote}{self._ident}"
             self._reset_ident()
-            return emitted
+            return ""
         if self._state == "after_ident":
-            emitted = f"{self._format_key()}{self._ws}"
+            emitted = f"{self._component[self._emitted :]}{self._ws}" if not self._key_quote else self._ws
             self._reset_ident()
             return emitted
         self._state = "normal"
         self._value_quote = ""
         self._escape = False
+        self._unicode_hex = None
         return ""
 
     def _apply_truncation(self, piece: str, *, flush: bool) -> str:

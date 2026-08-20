@@ -21,6 +21,7 @@ from core_tools.observability import (
     RedactionPolicy,
     flush_stream,
     redact_value,
+    sanitize_terminal_text,
     truncate_text,
 )
 from core_tools.provider.events import is_tool_call_end, is_tool_call_start
@@ -339,7 +340,7 @@ class ProviderToConsoleBridge:
             return
         seen.add(key)
         summary = truncate_text(
-            str(redact_value(summary)),
+            sanitize_terminal_text(str(redact_value(summary))),
             self._context.options.max_tool_summary_length,
         )
         self._context.emit(

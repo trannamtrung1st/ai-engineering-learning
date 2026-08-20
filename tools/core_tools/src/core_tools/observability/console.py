@@ -93,15 +93,11 @@ class ColorizedConsoleSink:
             return
 
         self._flush_session_blocks(_session_key(event.session_id), close_line=True)
-        if self._streaming_line_open:
-            self._stream.write("\n")
-            self._streaming_line_open = False
-            self._display_category = None
-            self._display_session = None
+        self._close_display_line()
         safe = redact_event(event, policy=RedactionPolicy())
         tag = category_tag(safe.category)
         body = truncate_text(
-            _sanitize_terminal_text(_format_message(safe)),
+            sanitize_terminal_text(_format_message(safe)),
             self._policy.max_message_length,
         )
         prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
@@ -133,12 +129,16 @@ class ColorizedConsoleSink:
         block = (session, event.category)
         current = (self._display_session or "", self._display_category or "")
         if self._streaming_line_open and current != block:
-            self._flush_block(current, close_line=True)
+            current_session, current_category = current
+            if current_session == session and current_category != event.category:
+                self._flush_block(current, close_line=True)
+            else:
+                self._close_display_line()
         redactor = self._redactors.setdefault(
             block,
             StreamingRedactor(max_len=self._policy.max_message_length),
         )
-        piece = redactor.ingest(_sanitize_terminal_text(event.message))
+        piece = redactor.ingest(sanitize_terminal_text(event.message))
         if not piece:
             return
         self._write_stream_piece(event, piece)
@@ -161,11 +161,17 @@ class ColorizedConsoleSink:
         if session_id is None:
             for block in list(self._redactors):
                 self._flush_block(block, close_line=True)
-            if self._streaming_line_open:
-                self._stream.write("\n")
-                self._streaming_line_open = False
+            self._close_display_line()
             return
         self._flush_session_blocks(_session_key(session_id), close_line=True)
+
+    def _close_display_line(self) -> None:
+        if not self._streaming_line_open:
+            return
+        self._stream.write("\n")
+        self._streaming_line_open = False
+        self._display_category = None
+        self._display_session = None
 
     def _flush_session_blocks(self, session: str, *, close_line: bool) -> None:
         for block in list(self._redactors):
@@ -242,7 +248,7 @@ def _session_key(session_id: str | None) -> str:
     return session_id or ""
 
 
-def _sanitize_terminal_text(text: str) -> str:
+def sanitize_terminal_text(text: str) -> str:
     """Escape C0/C1 controls except newline and tab so they cannot drive the TTY."""
 
     rendered: list[str] = []

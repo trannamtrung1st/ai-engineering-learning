@@ -555,6 +555,17 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
                 run_id="run-20260101T001010-001010",
             )
         )
+        context.emit(
+            ConsoleEvent(
+                category="response",
+                message=(
+                    "accessToken=camel-access-secret clientSecret=camel-client-secret "
+                    'authToken=camel-auth-secret --accessToken camel-cli-secret '
+                    '{"accessToken":"camel-json-secret"}'
+                ),
+                run_id="run-20260101T001010-001010",
+            )
+        )
         context.close()
 
     stderr_text = stderr.getvalue()
@@ -569,6 +580,11 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
         "client-secret-value",
         "authz-bearer-secret",
         "json-pass-secret",
+        "camel-access-secret",
+        "camel-client-secret",
+        "camel-auth-secret",
+        "camel-cli-secret",
+        "camel-json-secret",
     ):
         assert secret not in stderr_text
         assert secret not in transcript
@@ -910,6 +926,23 @@ def test_provider_bridge_keeps_distinct_secret_tool_calls_without_call_id() -> N
     assert combined.count("[REDACTED]") == 2
 
 
+def test_provider_bridge_redacts_camelcase_secret_in_tool_summary() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "call_id": "call-camel",
+            "summary": "shell accessToken=camel-tool-secret",
+        }
+    )
+    summary = collector.events[0].message
+    assert "camel-tool-secret" not in summary
+    assert "[REDACTED]" in summary
+
+
 def test_provider_bridge_redacts_secret_in_truncated_tool_summary() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(
@@ -976,6 +1009,32 @@ def test_build_observability_context_truncates_response_when_configured(tmp_path
     response_text = output.split("[response] ", 1)[1].rstrip("\n")
     assert response_text.endswith("...")
     assert len(response_text) == 40
+
+
+def test_provider_bridge_tool_summary_cap_counts_escaped_controls(tmp_path: Path) -> None:
+    stderr = io.StringIO()
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                color="never",
+                max_tool_summary_length=10,
+            ),
+            run_id="run-20260101T001030-001030",
+            run_dir=tmp_path,
+        )
+        bridge = ProviderToConsoleBridge(context)
+        bridge.handle(
+            {
+                "type": "tool_call",
+                "subtype": "started",
+                "call_id": "call-esc",
+                "summary": "\x1b" * 10,
+            }
+        )
+        context.close()
+    body = stderr.getvalue().split(" ", 1)[1]
+    assert "\x1b" not in body
+    assert len(body.replace("\n", "")) <= 10
 
 
 def test_provider_bridge_truncates_tool_summary_when_configured() -> None:
