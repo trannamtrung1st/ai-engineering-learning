@@ -135,12 +135,9 @@ def handle_prepare_command(args: Namespace) -> None:
             },
         )
         except KeyboardInterrupt:
-            emit_error_with_fields(
-                "cancelled by user",
-                exit_code=130,
+            _exit_for_command_interrupt(
+                run_id=run_id,
                 stream_json=args.stream_json,
-                code="user_cancelled",
-                extra={"run_id": run_id, "planning_run_id": run_id},
             )
         if resolve_run_kind(snapshot.run) != RUN_KIND_PLANNING:
             emit_error_message(
@@ -433,12 +430,9 @@ def _materialize_prepare_package(
             },
         )
     except KeyboardInterrupt:
-        emit_error_with_fields(
-            "cancelled by user",
-            exit_code=130,
+        _exit_for_command_interrupt(
+            run_id=run_id,
             stream_json=args.stream_json,
-            code="user_cancelled",
-            extra={"run_id": run_id, "planning_run_id": run_id, **locators},
         )
 
     planning = built.manifest.get("planning_run") or {}
