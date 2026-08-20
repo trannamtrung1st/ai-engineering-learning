@@ -17,6 +17,8 @@ from top_down_planning.cli.common import (
     emit_run_access_error,
     emit_continue_run_error,
     emit_error_with_fields,
+    remember_cli_locator,
+    close_observability_safe,
     format_run_startup_diagnostics,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
@@ -223,6 +225,7 @@ def handle_execute_command(args: Namespace) -> None:
         emit_operational_error(exc, stream_json=args.stream_json)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
+    remember_cli_locator(resolved_runs, args)
     if resolved_runs.source == "default":
         emit_error_message(
             "tdp execute requires an explicit run store",
@@ -411,13 +414,13 @@ def handle_execute_command(args: Namespace) -> None:
             extra=extra or None,
         )
     except PersistenceError as exc:
-        extra = {"run_id": run_id} if run_id else None
+        extra = {"run_id": run_id, "runs_dir": str(resolved_runs.path)} if run_id else {"runs_dir": str(resolved_runs.path)}
         emit_run_access_error(exc, stream_json=args.stream_json, extra=extra)
     except OSError as exc:
-        extra = {"run_id": run_id} if run_id else None
+        extra = {"run_id": run_id, "runs_dir": str(resolved_runs.path)} if run_id else {"runs_dir": str(resolved_runs.path)}
         emit_run_access_error(exc, stream_json=args.stream_json, extra=extra)
     except KeyboardInterrupt:
-        extra = {"run_id": run_id} if run_id else None
+        extra = {"run_id": run_id, "runs_dir": str(resolved_runs.path)} if run_id else {"runs_dir": str(resolved_runs.path)}
         emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
@@ -539,7 +542,9 @@ def _execute_unit(
         emit_continue_run_error(
             exc,
             stream_json=args.stream_json,
-            extra={"run_id": child_run_id} if child_run_id else None,
+            extra={"run_id": child_run_id, "runs_dir": str(resolved_runs.path)}
+        if child_run_id
+        else {"runs_dir": str(resolved_runs.path)},
         )
 
     observability = build_observability_context(
@@ -616,10 +621,14 @@ def _execute_unit(
         emit_continue_run_error(
             exc,
             stream_json=args.stream_json,
-            extra={"run_id": child_run_id},
+            extra={"run_id": child_run_id, "runs_dir": str(resolved_runs.path)},
         )
     finally:
-        observability.close()
+        close_observability_safe(
+            observability,
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id},
+        )
 
     if cancelled:
         return
@@ -720,7 +729,11 @@ def _drive_execution_run(
             extra={"run_id": run_id, "runs_dir": str(resolved_runs.path)},
         )
     finally:
-        observability.close()
+        close_observability_safe(
+            observability,
+            stream_json=args.stream_json,
+            extra={"run_id": run_id},
+        )
 
     if continuation.cancelled:
         _exit_for_cancel(

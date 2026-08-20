@@ -15,6 +15,8 @@ from top_down_planning.cli.common import (
     emit_continue_run_error,
     emit_error_with_fields,
     locator_fields,
+    remember_cli_locator,
+    close_observability_safe,
     recovery_fields,
     format_run_startup_diagnostics,
     provider_extra_env,
@@ -90,6 +92,7 @@ def handle_prepare_command(args: Namespace) -> None:
     output_dir = Path(args.output).resolve() if args.output else Path(".tdp/execution").resolve()
     cwd = Path.cwd().resolve()
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
+    remember_cli_locator(resolved_runs, args)
     if resolved_runs.source == "default":
         emit_error_message(
             "tdp prepare requires an explicit run store: set runtime.runs_dir in the "
@@ -118,14 +121,19 @@ def handle_prepare_command(args: Namespace) -> None:
                         code="config_error",
                     )
         run_id = require_cli_run_id(planning_run, stream_json=args.stream_json)
+        remember_cli_locator(resolved_runs, args, extra={"run_id": run_id, "planning_run_id": run_id})
         try:
             snapshot = store.load_canonical_snapshot(run_id)
         except (PersistenceError, OSError) as exc:
             emit_run_access_error(
                 exc,
                 stream_json=args.stream_json,
-                extra={"planning_run_id": run_id, "run_id": run_id},
-            )
+            extra={
+                "planning_run_id": run_id,
+                "run_id": run_id,
+                **locator_fields(resolved_runs, args),
+            },
+        )
         except KeyboardInterrupt:
             emit_error_with_fields(
                 "cancelled by user",
@@ -302,7 +310,11 @@ def handle_prepare_command(args: Namespace) -> None:
             },
         )
     finally:
-        observability.close()
+        close_observability_safe(
+            observability,
+            stream_json=args.stream_json,
+            extra={"run_id": run_id, "planning_run_id": run_id},
+        )
 
     if continuation.cancelled:
         _exit_for_cancel(
@@ -390,7 +402,9 @@ def _materialize_prepare_package(
                     runs_dir=locators.get("runs_dir"),
                     output=locators.get("output"),
                     replace=bool(locators.get("replace")),
+                    message=str(exc),
                 ),
+                "message": str(exc),
             },
         )
     except PersistenceError as exc:

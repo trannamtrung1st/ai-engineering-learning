@@ -20,7 +20,11 @@ from top_down_planning.cli.common import (
     emit_create_run_error,
     emit_continue_run_error,
     emit_error_with_fields,
+    close_observability_safe,
+    format_recovery_next_command,
     locator_fields,
+    remember_cli_locator,
+    recovery_fields,
     run_access_boundary,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
@@ -168,20 +172,34 @@ def _exit_for_command_interrupt(
     if payload_run is not None:
         phase = payload_run.get("phase") if phase is None else phase
         status = payload_run.get("status") if status is None else status
+    from top_down_planning.cli.common import current_cli_locator
+
+    locator = current_cli_locator()
+    recovery = recovery_fields(
+        code="user_cancelled",
+        run_id=run_id,
+        runs_dir=str(locator.get("runs_dir") or "") or None,
+    )
     if stream_json:
-        emit_payload(
-            {
-                "ok": False,
-                "cancelled": False,
-                "command_interrupted": True,
-                "run_id": run_id,
-                "phase": phase,
-                "status": status,
-                "reason": "command interrupted by user",
-            },
-            exit_code=_CANCEL_EXIT_CODE,
-        )
-    sys.stdout.write("Command interrupted.\n")
+        payload = {
+            "ok": False,
+            "cancelled": False,
+            "command_interrupted": True,
+            "run_id": run_id,
+            "phase": phase,
+            "status": status,
+            "reason": "command interrupted by user",
+        }
+        if locator.get("runs_dir"):
+            payload["runs_dir"] = locator["runs_dir"]
+        if recovery:
+            payload["recovery"] = recovery
+        emit_payload(payload, exit_code=_CANCEL_EXIT_CODE)
+    lines = ["Command interrupted.", f"Run: {run_id}"]
+    next_command = format_recovery_next_command(recovery or {"command": "status", "run_id": run_id})
+    if next_command:
+        lines.append(f"Next: {next_command}")
+    sys.stdout.write("\n".join(lines) + "\n")
     raise SystemExit(_CANCEL_EXIT_CODE) from None
 
 
@@ -204,48 +222,65 @@ def _handle_blocking_run_interrupt(
 ) -> None:
     """Emit cancel observability and exit when Ctrl+C escapes the engine loop."""
 
+    extra = {"run_id": run_id}
     try:
-        with run_access_boundary(stream_json=stream_json):
+        with run_access_boundary(stream_json=stream_json, extra=extra):
             run = store.load_run(run_id)
     except SystemExit:
         raise
+    except (PersistenceError, OSError, RunOwnershipError) as exc:
+        emit_continue_run_error(exc, stream_json=stream_json, extra=extra)
+        _exit_for_command_interrupt(run_id=run_id, stream_json=stream_json)
+        return
 
+    cancelled = False
     if str(run.get("status") or "") == "running" and holds_run_ownership(run_id):
         phase = str(run.get("phase") or "unknown")
-        finalize_user_cancel(
-            store,
-            run_id,
-            phase=phase,
-            exclude_pids=frozenset({os.getpid()}),
-        )
         try:
-            run = store.load_run(run_id)
-        except (RunNotFoundError, PersistenceError, OSError):
-            run = {
-                **run,
-                "status": "paused",
-                "stop": {
-                    "code": "user_cancelled",
-                    "category": "operational",
-                    "phase": phase,
-                    "message": "cancelled by user",
-                },
-            }
-
-    if _run_is_user_cancelled(run):
-        if notifications is not None:
-            notify_run_outcome(
-                "cancelled",
+            finalize_user_cancel(
+                store,
+                run_id,
+                phase=phase,
+                exclude_pids=frozenset({os.getpid()}),
+            )
+            cancelled = True
+            try:
+                run = store.load_run(run_id)
+            except (RunNotFoundError, PersistenceError, OSError):
+                run = {
+                    **run,
+                    "status": "paused",
+                    "stop": {
+                        "code": "user_cancelled",
+                        "category": "operational",
+                        "phase": phase,
+                        "message": "cancelled by user",
+                    },
+                }
+        except (PersistenceError, OSError, RunOwnershipError):
+            _exit_for_command_interrupt(
                 run_id=run_id,
+                stream_json=stream_json,
                 run=run,
-                options=notifications.options,
             )
-        observability.emit(
-            cancel_console_event(
-                run_id=run_id,
-                phase=str(run.get("phase") or "unknown"),
+
+    if cancelled or _run_is_user_cancelled(run):
+        try:
+            if notifications is not None:
+                notify_run_outcome(
+                    "cancelled",
+                    run_id=run_id,
+                    run=run,
+                    options=notifications.options,
+                )
+            observability.emit(
+                cancel_console_event(
+                    run_id=run_id,
+                    phase=str(run.get("phase") or "unknown"),
+                )
             )
-        )
+        except (PersistenceError, OSError, RunOwnershipError):
+            pass
         _exit_for_cancel(run_id=run_id, stream_json=stream_json, run=run)
 
     _exit_for_command_interrupt(
@@ -384,6 +419,7 @@ def handle_run_command(args: Namespace) -> None:
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
+    remember_cli_locator(resolved_runs, args)
     if resolved_runs.source == "default":
         emit_error_message(
             "tdp run requires an explicit run store: set runtime.runs_dir in the "
@@ -437,6 +473,7 @@ def handle_run_command(args: Namespace) -> None:
             ],
         )
         run_id = str(created.get("id") or run_id)
+        remember_cli_locator(resolved_runs, args, extra={"run_id": run_id})
     except PersistenceError as exc:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
@@ -515,7 +552,11 @@ def handle_run_command(args: Namespace) -> None:
                 extra={"run_id": run_id, **locator_fields(resolved_runs)},
             )
     finally:
-        observability.close()
+        close_observability_safe(
+            observability,
+            stream_json=args.stream_json,
+            extra={"run_id": run_id},
+        )
 
     if continuation.cancelled:
         _exit_for_cancel(
@@ -601,6 +642,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, resolved_runs = _open_run_store_for_command(args)
+    remember_cli_locator(resolved_runs, args, extra={"run_id": args.run})
     try:
         reconcile_stale_running_run(store, args.run)
         canonical = store.load_canonical_snapshot(args.run)
@@ -826,8 +868,18 @@ def handle_resume_command(args: Namespace) -> None:
                 notifications=notifications,
                 stream_json=args.stream_json,
             )
+        except (PersistenceError, OSError, RunOwnershipError) as exc:
+            emit_continue_run_error(
+                exc,
+                stream_json=args.stream_json,
+                extra={"run_id": args.run, **locator_fields(resolved_runs)},
+            )
     finally:
-        observability.close()
+        close_observability_safe(
+            observability,
+            stream_json=args.stream_json,
+            extra={"run_id": args.run},
+        )
 
     if continuation.cancelled:
         _exit_for_cancel(
@@ -899,6 +951,7 @@ def handle_status_command(args: Namespace) -> None:
 
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
     store, resolved_runs = _open_run_store_for_command(args)
+    remember_cli_locator(resolved_runs, args, extra={"run_id": args.run})
     try:
         snapshot = store.load_canonical_snapshot(args.run)
         run = snapshot.run
@@ -1026,7 +1079,8 @@ def handle_inspect_command(args: Namespace) -> None:
         )
 
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
-    store, _resolved_runs = _open_run_store_for_command(args)
+    store, resolved_runs = _open_run_store_for_command(args)
+    remember_cli_locator(resolved_runs, args, extra={"run_id": args.run})
     try:
         canonical = _canonical_snapshot_for_cli(
             store, args.run, stream_json=args.stream_json
@@ -1065,7 +1119,8 @@ def handle_validate_command(args: Namespace) -> None:
         )
 
     args.run = require_cli_run_id(args.run, stream_json=args.stream_json)
-    store, _resolved_runs = _open_run_store_for_command(args)
+    store, resolved_runs = _open_run_store_for_command(args)
+    remember_cli_locator(resolved_runs, args, extra={"run_id": args.run})
     try:
         canonical = _canonical_snapshot_for_cli(
             store, args.run, stream_json=args.stream_json

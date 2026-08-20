@@ -9,8 +9,11 @@ from top_down_planning import __version__
 from top_down_planning.cli.common import (
     RUNS_DIR_HELP,
     RUNS_DIR_REQUIRED_HELP,
+    emit_continue_run_error,
     emit_error_message,
     emit_operational_error,
+    emit_run_access_error,
+    reset_cli_protocol_state,
 )
 from top_down_planning.cli.agent import add_agent_subparsers, handle_agent_command
 from top_down_planning.cli.user import (
@@ -411,7 +414,10 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     from top_down_planning.config import ConfigError
+    from top_down_planning.domain.run_ownership import RunOwnershipError
+    from top_down_planning.persistence import PersistenceError
 
+    reset_cli_protocol_state()
     try:
         _dispatch_command(args, parser)
     except ConfigError as exc:
@@ -420,6 +426,16 @@ def main(argv: list[str] | None = None) -> None:
             exit_code=2,
             stream_json=bool(getattr(args, "stream_json", False)),
             code="config_error",
+        )
+    except RunOwnershipError as exc:
+        emit_continue_run_error(
+            exc,
+            stream_json=bool(getattr(args, "stream_json", False)),
+        )
+    except PersistenceError as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=bool(getattr(args, "stream_json", False)),
         )
     except OSError as exc:
         emit_operational_error(

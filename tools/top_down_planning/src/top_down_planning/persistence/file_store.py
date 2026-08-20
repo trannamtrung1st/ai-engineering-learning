@@ -453,8 +453,8 @@ class FileRunStore:
                 if final_run_dir.exists() and (final_run_dir / "run.json").is_file():
                     remove_creation_lock = True
                     if isinstance(exc, KeyboardInterrupt):
-                        published = self._read_run(validated_run_id)
-                        raise RunPublishedInterrupt(validated_run_id, dict(published)) from exc
+                        published = dict(canonical_run or {"id": validated_run_id})
+                        raise RunPublishedInterrupt(validated_run_id, published) from exc
                     raise
                 else:
                     raise

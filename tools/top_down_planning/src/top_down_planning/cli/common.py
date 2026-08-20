@@ -6,15 +6,17 @@ from argparse import Namespace
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
+import contextvars
+import shlex
 import sys
 from typing import Any
 
 from core_tools.cli import (
     ResolvedRunsDir,
     RunsDirSource,
-    emit_error_message,
-    emit_message,
-    emit_payload,
+    emit_error_message as _core_emit_error_message,
+    emit_message as _core_emit_message,
+    emit_payload as _core_emit_payload,
     resolve_runs_dir as _resolve_runs_dir,
 )
 
@@ -28,6 +30,90 @@ RUN_ID_ENV_VAR = "TDP_RUN_ID"
 AGENT_REQUESTS_DIR_ENV_VAR = "TDP_AGENT_REQUESTS_DIR"
 
 RunsDirSource = RunsDirSource
+
+_CLI_LOCATOR: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
+    "tdp_cli_locator", default={}
+)
+_CLI_RESPONSE_COMMITTED: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "tdp_cli_response_committed", default=False
+)
+
+
+def reset_cli_protocol_state() -> None:
+    _CLI_LOCATOR.set({})
+    _CLI_RESPONSE_COMMITTED.set(False)
+
+
+def mark_cli_response_committed() -> None:
+    _CLI_RESPONSE_COMMITTED.set(True)
+
+
+def cli_response_committed() -> bool:
+    return bool(_CLI_RESPONSE_COMMITTED.get())
+
+
+def remember_cli_locator(
+    resolved_runs: ResolvedRunsDir | None = None,
+    args: Namespace | None = None,
+    extra: Mapping[str, Any] | None = None,
+) -> None:
+    fields = locator_fields(resolved_runs, args)
+    if extra:
+        fields.update({key: value for key, value in extra.items() if value not in {None, ""}})
+    current = dict(_CLI_LOCATOR.get() or {})
+    current.update(fields)
+    _CLI_LOCATOR.set(current)
+
+
+def current_cli_locator() -> dict[str, Any]:
+    return dict(_CLI_LOCATOR.get() or {})
+
+
+def merge_cli_extra(extra: dict[str, Any] | None) -> dict[str, Any] | None:
+    merged = current_cli_locator()
+    if extra:
+        merged.update(extra)
+    return merged or None
+
+
+def emit_payload(*args: Any, **kwargs: Any) -> Any:
+    mark_cli_response_committed()
+    return _core_emit_payload(*args, **kwargs)
+
+
+def emit_message(*args: Any, **kwargs: Any) -> Any:
+    mark_cli_response_committed()
+    return _core_emit_message(*args, **kwargs)
+
+
+def emit_error_message(*args: Any, **kwargs: Any) -> Any:
+    mark_cli_response_committed()
+    return _core_emit_error_message(*args, **kwargs)
+
+
+def close_observability_safe(
+    observability: Any,
+    *,
+    stream_json: bool,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Close observability without replacing an already committed CLI result."""
+
+    if observability is None:
+        return
+    try:
+        observability.close()
+    except OSError as exc:
+        if cli_response_committed():
+            from top_down_planning.orchestrator.failure import sanitize_operational_error
+
+            print(sanitize_operational_error(exc), file=sys.stderr)
+            return
+        emit_run_access_error(
+            exc,
+            stream_json=stream_json,
+            extra=merge_cli_extra(extra),
+        )
 
 RUNS_DIR_HELP = (
     "Run store root directory (precedence: --runs-dir > $TDP_RUNS_DIR > "
@@ -307,7 +393,7 @@ def format_recovery_next_command(recovery: Mapping[str, Any]) -> str | None:
             parts.extend(["--output", output])
         if recovery.get("replace"):
             parts.append("--replace")
-    return " ".join(parts)
+    return shlex.join(parts)
 
 
 def recovery_fields(
@@ -319,6 +405,7 @@ def recovery_fields(
     runs_dir: str | None = None,
     output: str | None = None,
     replace: bool | None = None,
+    message: str | None = None,
 ) -> dict[str, Any] | None:
     """Machine-readable recovery hint derived from error code and durable identity."""
 
@@ -337,6 +424,9 @@ def recovery_fields(
         hint = {"command": "resume", "run_id": identity}
     elif code in {"package_build_failed", "operational_error"} and str(phase or "") == "plan_validated":
         hint = {"command": "prepare", "planning_run_id": identity}
+        text = str(message or "").lower()
+        if "already exists" in text or "replace=true" in text:
+            hint["replace"] = True
     elif code == "package_build_failed":
         hint = {"command": "resume", "run_id": identity}
     elif code.startswith("sub_tdp_") or code.startswith("package_"):
@@ -368,6 +458,7 @@ def _with_recovery(extra: dict[str, Any] | None, *, code: str) -> dict[str, Any]
             runs_dir=str(merged.get("runs_dir") or "") or None,
             output=str(merged.get("output") or "") or None,
             replace=bool(merged.get("replace")),
+            message=str(merged.get("message") or "") or None,
         )
         if recovery:
             merged["recovery"] = recovery
@@ -384,6 +475,7 @@ def emit_run_access_error(
 ) -> None:
     """Normalize missing runs vs persisted-state corruption for user commands."""
 
+    extra = merge_cli_extra(extra)
     from core_tools.persistence import PersistenceError, RunNotFoundError, StoreRevisionConflictError
     from top_down_planning.persistence.commit import StoreAuthorizationConflictError
 
@@ -445,7 +537,9 @@ def run_access_boundary(
     try:
         yield
     except (RunNotFoundError, PersistenceError, OSError) as exc:
-        emit_run_access_error(exc, stream_json=stream_json, extra=extra)
+        emit_run_access_error(
+            exc, stream_json=stream_json, extra=merge_cli_extra(extra)
+        )
 
 
 def emit_create_run_error(exc: BaseException, *, stream_json: bool) -> None:
@@ -495,6 +589,8 @@ def emit_error_with_fields(
 ) -> None:
     """Emit a classified CLI error, optionally attaching recovery identity fields."""
 
+    extra = merge_cli_extra(extra)
+    extra = _with_recovery(extra, code=code)
     if stream_json:
         payload: dict[str, Any] = {
             "ok": False,
@@ -567,6 +663,11 @@ __all__ = [
     "emit_continue_run_error",
     "emit_error_with_fields",
     "recovery_fields",
+    "remember_cli_locator",
+    "reset_cli_protocol_state",
+    "close_observability_safe",
+    "format_recovery_next_command",
+    "locator_fields",
     "require_cli_run_id",
     "format_run_startup_diagnostics",
     "load_config_for_runs_dir",
