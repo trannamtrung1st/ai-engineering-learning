@@ -119,6 +119,13 @@ def test_set_override_keeps_unquoted_hash_in_output_goal(tmp_path: Path) -> None
     assert stripped_comment["run"]["output_goal"] == "abc"
     quoted = resolve_config(config_path, ['run.output_goal="abc # literal"'])
     assert quoted["run"]["output_goal"] == "abc # literal"
+    url = resolve_config(
+        config_path,
+        ["run.output_goal=https://example.test/page#section"],
+    )
+    assert url["run"]["output_goal"] == "https://example.test/page#section"
+    scheme = resolve_config(config_path, ["run.output_goal=scheme:value#fragment"])
+    assert scheme["run"]["output_goal"] == "scheme:value#fragment"
 
 
 def test_yaml_config_keeps_unquoted_hash_in_output_goal(tmp_path: Path) -> None:

@@ -73,7 +73,7 @@ def parse_override_value(raw: str) -> Any:
         if not isinstance(wrapped, dict) or "value" not in wrapped:
             raise ConfigError(f"failed to parse override value: {raw!r}")
         return wrapped["value"]
-    if "\n" in stripped or ":" in stripped:
+    if "\n" in stripped:
         return load_yaml(stripped)
 
     wrapped = load_yaml(f"value: {stripped}")
