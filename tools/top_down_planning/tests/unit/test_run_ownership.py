@@ -889,6 +889,8 @@ def test_child_sigint_during_release_attempt_allows_peer_acquire(tmp_path: Path)
         "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
         "while not (run_dir / '.go_release').is_file():\n"
         "    time.sleep(0.01)\n"
+        "(run_dir / '.releasing').write_text('1', encoding='utf-8')\n"
+        "time.sleep(30)\n"
         "release_run_ownership('run-1', run_dir=run_dir, owner_token=token)\n"
         "(run_dir / '.released').write_text('1', encoding='utf-8')\n"
     )
@@ -900,6 +902,12 @@ def test_child_sigint_during_release_attempt_allows_peer_acquire(tmp_path: Path)
         time.sleep(0.02)
     assert acquired_marker.is_file()
     (run_dir / ".go_release").write_text("1", encoding="utf-8")
+    releasing = run_dir / ".releasing"
+    for _ in range(100):
+        if releasing.is_file():
+            break
+        time.sleep(0.02)
+    assert releasing.is_file()
     os.kill(child.pid, signal.SIGINT)
     assert child.wait(timeout=5) != 0
     assert not (run_dir / ".released").is_file()

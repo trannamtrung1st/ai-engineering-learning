@@ -6,6 +6,30 @@ import re
 from typing import Any
 
 
+def _strip_inline_comment(raw: str) -> str:
+    """Drop unquoted ``#`` comments while keeping hashes inside quoted scalars."""
+
+    in_single = False
+    in_double = False
+    escaped = False
+    for index, char in enumerate(raw):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and in_double:
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if char == "#" and not in_single and not in_double:
+            return raw[:index].rstrip()
+    return raw
+
+
 def load_yaml(text: str) -> Any:
     """Parse a small YAML subset used for resolved config and agent requests."""
 
@@ -26,7 +50,7 @@ def load_yaml(text: str) -> Any:
         return len(line) - len(line.lstrip(" "))
 
     def parse_scalar(raw: str) -> Any:
-        value = raw.strip()
+        value = _strip_inline_comment(raw.strip())
         if not value:
             raise ValueError("empty scalar value")
         if value in {"null", "~"}:

@@ -58,10 +58,16 @@ def test_repeated_blocked_constructors_do_not_grow_host_owners() -> None:
                 worker.close(cleanup_timeout=0.15)
             except ProviderRunError:
                 pass
+            deadline = time.monotonic() + 0.5
+            while time.monotonic() < deadline and len(_popen_threads()) > baseline_threads:
+                time.sleep(0.02)
             assert len(_popen_threads()) <= baseline_threads
             assert owned_boundary_workers() == ()
             assert unreaped_boundary_workers() == ()
             assert _fd_count() <= baseline_fds + 4
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline and len(_popen_threads()) > baseline_threads:
+        time.sleep(0.02)
     assert len(_popen_threads()) <= baseline_threads
     assert owned_boundary_workers() == ()
     assert unreaped_boundary_workers() == ()

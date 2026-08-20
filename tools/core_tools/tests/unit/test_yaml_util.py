@@ -78,6 +78,22 @@ def test_dump_yaml_round_trips_nested_multiline_guidance() -> None:
     assert parsed == value
 
 
+def test_load_yaml_parses_inline_comment_after_number() -> None:
+    parsed = load_yaml(
+        """
+limits:
+  provider:
+    turn_idle_timeout_seconds: 2  # seconds without stream-json stdout; 0 = opt out
+"""
+    )
+    assert parsed["limits"]["provider"]["turn_idle_timeout_seconds"] == 2
+
+
+def test_load_yaml_keeps_hash_inside_quoted_string() -> None:
+    parsed = load_yaml('run:\n  output_goal: "Keep # hash"\n')
+    assert parsed["run"]["output_goal"] == "Keep # hash"
+
+
 def test_load_yaml_rejects_unexpected_indentation() -> None:
     with pytest.raises(ValueError, match="unexpected indentation"):
         load_yaml(

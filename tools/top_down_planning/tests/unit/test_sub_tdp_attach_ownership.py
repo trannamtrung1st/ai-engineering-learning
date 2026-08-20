@@ -51,4 +51,4 @@ def test_sub_tdp_attach_rejects_live_parent_owner(tmp_path: Path) -> None:
     assert result.exit_code == 1
     payload = result.json()
     assert payload.get("ok") is False
-    assert (payload.get("error") or {}).get("code") == "sub_tdp_attach_rejected"
+    assert (payload.get("error") or {}).get("code") == "run_ownership_conflict"

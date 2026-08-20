@@ -330,7 +330,7 @@ def test_attach_rejects_live_child_owner(tmp_path: Path) -> None:
         ]
     )
     assert result.exit_code != 0
-    assert "sub_tdp_attach_rejected" in (result.stderr + result.stdout)
+    assert "run_owned_by_live_process" in (result.stderr + result.stdout)
     resume_lock_path(child_dir).unlink(missing_ok=True)
 
 

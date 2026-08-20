@@ -418,11 +418,28 @@ def create_run_kwargs(
 ) -> dict[str, str | dict[str, Any]]:
     """Return shared ``create_run`` digest/config kwargs for tests."""
 
+    from core_tools.config.merge import deep_merge
     from top_down_planning.config.resolve import compute_unit_output_goal_digest
     from top_down_planning.domain.models import Plan as PlanModel
     from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION
+    from top_down_planning.schema_docs import SCHEMAS
 
-    config = _normalize_test_resolved_config(resolved_config or minimal_resolved_config())
+    if resolved_config is None:
+        config = minimal_resolved_config()
+    else:
+        overlay_run = (
+            resolved_config.get("run") if isinstance(resolved_config.get("run"), dict) else {}
+        )
+        merged = deep_merge(minimal_resolved_config(), resolved_config)
+        run = merged.get("run")
+        if isinstance(run, dict) and isinstance(overlay_run, dict):
+            if "output_goal_file" in overlay_run and "output_goal" not in overlay_run:
+                run.pop("output_goal", None)
+            if "output_goal" in overlay_run and "output_goal_file" not in overlay_run:
+                run.pop("output_goal_file", None)
+        allowed = set((SCHEMAS["config"].get("properties") or {}))
+        merged = {key: value for key, value in merged.items() if key in allowed}
+        config = _normalize_test_resolved_config(merged)
     if isinstance(config.get("project"), dict):
         config = copy.deepcopy(config)
         config["project"]["workspace"] = str(workspace.resolve())

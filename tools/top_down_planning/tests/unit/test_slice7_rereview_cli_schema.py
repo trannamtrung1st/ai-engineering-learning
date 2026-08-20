@@ -58,6 +58,68 @@ def _create_planning_run(store: FileRunStore, run_id: str) -> str:
     return run_id
 
 
+def test_create_run_kwargs_partial_config_reloads_as_schema_valid_snapshot(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000001-000001"
+    store.create_run(
+        run_id,
+        plan=Plan(
+            id="plan-partial-config",
+            revision=0,
+            output_goal="Deliver the output.",
+            items={
+                "item-root": PlanItem(
+                    id="item-root",
+                    parent_id=None,
+                    order_key="0000000000",
+                    title="Root",
+                    kind="aggregate",
+                )
+            },
+        ),
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
+    )
+
+    loaded = store.load_resolved_config(run_id)
+    assert loaded["version"] == 1
+    assert loaded["run"]["output_goal"] == "Deliver the output."
+    assert loaded["planning"]["max_depth"] == 4
+    assert loaded["planning"]["max_expansion_per_item"] == 7
+
+
+def test_create_run_kwargs_file_goal_does_not_keep_default_inline_goal(
+    tmp_path: Path,
+) -> None:
+    goal = tmp_path / "goal.md"
+    goal.write_text("Ship from file.\n", encoding="utf-8")
+    kwargs = create_run_kwargs(
+        tmp_path,
+        resolved_config={
+            "run": {"output_goal_file": "goal.md", "input_refs": []},
+        },
+    )
+    run = kwargs["resolved_config"]["run"]
+    assert run["output_goal_file"] == "goal.md"
+    assert "output_goal" not in run
+
+
+def test_create_run_kwargs_drops_unknown_top_level_keys(tmp_path: Path) -> None:
+    kwargs = create_run_kwargs(
+        tmp_path,
+        resolved_config={"limits": {"planning": {"max_agent_turns": 5}}, "mode": "test"},
+    )
+    assert "mode" not in kwargs["resolved_config"]
+    assert kwargs["resolved_config"]["limits"]["planning"]["max_agent_turns"] == 5
+
+
 def test_run_help_does_not_advertise_default_runs_dir() -> None:
     run_help = run_cli(["run", "--help"])
     prepare_help = run_cli(["prepare", "--help"])
