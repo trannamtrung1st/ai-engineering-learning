@@ -158,7 +158,11 @@ class NotificationDedupeState:
 
     recent_keys: dict[tuple[str, str], float] = field(default_factory=dict)
     last_run_paused_at: float | None = None
+    last_pause_phase: str | None = None
+    last_pause_was_limit: bool = False
     last_limit_exceeded_at: float | None = None
+    last_limit_kind: str | None = None
+    last_limit_phase: str | None = None
 
     def prune(self, *, now: float) -> None:
         expired = [
@@ -173,11 +177,15 @@ class NotificationDedupeState:
             and now - self.last_run_paused_at > _DEDUPE_WINDOW_SECONDS
         ):
             self.last_run_paused_at = None
+            self.last_pause_phase = None
+            self.last_pause_was_limit = False
         if (
             self.last_limit_exceeded_at is not None
             and now - self.last_limit_exceeded_at > _DEDUPE_WINDOW_SECONDS
         ):
             self.last_limit_exceeded_at = None
+            self.last_limit_kind = None
+            self.last_limit_phase = None
 
 
 def _event_tier(event_type: str) -> NotificationTier | None:
@@ -218,6 +226,13 @@ def _stable_key(event: dict[str, Any]) -> str:
         if isinstance(value, str) and value:
             return value
     return ""
+
+
+def _pause_is_limit_related(event: dict[str, Any]) -> bool:
+    if event.get("reason") == "limit":
+        return True
+    stop = event.get("stop")
+    return isinstance(stop, dict) and stop.get("code") == "limit_exhausted"
 
 
 def _is_user_cancelled_pause(event: dict[str, Any]) -> bool:
@@ -286,22 +301,30 @@ def _should_skip_dedupe(
     stable_key: str,
     run: dict[str, Any] | None,
     options: NotificationOptions,
+    event: dict[str, Any],
+    phase: str | None,
 ) -> bool:
     dedupe_key = (event_type, stable_key)
     if dedupe_key in state.recent_keys and now - state.recent_keys[dedupe_key] <= _DEDUPE_WINDOW_SECONDS:
         return True
 
-    if event_type.endswith(_LIMIT_EXCEEDED_SUFFIX):
+    cancelled = event_type == "run_paused" and _is_user_cancelled_pause(event)
+    if not cancelled and event_type.endswith(_LIMIT_EXCEEDED_SUFFIX):
         if (
             state.last_run_paused_at is not None
             and now - state.last_run_paused_at <= _DEDUPE_WINDOW_SECONDS
+            and state.last_pause_was_limit
+            and (state.last_pause_phase is None or phase is None or state.last_pause_phase == phase)
         ):
             return True
 
-    if event_type == "run_paused":
+    if not cancelled and event_type == "run_paused":
         if (
             state.last_limit_exceeded_at is not None
             and now - state.last_limit_exceeded_at <= _DEDUPE_WINDOW_SECONDS
+            and _pause_is_limit_related(event)
+            and state.last_limit_kind is not None
+            and (state.last_limit_phase is None or phase is None or state.last_limit_phase == phase)
         ):
             return True
 
@@ -336,6 +359,12 @@ def handle_audit_event(
     now = time.monotonic()
     state.prune(now=now)
 
+    run_phase = phase
+    if not run_phase:
+        event_phase = event.get("phase")
+        if isinstance(event_phase, str) and event_phase:
+            run_phase = event_phase
+
     stable = _stable_key(event)
     if _should_skip_dedupe(
         event_type,
@@ -344,16 +373,13 @@ def handle_audit_event(
         stable_key=stable,
         run=run,
         options=options,
+        event=event,
+        phase=run_phase,
     ):
         return False
 
     title = _title_for_event(event_type, tier, event=event)
     detail = _detail_line(event)
-    run_phase = phase
-    if not run_phase:
-        event_phase = event.get("phase")
-        if isinstance(event_phase, str) and event_phase:
-            run_phase = event_phase
     message = _format_message(run_id=run_id, phase=run_phase, detail=detail)
 
     sent = send_desktop_notification(title, message)
@@ -361,6 +387,10 @@ def handle_audit_event(
         state.recent_keys[(event_type, stable)] = now
         if event_type == "run_paused":
             state.last_run_paused_at = now
+            state.last_pause_phase = run_phase
+            state.last_pause_was_limit = _pause_is_limit_related(event)
         if event_type.endswith(_LIMIT_EXCEEDED_SUFFIX):
             state.last_limit_exceeded_at = now
+            state.last_limit_kind = event_type
+            state.last_limit_phase = run_phase
     return sent

@@ -14,18 +14,48 @@ _SECRET_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
+_SENSITIVE_NAME = (
+    r"(?:[A-Za-z][A-Za-z0-9_-]*[_-])?(?:password|passwd|secret|token|credential|"
+    r"authorization|api[_-]?key)"
+)
 _AUTH_HEADER_RE = re.compile(
-    r"(Authorization:\s*(?:Bearer|Basic)\s+)\S+",
-    re.IGNORECASE,
+    rf"(?i)((?:[A-Za-z][A-Za-z0-9_-]*_)?authorization\s*[=:]\s*(?:Bearer|Basic)\s+)\S+"
 )
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
-    r"\b(password|passwd|secret|token|credential|api[_-]?key)\s*([=:])\s*"
-    r"(?:[\"'][^\"']+[\"']|\S+)",
-    re.IGNORECASE,
+    rf"(?i)\b({_SENSITIVE_NAME})\s*([=:])\s*(?:[\"'][^\"']+[\"']|\S+)"
 )
 _BARE_CREDENTIAL_RE = re.compile(
     r"\b(credential)\s+[A-Za-z0-9._\-+=/]{4,}",
     re.IGNORECASE,
+)
+_INCOMPLETE_CAPABILITY_RE = re.compile(
+    r"(?:^|[^A-Za-z0-9._-])(cap(?:-[A-Za-z0-9._-]*)?)$",
+    re.IGNORECASE,
+)
+_PARTIAL_CAP_RE = re.compile(
+    r"(?:^|[^A-Za-z0-9._-])(c(?:a(?:p)?)?)$",
+    re.IGNORECASE,
+)
+_INCOMPLETE_AUTH_RE = re.compile(
+    rf"(?i)((?:[A-Za-z][A-Za-z0-9_-]*_)?authorization\s*[=:]\s*"
+    rf"(?:Bearer|Basic)?(?:\s+\S*)?)$"
+)
+_INCOMPLETE_ASSIGNMENT_RE = re.compile(
+    rf"(?i)({_SENSITIVE_NAME}\s*[=:]\s*(?:[\"'][^\"']*|[^\s,;]*)?)$"
+)
+_TRAILING_IDENT_RE = re.compile(r"([A-Za-z][A-Za-z0-9_-]*)$")
+_SENSITIVE_ATOMS = (
+    "authorization",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "credential",
+    "api_key",
+    "api-key",
+    "apikey",
+    "bearer",
+    "basic",
 )
 
 _REDACTED = "[REDACTED]"
@@ -89,6 +119,76 @@ def _redact_string(text: str) -> str:
     text = _AUTH_HEADER_RE.sub(rf"\1{_REDACTED}", text)
     text = _SENSITIVE_ASSIGNMENT_RE.sub(rf"\1\2{_REDACTED}", text)
     return _BARE_CREDENTIAL_RE.sub(rf"\1 {_REDACTED}", text)
+
+
+def _ident_looks_sensitive(ident: str) -> bool:
+    lower = ident.lower().replace("-", "_")
+    for atom in _SENSITIVE_ATOMS:
+        atom_n = atom.replace("-", "_")
+        if len(lower) >= 3 and atom_n.startswith(lower):
+            return True
+        if lower.endswith(atom_n) or atom_n in lower:
+            return True
+    return False
+
+
+def _secret_hold_length(text: str) -> int:
+    """Return how many trailing characters might still complete a secret."""
+
+    if not text:
+        return 0
+    starts: list[int] = []
+    cap = _INCOMPLETE_CAPABILITY_RE.search(text)
+    if cap and _CAPABILITY_TOKEN_RE.fullmatch(cap.group(1)) is None:
+        starts.append(cap.start(1))
+    partial_cap = _PARTIAL_CAP_RE.search(text)
+    if partial_cap:
+        starts.append(partial_cap.start(1))
+    auth = _INCOMPLETE_AUTH_RE.search(text)
+    if auth:
+        starts.append(auth.start(1))
+    assignment = _INCOMPLETE_ASSIGNMENT_RE.search(text)
+    if assignment:
+        starts.append(assignment.start(1))
+    ident = _TRAILING_IDENT_RE.search(text)
+    if ident and _ident_looks_sensitive(ident.group(1)):
+        starts.append(ident.start(1))
+    if not starts:
+        return 0
+    return len(text) - min(starts)
+
+
+class StreamingRedactor:
+    """Hold incomplete secret prefixes, then redact committed streaming text."""
+
+    def __init__(self, *, max_len: int | None = None) -> None:
+        self._max_len = max_len
+        self._raw = ""
+        self._emitted = ""
+
+    def ingest(self, delta: str) -> str:
+        if not delta:
+            return ""
+        self._raw += delta
+        return self._release(flush=False)
+
+    def flush(self) -> str:
+        return self._release(flush=True)
+
+    def reset(self) -> None:
+        self._raw = ""
+        self._emitted = ""
+
+    def _release(self, *, flush: bool) -> str:
+        hold = 0 if flush else _secret_hold_length(self._raw)
+        committed = self._raw if hold == 0 else self._raw[:-hold]
+        redacted = truncate_text(_redact_string(committed), self._max_len)
+        if redacted.startswith(self._emitted):
+            new = redacted[len(self._emitted) :]
+        else:
+            new = redacted
+        self._emitted = redacted
+        return new
 
 
 def _truncate(text: str, max_len: int) -> str:

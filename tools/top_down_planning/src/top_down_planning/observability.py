@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -246,6 +247,8 @@ class ProviderToConsoleBridge:
                 self._emit_tool_event("tool:end", event, session_id=session)
             return
         if event_type == "retry":
+            self._context.flush_stream()
+            self._agent_text.reset_turn_buffers()
             fields = self._provider_fields(event)
             fields.update(
                 {
@@ -321,15 +324,15 @@ class ProviderToConsoleBridge:
         summary = str(event.get("summary") or "")
         if not summary:
             return
-        summary = truncate_text(
-            str(redact_value(summary)),
-            self._context.options.max_tool_summary_length,
-        )
         key = _tool_call_key(event, summary)
         seen = self._seen_tool_starts if category == "tool:start" else self._seen_tool_ends
         if key in seen:
             return
         seen.add(key)
+        summary = truncate_text(
+            str(redact_value(summary)),
+            self._context.options.max_tool_summary_length,
+        )
         self._context.emit(
             ConsoleEvent(
                 category=category,
@@ -344,7 +347,8 @@ def _tool_call_key(event: dict[str, Any], summary: str) -> str:
     call_id = event.get("call_id")
     if call_id:
         return f"call:{call_id}"
-    return f"summary:{summary}"
+    digest = hashlib.sha256(summary.encode("utf-8", errors="surrogatepass")).hexdigest()
+    return f"summary:{digest}"
 
 
 def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:

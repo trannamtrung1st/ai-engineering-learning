@@ -270,6 +270,35 @@ def test_handle_audit_event_redacts_secrets_in_notification_body(bridge_send_moc
     assert "[REDACTED]" in combined
 
 
+def test_handle_audit_event_redacts_prefixed_secrets_in_notification_body(
+    bridge_send_mock,
+) -> None:
+    options = NotificationOptions()
+    handle_audit_event(
+        {
+            "type": "run_paused",
+            "stop": {
+                "message": (
+                    "OPENAI_API_KEY=sk-openai-secret access_token=access-token-secret "
+                    "client_secret=client-secret-value authorization=Bearer authz-bearer-secret"
+                )
+            },
+        },
+        run_id="run-1",
+        options=options,
+        phase="planning",
+    )
+    message = bridge_send_mock.call_args.args[1]
+    for secret in (
+        "sk-openai-secret",
+        "access-token-secret",
+        "client-secret-value",
+        "authz-bearer-secret",
+    ):
+        assert secret not in message
+    assert "[REDACTED]" in message
+
+
 def test_handle_audit_event_redacts_secret_before_notification_truncation(
     bridge_send_mock,
 ) -> None:
@@ -307,6 +336,56 @@ def test_handle_audit_event_dedupes_limit_then_pause(bridge_send_mock) -> None:
         dedupe_state=state,
     )
     assert bridge_send_mock.call_count == 1
+
+
+def test_handle_audit_event_limit_then_user_cancelled_still_notifies(
+    bridge_send_mock,
+) -> None:
+    options = NotificationOptions()
+    state = NotificationDedupeState()
+    handle_audit_event(
+        {"type": "planning_limit_exceeded"},
+        run_id="run-1",
+        options=options,
+        phase="planning",
+        dedupe_state=state,
+    )
+    sent = handle_audit_event(
+        {
+            "type": "run_paused",
+            "stop": {"code": "user_cancelled", "message": "cancelled by user"},
+        },
+        run_id="run-1",
+        options=options,
+        phase="planning",
+        dedupe_state=state,
+    )
+    assert sent is True
+    assert bridge_send_mock.call_count == 2
+    assert bridge_send_mock.call_args.args[0] == "TDP run cancelled"
+
+
+def test_handle_audit_event_does_not_dedupe_unrelated_limit_and_pause(
+    bridge_send_mock,
+) -> None:
+    options = NotificationOptions()
+    state = NotificationDedupeState()
+    handle_audit_event(
+        {"type": "planning_limit_exceeded"},
+        run_id="run-1",
+        options=options,
+        phase="planning",
+        dedupe_state=state,
+    )
+    sent = handle_audit_event(
+        {"type": "run_paused", "reason": "provider_unavailable"},
+        run_id="run-1",
+        options=options,
+        phase="production",
+        dedupe_state=state,
+    )
+    assert sent is True
+    assert bridge_send_mock.call_count == 2
 
 
 def test_handle_audit_event_dedupes_pause_and_limit(bridge_send_mock) -> None:

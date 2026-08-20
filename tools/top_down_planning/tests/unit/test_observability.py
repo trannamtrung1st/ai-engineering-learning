@@ -534,7 +534,17 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
         context.emit(
             ConsoleEvent(
                 category="tool:start",
-                message="shell api_key=sk-example-key",
+                message="shell api_key=sk-example-key OPENAI_API_KEY=sk-openai-secret",
+                run_id="run-20260101T001010-001010",
+            )
+        )
+        context.emit(
+            ConsoleEvent(
+                category="error",
+                message=(
+                    "access_token=access-token-secret client_secret=client-secret-value "
+                    "authorization=Bearer authz-bearer-secret"
+                ),
                 run_id="run-20260101T001010-001010",
             )
         )
@@ -547,6 +557,10 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
         "hunter2-password",
         token,
         "sk-example-key",
+        "sk-openai-secret",
+        "access-token-secret",
+        "client-secret-value",
+        "authz-bearer-secret",
     ):
         assert secret not in stderr_text
         assert secret not in transcript
@@ -674,6 +688,24 @@ def test_provider_bridge_drops_exact_duplicate_assistant_text() -> None:
     assert responses == ["same reply"]
 
 
+def test_provider_bridge_redacts_capability_token_split_across_chunks() -> None:
+    stderr = io.StringIO()
+    token = "cap-abc123.deadbeef"
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(color="never"),
+            run_id="run-20260101T001016-001016",
+        )
+        bridge = ProviderToConsoleBridge(context)
+        bridge.handle({"type": "assistant", "text": token[:12]})
+        bridge.handle({"type": "assistant", "text": token})
+        context.close()
+    output = stderr.getvalue()
+    assert token not in output
+    assert "deadbeef" not in output
+    assert "[REDACTED]" in output
+
+
 def test_provider_bridge_keeps_transcript_boundaries_after_retry_and_error(
     tmp_path: Path,
 ) -> None:
@@ -708,6 +740,54 @@ def test_provider_bridge_keeps_transcript_boundaries_after_retry_and_error(
     ]
     assert records[0]["message"] == "before retry"
     assert records[2]["message"] == "after retry"
+
+
+def test_provider_bridge_resets_text_normalization_on_retry() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "assistant", "text": "draft"})
+    bridge.handle({"type": "retry", "text": "provider retry", "attempt": 1})
+    bridge.handle({"type": "assistant", "text": "draft fixed"})
+    responses = [event.message for event in collector.events if event.category == "response"]
+    assert responses == ["draft", "draft fixed"]
+
+
+def test_provider_bridge_emits_full_identical_response_after_retry() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "assistant", "text": "same draft"})
+    bridge.handle({"type": "retry", "text": "provider retry", "attempt": 2})
+    bridge.handle({"type": "assistant", "text": "same draft"})
+    responses = [event.message for event in collector.events if event.category == "response"]
+    assert responses == ["same draft", "same draft"]
+
+
+def test_provider_bridge_keeps_distinct_secret_tool_calls_without_call_id() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "summary": "shell: token=alpha-secret-value",
+        }
+    )
+    bridge.handle(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "summary": "shell: token=beta-secret-value",
+        }
+    )
+    starts = [event for event in collector.events if event.category == "tool:start"]
+    assert len(starts) == 2
+    combined = " ".join(event.message for event in starts)
+    assert "alpha-secret-value" not in combined
+    assert "beta-secret-value" not in combined
+    assert combined.count("[REDACTED]") == 2
 
 
 def test_provider_bridge_redacts_secret_in_truncated_tool_summary() -> None:

@@ -20,7 +20,11 @@ from rich.text import Text
 
 from core_tools.observability.color import ColorMode, resolve_color_mode
 from core_tools.observability.events import ConsoleEvent, category_tag
-from core_tools.observability.redaction import RedactionPolicy, redact_event
+from core_tools.observability.redaction import (
+    RedactionPolicy,
+    StreamingRedactor,
+    redact_event,
+)
 
 _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
 
@@ -79,14 +83,15 @@ class ColorizedConsoleSink:
         self._streaming_line_open = False
         self._streaming_block_category: str | None = None
         self._streaming_session_id: str | None = None
+        self._stream_redactor = StreamingRedactor(max_len=self._policy.max_message_length)
 
     def emit(self, event: ConsoleEvent) -> None:
-        safe = redact_event(event, policy=self._policy)
-        if safe.category in _STREAMING_CATEGORIES:
-            self._emit_stream_delta(safe)
+        if event.category in _STREAMING_CATEGORIES:
+            self._emit_stream_delta(event)
             return
 
         self._end_streaming_line()
+        safe = redact_event(event, policy=self._policy)
         tag = category_tag(safe.category)
         body = _format_message(safe)
         prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
@@ -110,8 +115,17 @@ class ColorizedConsoleSink:
         ):
             self._end_streaming_line()
 
+        piece = self._stream_redactor.ingest(event.message)
+        if not piece:
+            if self._streaming_block_category is None:
+                self._streaming_block_category = event.category
+                self._streaming_session_id = event.session_id
+            return
+        self._write_stream_piece(event, piece)
+
+    def _write_stream_piece(self, event: ConsoleEvent, piece: str) -> None:
         tag = category_tag(event.category)
-        show_prefix = self._streaming_block_category != event.category
+        show_prefix = not self._streaming_line_open
         style = _CATEGORY_STYLES.get(event.category, "")
 
         if show_prefix:
@@ -120,7 +134,7 @@ class ColorizedConsoleSink:
             if self._use_color and style:
                 prefix_text.stylize(style)
             self._console.print(prefix_text, end="", soft_wrap=True)
-        delta_text = Text(event.message)
+        delta_text = Text(piece)
         if self._use_color and style:
             delta_text.stylize(style)
         self._console.print(delta_text, end="", soft_wrap=True)
@@ -133,6 +147,15 @@ class ColorizedConsoleSink:
         self._end_streaming_line()
 
     def _end_streaming_line(self) -> None:
+        rest = self._stream_redactor.flush()
+        if rest:
+            event = ConsoleEvent(
+                category=self._streaming_block_category or "response",
+                message=rest,
+                session_id=self._streaming_session_id,
+            )
+            self._write_stream_piece(event, rest)
+        self._stream_redactor.reset()
         if self._streaming_line_open:
             self._stream.write("\n")
             self._streaming_line_open = False

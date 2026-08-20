@@ -183,6 +183,31 @@ def test_redaction_strips_free_form_secrets_in_strings() -> None:
     assert serialized.count("[REDACTED]") >= 5
 
 
+def test_redaction_strips_prefixed_credential_assignments() -> None:
+    payload = {
+        "openai": "OPENAI_API_KEY=sk-openai-secret",
+        "anthropic": "export ANTHROPIC_API_KEY=sk-anthropic-secret",
+        "access": "access_token=access-token-secret",
+        "refresh": "refresh_token=refresh-token-secret",
+        "client": "client_secret=client-secret-value",
+        "auth_token": "auth_token=auth-token-secret",
+        "authorization": "authorization=Bearer authz-bearer-secret",
+    }
+    redacted = redact_value(payload)
+    serialized = json.dumps(redacted)
+    for secret in (
+        "sk-openai-secret",
+        "sk-anthropic-secret",
+        "access-token-secret",
+        "refresh-token-secret",
+        "client-secret-value",
+        "auth-token-secret",
+        "authz-bearer-secret",
+    ):
+        assert secret not in serialized
+    assert serialized.count("[REDACTED]") >= 7
+
+
 def test_redaction_happens_before_truncation_near_secret() -> None:
     secret = "VISIBLE_SECRET_FRAGMENT"
     text = "prefix api_key=" + secret + ("x" * 40)
@@ -325,6 +350,53 @@ def test_console_sink_flushes_stream_between_same_category_turns() -> None:
 
 
 def test_console_sink_ends_open_stream_before_cancel() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="partial reply"))
+    sink.emit(ConsoleEvent(category="session:cancel", message="cancelled by user"))
+    lines = [line for line in stderr.getvalue().splitlines() if line]
+    assert lines[0].startswith("[response] partial reply")
+    assert lines[1].startswith("[session:cancel] cancelled by user")
+
+
+@pytest.mark.parametrize(
+    ("secret", "split_at"),
+    [
+        ("cap-abc123.deadbeef", 4),
+        ("cap-abc123.deadbeef", 11),
+        ("cap-abc123.deadbeef", 12),
+        ("Authorization: Bearer SUPER_SECRET_BEARER", 22),
+        ("Authorization: Bearer SUPER_SECRET_BEARER", 28),
+        ("OPENAI_API_KEY=sk-openai-secret", 15),
+        ("OPENAI_API_KEY=sk-openai-secret", 16),
+        ("access_token=access-token-secret", 13),
+        ("client_secret=client-secret-value", 14),
+        ("authorization=Bearer authz-bearer-secret", 14),
+        ("authorization=Bearer authz-bearer-secret", 21),
+    ],
+)
+def test_console_sink_redacts_secrets_split_across_stream_deltas(
+    secret: str,
+    split_at: int,
+) -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message=secret[:split_at]))
+    sink.emit(ConsoleEvent(category="response", message=secret[split_at:]))
+    sink.flush_stream()
+    output = stderr.getvalue()
+    assert secret not in output
+    for fragment in (
+        "deadbeef",
+        "SUPER_SECRET_BEARER",
+        "sk-openai-secret",
+        "access-token-secret",
+        "client-secret-value",
+        "authz-bearer-secret",
+    ):
+        if fragment in secret:
+            assert fragment not in output
+    assert "[REDACTED]" in output
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(ConsoleEvent(category="response", message="partial reply"))
