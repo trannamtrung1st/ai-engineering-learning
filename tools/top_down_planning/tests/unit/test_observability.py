@@ -561,7 +561,10 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
                 message=(
                     "accessToken=camel-access-secret clientSecret=camel-client-secret "
                     'authToken=camel-auth-secret --accessToken camel-cli-secret '
-                    '{"accessToken":"camel-json-secret"}'
+                    '{"accessToken":"camel-json-secret"} '
+                    "echo 'password=quoted-wrap-secret' "
+                    "curl -H 'Authorization: Bearer quoted-auth-secret' "
+                    '{"note":"cap-abc123.deadbeef"}'
                 ),
                 run_id="run-20260101T001010-001010",
             )
@@ -585,6 +588,9 @@ def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
         "camel-auth-secret",
         "camel-cli-secret",
         "camel-json-secret",
+        "quoted-wrap-secret",
+        "quoted-auth-secret",
+        "deadbeef",
     ):
         assert secret not in stderr_text
         assert secret not in transcript
@@ -935,11 +941,12 @@ def test_provider_bridge_redacts_camelcase_secret_in_tool_summary() -> None:
             "type": "tool_call",
             "subtype": "started",
             "call_id": "call-camel",
-            "summary": "shell accessToken=camel-tool-secret",
+            "summary": "shell accessToken=camel-tool-secret curl -H 'Authorization: Bearer quoted-tool-secret'",
         }
     )
     summary = collector.events[0].message
     assert "camel-tool-secret" not in summary
+    assert "quoted-tool-secret" not in summary
     assert "[REDACTED]" in summary
 
 

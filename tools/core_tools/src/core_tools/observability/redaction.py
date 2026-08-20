@@ -118,6 +118,7 @@ _HOLD_ATOMS = (
     "cap",
 )
 _MAX_ATOM = max(len(atom) for atom in _HOLD_ATOMS)
+_MAX_CAP_HOLD = 128
 _SIMPLE_ESCAPES = {
     '"': '"',
     "'": "'",
@@ -156,8 +157,10 @@ class StreamingRedactor:
         self._prev_was_api = False
         self._bare_credential = False
         self._auth_key = False
-        self._ws = ""
         self._key_quote = ""
+        self._quote = ""
+        self._cap_held = ""
+        self._cap_seen_dot = False
         self._cli = False
         self._auth = False
         self._dash = False
@@ -185,8 +188,10 @@ class StreamingRedactor:
         self._prev_was_api = False
         self._bare_credential = False
         self._auth_key = False
-        self._ws = ""
         self._key_quote = ""
+        self._quote = ""
+        self._cap_held = ""
+        self._cap_seen_dot = False
         self._cli = False
         self._auth = False
         self._dash = False
@@ -200,7 +205,14 @@ class StreamingRedactor:
     def pending_span(self) -> int:
         held = max(0, len(self._component) - self._emitted)
         unicode_len = len(self._unicode_hex) if self._unicode_hex is not None else 0
-        return held + len(self._ws) + len(self._trunc_hold) + unicode_len + int(self._dash) + int(self._escape)
+        return (
+            held
+            + len(self._cap_held)
+            + len(self._trunc_hold)
+            + unicode_len
+            + int(self._dash)
+            + int(self._escape)
+        )
 
     def _lex(self, incoming: str, *, flush: bool) -> str:
         outgoing = [self._step(char) for char in incoming]
@@ -215,6 +227,8 @@ class StreamingRedactor:
             return self._step_ident(char)
         if self._state == "quoted_key":
             return self._step_quoted_key(char)
+        if self._state == "cap_candidate":
+            return self._step_cap_candidate(char)
         if self._state == "after_ident":
             return self._step_after_ident(char)
         if self._state == "value_start":
@@ -256,7 +270,6 @@ class StreamingRedactor:
         self._prev_was_api = False
         self._bare_credential = False
         self._auth_key = False
-        self._ws = ""
         self._key_quote = ""
         self._cli = cli
         self._auth = False
@@ -268,16 +281,24 @@ class StreamingRedactor:
         self._emitted = 0
         self._component_intact = True
 
-    def _step_ident(self, char: str) -> str:
-        if (
+    def _is_cap_hyphen(self, char: str) -> bool:
+        return (
             char == "-"
             and not self._cli
             and self._component_intact
             and self._component.lower() == "cap"
-        ):
-            self._start_component()
-            self._state = "cap"
-            return _REDACTED
+        )
+
+    def _begin_cap_candidate(self) -> str:
+        self._start_component()
+        self._state = "cap_candidate"
+        self._cap_held = "cap-"
+        self._cap_seen_dot = False
+        return ""
+
+    def _step_ident(self, char: str) -> str:
+        if self._is_cap_hyphen(char):
+            return self._begin_cap_candidate()
         if _is_ident_char(char):
             return self._feed_ident_char(char)
         outgoing = self._complete_component()
@@ -285,9 +306,8 @@ class StreamingRedactor:
             if self._sensitive and (self._cli or self._bare_credential):
                 return outgoing + self._open_value(char)
             if self._sensitive:
-                self._ws = char
                 self._state = "after_ident"
-                return outgoing
+                return f"{outgoing}{char}"
             self._reset_ident()
             return f"{outgoing}{char}"
         if char in "=:":
@@ -300,11 +320,11 @@ class StreamingRedactor:
 
     def _feed_ident_char(self, char: str) -> str:
         outgoing = ""
+        if self._is_cap_hyphen(char):
+            return outgoing + self._begin_cap_candidate()
         if char in "_-":
             outgoing += self._complete_component()
             self._start_component()
-            if self._key_quote:
-                return outgoing
             return f"{outgoing}{char}"
         if self._component:
             last = self._component[-1]
@@ -335,19 +355,17 @@ class StreamingRedactor:
 
     def _push_char(self, char: str) -> str:
         if not self._component_intact:
-            return "" if self._key_quote else char
+            return char
         self._component += char
         if len(self._component) > _MAX_ATOM:
             self._component_intact = False
-            outgoing = "" if self._key_quote else self._component[self._emitted :]
+            outgoing = self._component[self._emitted :]
             self._start_component()
             self._component_intact = False
             return outgoing
         return self._release_hold()
 
     def _release_hold(self) -> str:
-        if self._key_quote:
-            return ""
         hold = _hold_suffix_len(self._component)
         available = len(self._component) - hold
         if available <= self._emitted:
@@ -373,7 +391,7 @@ class StreamingRedactor:
 
     def _complete_component(self) -> str:
         self._apply_component_sensitivity()
-        outgoing = "" if self._key_quote else self._component[self._emitted :]
+        outgoing = self._component[self._emitted :]
         self._start_component()
         return outgoing
 
@@ -387,49 +405,56 @@ class StreamingRedactor:
                     decoded = ""
                 self._unicode_hex = None
                 if decoded:
-                    self._feed_quoted_decoded(decoded)
+                    return char + self._feed_quoted_decoded(decoded)
             return char
         if self._escape:
             self._escape = False
             if char == "u":
                 self._unicode_hex = ""
-                return char
-            self._feed_quoted_decoded(_SIMPLE_ESCAPES.get(char, char))
-            return char
+                return f"\\{char}"
+            outgoing = self._complete_component()
+            return outgoing + "\\" + char + self._feed_quoted_decoded(_SIMPLE_ESCAPES.get(char, char))
         if char == "\\":
             self._escape = True
-            return char
+            return ""
         if char == self._key_quote:
-            self._complete_component()
+            outgoing = self._complete_component()
             if self._sensitive:
                 self._state = "after_ident"
-                self._ws = ""
-                return char
+                return outgoing + char
             self._reset_ident()
-            return char
-        if not _is_ident_char(char):
-            self._complete_component()
-            self._reset_ident()
-            return self._step_normal(char)
-        self._feed_quoted_decoded(char)
-        return char
-
-    def _feed_quoted_decoded(self, char: str) -> None:
+            return outgoing + char
+        if char in "=:":
+            outgoing = self._complete_component()
+            if self._sensitive:
+                return outgoing + self._open_value(char)
+            return outgoing + char
+        if char in " \t":
+            outgoing = self._complete_component()
+            if self._sensitive:
+                self._state = "after_ident"
+                return outgoing + char
+            return outgoing + char
         if _is_ident_char(char):
-            self._feed_ident_char(char)
-            return
-        self._complete_component()
+            return self._feed_ident_char(char)
+        outgoing = self._complete_component()
         self._start_component()
+        return outgoing + char
+
+    def _feed_quoted_decoded(self, char: str) -> str:
+        if _is_ident_char(char):
+            return self._feed_ident_char(char)
+        outgoing = self._complete_component()
+        self._start_component()
+        return outgoing
 
     def _step_after_ident(self, char: str) -> str:
         if char in " \t":
-            self._ws += char
-            return ""
+            return char
         if char in "=:":
             return self._open_value(char)
-        emitted = f"{self._component[self._emitted :]}{self._ws}" if not self._key_quote else self._ws
         self._reset_ident()
-        return f"{emitted}{self._step_normal(char)}"
+        return self._step_normal(char)
 
     def _step_value_start(self, char: str) -> str:
         if char in " \t":
@@ -459,28 +484,62 @@ class StreamingRedactor:
         return ""
 
     def _step_unquoted_value(self, char: str) -> str:
-        if char.isspace() or char in ",;}]":
+        if char == self._quote or char.isspace() or char in ",;}]":
             self._state = "normal"
+            if char == self._quote:
+                self._quote = ""
             return char
         return ""
 
     def _step_line_value(self, char: str) -> str:
-        if char in "\r\n":
+        if char in "\r\n" or char == self._quote:
             self._state = "normal"
+            if char == self._quote:
+                self._quote = ""
             return char
         return ""
+
+    def _step_cap_candidate(self, char: str) -> str:
+        if char.isalnum() or char in "._-":
+            self._cap_held += char
+            if char == ".":
+                self._cap_seen_dot = True
+            elif self._cap_seen_dot and char.isalnum():
+                self._cap_held = ""
+                self._cap_seen_dot = False
+                self._state = "cap"
+                return _REDACTED
+            if len(self._cap_held) >= _MAX_CAP_HOLD:
+                outgoing = self._cap_held
+                self._cap_held = ""
+                self._cap_seen_dot = False
+                self._state = "normal"
+                return outgoing
+            return ""
+        outgoing = self._cap_held
+        self._cap_held = ""
+        self._cap_seen_dot = False
+        self._state = "normal"
+        return outgoing + self._step(char)
 
     def _step_cap(self, char: str) -> str:
         if char.isalnum() or char in "._-":
             return ""
+        quote = self._key_quote or self._quote
         self._state = "normal"
-        return char
+        if quote and char == quote:
+            self._reset_ident()
+            return char
+        self._reset_ident()
+        return self._step(char)
 
     def _open_value(self, separator: str) -> str:
-        rest = "" if self._key_quote else self._component[self._emitted :]
-        emitted = f"{rest}{self._ws}{separator}{_REDACTED}"
+        rest = self._component[self._emitted :]
+        emitted = f"{rest}{separator}{_REDACTED}"
         auth = self._auth_key
+        quote = self._key_quote or self._quote
         self._reset_ident()
+        self._quote = quote
         self._auth = auth
         self._state = "value_start"
         return emitted
@@ -492,8 +551,8 @@ class StreamingRedactor:
         self._prev_was_api = False
         self._bare_credential = False
         self._auth_key = False
-        self._ws = ""
         self._key_quote = ""
+        self._quote = ""
         self._cli = False
         self._auth = False
         self._unicode_hex = None
@@ -503,15 +562,28 @@ class StreamingRedactor:
         if self._dash:
             self._dash = False
             return "-"
+        if self._escape:
+            self._escape = False
+            held = self._complete_component() if self._state in {"ident", "quoted_key"} else ""
+            if self._state == "quoted_key":
+                self._reset_ident()
+            return f"{held}\\"
+        if self._state == "cap_candidate":
+            outgoing = self._cap_held
+            self._cap_held = ""
+            self._cap_seen_dot = False
+            self._reset_ident()
+            return outgoing
         if self._state == "ident":
             emitted = self._complete_component()
             self._reset_ident()
             return emitted
         if self._state == "quoted_key":
+            emitted = self._complete_component()
             self._reset_ident()
-            return ""
+            return emitted
         if self._state == "after_ident":
-            emitted = f"{self._component[self._emitted :]}{self._ws}" if not self._key_quote else self._ws
+            emitted = self._component[self._emitted :]
             self._reset_ident()
             return emitted
         self._state = "normal"

@@ -16,7 +16,7 @@ _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
 @dataclass
 class _StreamBuffer:
     category: str
-    message: str
+    chunks: list[str]
     event: ConsoleEvent
 
 
@@ -47,9 +47,9 @@ class JsonlEventSink:
                 self._flush_key(key)
                 buffered = None
             if buffered is None:
-                self._streams[key] = _StreamBuffer(event.category, event.message, event)
+                self._streams[key] = _StreamBuffer(event.category, [event.message], event)
             else:
-                buffered.message += event.message
+                buffered.chunks.append(event.message)
                 buffered.event = event
             return
 
@@ -75,7 +75,7 @@ class JsonlEventSink:
         self._write_event(
             ConsoleEvent(
                 category=buffered.category,
-                message=buffered.message,
+                message="".join(buffered.chunks),
                 ts=buffered.event.ts,
                 fields=dict(buffered.event.fields),
                 level=buffered.event.level,

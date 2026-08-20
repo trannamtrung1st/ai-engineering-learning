@@ -278,6 +278,13 @@ def test_redaction_strips_json_quoted_secret_keys() -> None:
     assert serialized.count("[REDACTED]") >= 4
 
 
+def test_redaction_keeps_benign_cap_prefixed_words() -> None:
+    text = "see cap-table cap-rate and cap-file"
+    safe = redact_value(text)
+    assert safe == text
+    assert "[REDACTED]" not in safe
+
+
 def test_redaction_keeps_benign_assignment_identifiers() -> None:
     text = "tokenizer=bert-base secretary=Alice notsecret=value"
     safe = redact_value(text)
@@ -353,6 +360,17 @@ def test_filtered_sink_respects_quiet_and_no_agent_text() -> None:
     sink.emit(ConsoleEvent(category="response", message="hello"))
     sink.emit(ConsoleEvent(category="error", message="boom"))
     assert [event.category for event in collector.events] == ["error"]
+
+
+def test_jsonl_sink_joins_many_stream_chunks_exactly_once(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    expected = "".join(str(index % 10) for index in range(2000))
+    for char in expected:
+        sink.emit(ConsoleEvent(category="response", message=char))
+    sink.close()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["message"] == expected
 
 
 def test_jsonl_sink_aggregates_thinking_and_response_deltas(tmp_path) -> None:
@@ -489,6 +507,12 @@ _SPLIT_SECRET_FORMS = (
     ("--accessToken camel-cli-split-secret", "camel-cli-split-secret"),
     ("cap-abc123.deadbeef", "deadbeef"),
     ("AWS_SECRET_ACCESS_KEY_" + ("x" * 100) + "=long-key-secret", "long-key-secret"),
+    ("'password=quoted-wrap-secret'", "quoted-wrap-secret"),
+    ('"accessToken=quoted-camel-secret"', "quoted-camel-secret"),
+    ("'Authorization: Bearer quoted-auth-secret'", "quoted-auth-secret"),
+    ('"cap-abc123.deadbeef"', "deadbeef"),
+    ("curl -H 'Authorization: Token quoted-header-secret'", "quoted-header-secret"),
+    ('{"note":"cap-abc123.deadbeef"}', "deadbeef"),
 )
 
 
@@ -742,6 +766,19 @@ def test_streaming_redactor_long_benign_stream_is_linear_and_exact() -> None:
         assert redactor.pending_span() <= 32
     pieces.append(redactor.flush())
     assert "".join(pieces) == "ab" * 4000
+
+
+def test_streaming_redactor_after_ident_whitespace_stays_bounded() -> None:
+    redactor = StreamingRedactor()
+    pieces = [redactor.ingest("password")]
+    for _ in range(4000):
+        pieces.append(redactor.ingest(" "))
+        assert redactor.pending_span() <= 32
+    pieces.append(redactor.ingest("ok"))
+    pieces.append(redactor.flush())
+    output = "".join(pieces)
+    assert output == "password" + (" " * 4000) + "ok"
+    assert "[REDACTED]" not in output
 
 
 def test_streaming_redactor_long_quoted_prose_stays_bounded_and_exact() -> None:
