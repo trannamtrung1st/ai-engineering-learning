@@ -280,9 +280,9 @@ def recovery_fields(
         return {"command": "doctor", "run_id": identity}
     if code == "prepare_incomplete":
         return {"command": "resume", "run_id": identity}
+    if code in {"package_build_failed", "operational_error"} and str(phase or "") == "plan_validated":
+        return {"command": "prepare", "planning_run_id": identity}
     if code == "package_build_failed":
-        if str(phase or "") == "plan_validated":
-            return {"command": "prepare", "planning_run_id": identity}
         return {"command": "resume", "run_id": identity}
     if code.startswith("sub_tdp_") or code.startswith("package_"):
         return {"command": "inspect", "run_id": identity}
@@ -430,7 +430,28 @@ def emit_error_with_fields(
         if extra:
             payload.update(extra)
         emit_payload(payload, exit_code=exit_code)
-    print(message, file=sys.stderr)
+    lines = [message]
+    if extra:
+        run_id = str(extra.get("run_id") or "").strip()
+        planning_run_id = str(extra.get("planning_run_id") or "").strip()
+        if run_id:
+            lines.append(f"Run: {run_id}")
+        if planning_run_id and planning_run_id != run_id:
+            lines.append(f"Planning run: {planning_run_id}")
+        recovery = extra.get("recovery")
+        if isinstance(recovery, dict):
+            command = str(recovery.get("command") or "").strip()
+            target = str(
+                recovery.get("planning_run_id") or recovery.get("run_id") or ""
+            ).strip()
+            if command == "prepare" and target:
+                lines.append(f"Next: tdp prepare --planning-run {target}")
+            elif command and target:
+                flag = "--planning-run" if command == "prepare" else "--run"
+                lines.append(f"Next: tdp {command} {flag} {target}")
+            elif command:
+                lines.append(f"Next: tdp {command}")
+    print("\n".join(lines), file=sys.stderr)
     raise SystemExit(exit_code)
 
 

@@ -19,6 +19,7 @@ from top_down_planning.cli.common import (
     emit_run_access_error,
     emit_create_run_error,
     emit_continue_run_error,
+    emit_error_with_fields,
     run_access_boundary,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
@@ -410,7 +411,7 @@ def handle_run_command(args: Namespace) -> None:
         resolved_runs=resolved_runs,
     )
     try:
-        store.create_run(
+        created = store.create_run(
             run_id,
             plan=plan,
             resolved_config=resolved,
@@ -429,16 +430,18 @@ def handle_run_command(args: Namespace) -> None:
                 }
             ],
         )
+        run_id = str(created.get("id") or run_id)
     except PersistenceError as exc:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
     except KeyboardInterrupt:
-        emit_error_message(
+        emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
+            extra={"run_id": run_id} if run_id else None,
         )
 
     diagnostics = run_startup_diagnostics_payload(

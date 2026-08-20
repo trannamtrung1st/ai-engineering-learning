@@ -43,6 +43,7 @@ def _assert_operational_without_traceback(result: CliResult) -> None:
 def _fail_load_run_after_continue(continue_fn):
     continued = {"done": False}
     real_load = FileRunStore.load_run
+    real_snapshot = FileRunStore.load_canonical_snapshot
 
     def continue_wrapper(*args, **kwargs):
         result = continue_fn(*args, **kwargs)
@@ -55,7 +56,13 @@ def _fail_load_run_after_continue(continue_fn):
             raise PermissionError("denied")
         return real_load(self, run_id)
 
-    return continue_wrapper, load_wrapper
+    def snapshot_wrapper(self, run_id):
+        if continued["done"]:
+            continued["done"] = False
+            raise PermissionError("denied")
+        return real_snapshot(self, run_id)
+
+    return continue_wrapper, load_wrapper, snapshot_wrapper
 
 
 def test_run_final_load_run_oserror_is_operational_not_traceback(tmp_path: Path) -> None:
@@ -73,7 +80,7 @@ def test_run_final_load_run_oserror_is_operational_not_traceback(tmp_path: Path)
         target_reached=True,
     )
     engine = MagicMock()
-    continue_wrapper, load_wrapper = _fail_load_run_after_continue(
+    continue_wrapper, load_wrapper, _snapshot_wrapper = _fail_load_run_after_continue(
         lambda *args, **kwargs: continuation
     )
     engine.continue_run.side_effect = continue_wrapper
@@ -109,7 +116,7 @@ def test_resume_final_load_run_oserror_is_operational_not_traceback(tmp_path: Pa
         target_reached=False,
     )
     engine = MagicMock()
-    continue_wrapper, load_wrapper = _fail_load_run_after_continue(
+    continue_wrapper, load_wrapper, _snapshot_wrapper = _fail_load_run_after_continue(
         lambda *args, **kwargs: continuation
     )
     engine.continue_run.side_effect = continue_wrapper
@@ -156,7 +163,7 @@ def test_prepare_final_load_run_oserror_is_operational_not_traceback(tmp_path: P
         return continuation
 
     engine = MagicMock()
-    continue_wrapper, load_wrapper = _fail_load_run_after_continue(_continue)
+    continue_wrapper, load_wrapper, snapshot_wrapper = _fail_load_run_after_continue(_continue)
     engine.continue_run.side_effect = continue_wrapper
 
     argv = [
@@ -176,6 +183,7 @@ def test_prepare_final_load_run_oserror_is_operational_not_traceback(tmp_path: P
             return_value=built,
         ),
         patch.object(FileRunStore, "load_run", load_wrapper),
+        patch.object(FileRunStore, "load_canonical_snapshot", snapshot_wrapper),
     ):
         structured = run_cli(argv)
         human = run_cli(argv[:-1])
@@ -195,7 +203,7 @@ def test_execute_final_load_run_oserror_is_operational_not_traceback(tmp_path: P
         target_reached=True,
     )
     engine = MagicMock()
-    continue_wrapper, load_wrapper = _fail_load_run_after_continue(
+    continue_wrapper, load_wrapper, _snapshot_wrapper = _fail_load_run_after_continue(
         lambda *args, **kwargs: continuation
     )
     engine.continue_run.side_effect = continue_wrapper
@@ -232,7 +240,7 @@ def test_cancelled_run_still_exits_130_when_final_load_run_fails(tmp_path: Path)
         reason="cancelled by user",
     )
     engine = MagicMock()
-    continue_wrapper, load_wrapper = _fail_load_run_after_continue(
+    continue_wrapper, load_wrapper, _snapshot_wrapper = _fail_load_run_after_continue(
         lambda *args, **kwargs: continuation
     )
     engine.continue_run.side_effect = continue_wrapper
@@ -252,7 +260,7 @@ def test_cancelled_run_still_exits_130_when_final_load_run_fails(tmp_path: Path)
     assert "Traceback" not in structured.stdout
     assert "Traceback" not in structured.stderr
 
-    continue_wrapper, load_wrapper = _fail_load_run_after_continue(
+    continue_wrapper, load_wrapper, _snapshot_wrapper = _fail_load_run_after_continue(
         lambda *args, **kwargs: continuation
     )
     engine.continue_run.side_effect = continue_wrapper

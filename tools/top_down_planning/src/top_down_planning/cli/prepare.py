@@ -54,13 +54,19 @@ from core_tools.observability import ConsoleEvent
 
 def handle_prepare_command(args: Namespace) -> None:
     planning_run = str(getattr(args, "planning_run", "") or "").strip()
-    explicit_runs = bool(str(getattr(args, "runs_dir", "") or "").strip())
-    if not args.config and not (planning_run and explicit_runs):
+    if not args.config and not planning_run:
         emit_error_message(
             "tdp prepare requires --config, or --planning-run with --runs-dir",
             exit_code=2,
             stream_json=args.stream_json,
             code="missing_config",
+        )
+    if planning_run and not args.config and list(getattr(args, "set", None) or []):
+        emit_error_message(
+            "--planning-run without --config rejects --set",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="config_error",
         )
 
     resolved: dict[str, Any] | None = None
@@ -99,15 +105,16 @@ def handle_prepare_command(args: Namespace) -> None:
         emit_operational_error(exc, stream_json=args.stream_json)
 
     if planning_run:
-        for raw in list(getattr(args, "set", None) or []):
-            path = str(raw).split("=", 1)[0].strip()
-            if path and not is_allowed_presentation_override_path(path):
-                emit_error_message(
-                    f"--planning-run rejects semantic override {path}",
-                    exit_code=2,
-                    stream_json=args.stream_json,
-                    code="config_error",
-                )
+        if args.config:
+            for raw in list(getattr(args, "set", None) or []):
+                path = str(raw).split("=", 1)[0].strip()
+                if path and not is_allowed_presentation_override_path(path):
+                    emit_error_message(
+                        f"--planning-run rejects semantic override {path}",
+                        exit_code=2,
+                        stream_json=args.stream_json,
+                        code="config_error",
+                    )
         run_id = require_cli_run_id(planning_run, stream_json=args.stream_json)
         try:
             snapshot = store.load_canonical_snapshot(run_id)
@@ -118,11 +125,12 @@ def handle_prepare_command(args: Namespace) -> None:
                 extra={"planning_run_id": run_id, "run_id": run_id},
             )
         except KeyboardInterrupt:
-            emit_error_message(
+            emit_error_with_fields(
                 "cancelled by user",
                 exit_code=130,
                 stream_json=args.stream_json,
                 code="user_cancelled",
+                extra={"run_id": run_id, "planning_run_id": run_id},
             )
         if resolve_run_kind(snapshot.run) != RUN_KIND_PLANNING:
             emit_error_message(
@@ -188,7 +196,7 @@ def handle_prepare_command(args: Namespace) -> None:
     run_id = new_run_id()
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
     try:
-        store.create_run(
+        created = store.create_run(
             run_id,
             plan=plan,
             resolved_config=resolved,
@@ -207,16 +215,18 @@ def handle_prepare_command(args: Namespace) -> None:
                 }
             ],
         )
+        run_id = str(created.get("id") or run_id)
     except PersistenceError as exc:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
     except KeyboardInterrupt:
-        emit_error_message(
+        emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
+            extra={"run_id": run_id, "planning_run_id": run_id},
         )
 
     diagnostics = run_startup_diagnostics_payload(
@@ -282,8 +292,15 @@ def handle_prepare_command(args: Namespace) -> None:
             status=continuation.status,
         )
 
-    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
-    if str(run_record.get("phase") or "") != PLAN_VALIDATED:
+    try:
+        snapshot = store.load_canonical_snapshot(run_id)
+    except (PersistenceError, OSError) as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"planning_run_id": run_id, "run_id": run_id},
+        )
+    if str(snapshot.run.get("phase") or "") != PLAN_VALIDATED:
         emit_error_with_fields(
             continuation.reason or "prepare did not reach plan_validated",
             exit_code=1,
@@ -292,12 +309,12 @@ def handle_prepare_command(args: Namespace) -> None:
             extra={
                 "run_id": run_id,
                 "planning_run_id": run_id,
-                "phase": str(run_record.get("phase") or ""),
+                "phase": str(snapshot.run.get("phase") or ""),
                 "recovery": recovery_fields(
                     code="prepare_incomplete",
                     run_id=run_id,
                     planning_run_id=run_id,
-                    phase=str(run_record.get("phase") or ""),
+                    phase=str(snapshot.run.get("phase") or ""),
                 ),
             },
         )
@@ -307,6 +324,7 @@ def handle_prepare_command(args: Namespace) -> None:
         store=store,
         run_id=run_id,
         output_dir=output_dir,
+        snapshot=snapshot,
     )
 
 
@@ -338,7 +356,7 @@ def _materialize_prepare_package(
                     code="package_build_failed",
                     run_id=run_id,
                     planning_run_id=run_id,
-                    phase=PLAN_VALIDATED if snapshot is not None else None,
+                    phase=PLAN_VALIDATED,
                 ),
             },
         )
@@ -352,14 +370,19 @@ def _materialize_prepare_package(
         emit_run_access_error(
             exc,
             stream_json=args.stream_json,
-            extra={"planning_run_id": run_id, "run_id": run_id},
+            extra={
+                "planning_run_id": run_id,
+                "run_id": run_id,
+                "phase": PLAN_VALIDATED,
+            },
         )
     except KeyboardInterrupt:
-        emit_error_message(
+        emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
+            extra={"run_id": run_id, "planning_run_id": run_id},
         )
 
     planning = built.manifest.get("planning_run") or {}
@@ -371,6 +394,8 @@ def _materialize_prepare_package(
         "plan_revision": planning.get("approved_plan_revision"),
         "plan_digest": planning.get("approved_plan_digest"),
     }
+    if getattr(built, "cleanup_warning", None):
+        payload["cleanup_warning"] = built.cleanup_warning
     emit_command_result(
         payload,
         human_message=(

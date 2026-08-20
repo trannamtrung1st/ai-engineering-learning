@@ -104,7 +104,6 @@ def persist_package_in_store(
                 label="package staging",
             )
             backup: Path | None = None
-            published = False
             try:
                 if staging.exists():
                     shutil.rmtree(staging)
@@ -118,7 +117,6 @@ def persist_package_in_store(
                     )
                     target_dir.rename(backup)
                 staging.rename(target_dir)
-                published = True
                 if backup is not None and backup.exists():
                     try:
                         shutil.rmtree(backup)
@@ -126,7 +124,7 @@ def persist_package_in_store(
                         pass
                 return target_manifest
             except BaseException:
-                if published and target_dir.exists():
+                if target_dir.exists() and (target_dir / "manifest.json").is_file():
                     return target_manifest
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)

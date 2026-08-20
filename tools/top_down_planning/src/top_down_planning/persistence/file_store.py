@@ -438,10 +438,17 @@ class FileRunStore:
                 )
                 staging_dir.rename(final_run_dir)
                 remove_creation_lock = True
-            except BaseException:
+            except BaseException as exc:
                 if staging_dir.exists():
                     shutil.rmtree(staging_dir)
-                raise
+                if final_run_dir.exists() and (final_run_dir / "run.json").is_file():
+                    remove_creation_lock = True
+                    if isinstance(exc, KeyboardInterrupt):
+                        canonical_run = self._read_run(validated_run_id)
+                    else:
+                        raise
+                else:
+                    raise
         finally:
             if creation_lock_path.exists() and (
                 remove_creation_lock or not final_run_dir.exists()

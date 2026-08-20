@@ -117,6 +117,7 @@ class BuiltExecutionPackage:
     package_id: str
     manifest_path: Path
     manifest: dict[str, Any]
+    cleanup_warning: str | None = None
 
 
 class ExecutionPackageBuilder:
@@ -134,6 +135,12 @@ class ExecutionPackageBuilder:
         if snapshot is None:
             snapshot = store.load_canonical_snapshot(planning_run_id)
         run = snapshot.run
+        snapshot_run_id = str(run.get("id") or "").strip()
+        if snapshot_run_id != str(planning_run_id):
+            raise ValueError(
+                "snapshot run id does not match planning_run_id: "
+                f"{snapshot_run_id!r} != {planning_run_id!r}"
+            )
         from top_down_planning.domain.run_kind import RUN_KIND_PLANNING, resolve_run_kind
         from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 
@@ -167,7 +174,7 @@ class ExecutionPackageBuilder:
 
         staging = output_dir.parent / f".staging-{output_dir.name}-{uuid.uuid4().hex[:8]}"
         backup: Path | None = None
-        published = False
+        cleanup_warning: str | None = None
         built: BuiltExecutionPackage | None = None
         try:
             if staging.exists():
@@ -194,23 +201,29 @@ class ExecutionPackageBuilder:
                 backup = output_dir.parent / f".backup-{output_dir.name}-{uuid.uuid4().hex[:8]}"
                 output_dir.rename(backup)
             staging.rename(output_dir)
-            published = True
             if backup is not None and backup.exists():
                 try:
                     shutil.rmtree(backup)
                 except (OSError, KeyboardInterrupt):
-                    pass
+                    cleanup_warning = f"left leftover backup at {backup}"
             return BuiltExecutionPackage(
                 package_id=built.package_id,
                 manifest_path=output_dir / "manifest.json",
                 manifest=built.manifest,
+                cleanup_warning=cleanup_warning,
             )
         except BaseException:
-            if published and built is not None and output_dir.exists():
+            published = (
+                built is not None
+                and output_dir.exists()
+                and (output_dir / "manifest.json").is_file()
+            )
+            if published:
                 return BuiltExecutionPackage(
                     package_id=built.package_id,
                     manifest_path=output_dir / "manifest.json",
                     manifest=built.manifest,
+                    cleanup_warning=cleanup_warning,
                 )
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)

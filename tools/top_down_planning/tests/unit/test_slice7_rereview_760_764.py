@@ -572,14 +572,23 @@ def test_post_publish_create_run_read_failure_is_corrupt_run(
     if stream_json:
         argv.append("--stream-json")
     real_load = FileRunStore.load_run
+    real_snapshot = FileRunStore.load_canonical_snapshot
 
     def load_run_after_publish(self, rid):
         if (self.root / rid).is_dir():
             raise PersistenceError("post-publish canonical read failed")
         return real_load(self, rid)
 
+    def load_snapshot_after_publish(self, rid):
+        if (self.root / rid).is_dir():
+            raise PersistenceError("post-publish canonical read failed")
+        return real_snapshot(self, rid)
+
     with ExitStack() as stack:
         stack.enter_context(patch.object(FileRunStore, "load_run", load_run_after_publish))
+        stack.enter_context(
+            patch.object(FileRunStore, "load_canonical_snapshot", load_snapshot_after_publish)
+        )
         for item in _engine_patches(tmp_path):
             stack.enter_context(item)
         result = run_cli(argv)

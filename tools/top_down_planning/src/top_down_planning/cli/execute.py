@@ -417,18 +417,13 @@ def handle_execute_command(args: Namespace) -> None:
         extra = {"run_id": run_id} if run_id else None
         emit_run_access_error(exc, stream_json=args.stream_json, extra=extra)
     except KeyboardInterrupt:
-        if run_id:
-            emit_error_message(
-                "cancelled by user",
-                exit_code=130,
-                stream_json=args.stream_json,
-                code="user_cancelled",
-            )
-        emit_error_message(
+        extra = {"run_id": run_id} if run_id else None
+        emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
+            extra=extra,
         )
 
     _drive_execution_run(
@@ -510,6 +505,7 @@ def _execute_unit(
             stream_json=args.stream_json,
             code="sub_tdp_baseline_invalid",
         )
+    child_run_id = ""
     try:
         child_run_id = executor.create_or_load_child_run(
             store,
@@ -539,6 +535,12 @@ def _execute_unit(
         emit_run_access_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
+    except RunOwnershipError as exc:
+        emit_continue_run_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id} if child_run_id else None,
+        )
 
     observability = build_observability_context(
         options=invocation_opts.observability,
@@ -606,6 +608,12 @@ def _execute_unit(
         )
     except OSError as exc:
         emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": child_run_id},
+        )
+    except RunOwnershipError as exc:
+        emit_continue_run_error(
             exc,
             stream_json=args.stream_json,
             extra={"run_id": child_run_id},

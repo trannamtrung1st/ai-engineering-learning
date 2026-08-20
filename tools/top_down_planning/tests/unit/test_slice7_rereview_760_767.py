@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,15 +30,27 @@ from tests.unit.test_slice7_rereview_760_764 import (
 )
 
 
+@contextmanager
 def _patch_prepare_plan_validated():
     real_load = FileRunStore.load_run
+    real_snapshot = FileRunStore.load_canonical_snapshot
 
     def load_as_validated(self, rid, *args, **kwargs):
         run = dict(real_load(self, rid, *args, **kwargs))
         run["phase"] = "plan_validated"
         return run
 
-    return patch.object(FileRunStore, "load_run", load_as_validated)
+    def snapshot_as_validated(self, rid, *args, **kwargs):
+        snapshot = real_snapshot(self, rid, *args, **kwargs)
+        run = dict(snapshot.run)
+        run["phase"] = "plan_validated"
+        return replace(snapshot, run=run)
+
+    with (
+        patch.object(FileRunStore, "load_run", load_as_validated),
+        patch.object(FileRunStore, "load_canonical_snapshot", snapshot_as_validated),
+    ):
+        yield
 
 
 def _load_dependent_package(tmp_path: Path):
