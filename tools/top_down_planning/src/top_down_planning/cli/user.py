@@ -433,6 +433,13 @@ def handle_run_command(args: Namespace) -> None:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
+    except KeyboardInterrupt:
+        emit_error_message(
+            "cancelled by user",
+            exit_code=130,
+            stream_json=args.stream_json,
+            code="user_cancelled",
+        )
 
     diagnostics = run_startup_diagnostics_payload(
         cwd=cwd,
@@ -484,10 +491,7 @@ def handle_run_command(args: Namespace) -> None:
             emit_continue_run_error(
                 exc,
                 stream_json=args.stream_json,
-                extra={
-                    "run_id": run_id,
-                    "recovery": {"command": "resume", "run_id": run_id},
-                },
+                extra={"run_id": run_id},
             )
     finally:
         observability.close()

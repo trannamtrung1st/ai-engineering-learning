@@ -183,8 +183,21 @@ def test_post_create_continue_run_errors_include_run_identity(
     _assert_structured_error(result, code)
     assert payload.get("run_id") == run_id
     recovery = payload.get("recovery") or {}
-    assert recovery.get("run_id") == run_id
-    assert recovery.get("command") in {"resume", "inspect", "status"}
+    if code == "run_not_found":
+        assert not recovery.get("command")
+    elif code == "corrupt_run":
+        assert recovery.get("command") == "doctor"
+        assert recovery.get("run_id") == run_id
+    elif code in {
+        "run_revision_conflict",
+        "store_authorization_conflict",
+        "run_owned_by_live_process",
+        "operational_error",
+    }:
+        assert recovery.get("command") == "status"
+        assert recovery.get("run_id") == run_id
+    else:
+        assert recovery.get("run_id") == run_id
 
 
 def test_unit_drive_persistence_error_includes_child_run_id(tmp_path: Path) -> None:

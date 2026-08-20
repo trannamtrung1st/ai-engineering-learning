@@ -424,7 +424,6 @@ def test_parser_failures_emit_structured_usage_errors() -> None:
         ["execute", "--manifest", "manifest.json", "--until", "nope", "--stream-json"],
         ["status", "--unknown-flag", "--stream-json"],
         ["status", "--log-level", "loud", "--stream-json"],
-        ["prepare", "--stream-json"],
         ["sub-tdp", "attach", "--stream-json"],
         ["status", "--max-message-length", "abc", "--stream-json"],
         ["resume", "--color", "rainbow", "--stream-json"],

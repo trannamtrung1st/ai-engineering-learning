@@ -192,7 +192,10 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare",
         help="Plan, review, approve, and materialize an execution package.",
     )
-    prepare_parser.add_argument("--config", required=True, help="YAML configuration file.")
+    prepare_parser.add_argument(
+        "--config",
+        help="YAML configuration file. Optional with --planning-run and --runs-dir.",
+    )
     prepare_parser.add_argument(
         "--output",
         default=".tdp/execution",
@@ -422,6 +425,13 @@ def main(argv: list[str] | None = None) -> None:
         emit_operational_error(
             exc,
             stream_json=bool(getattr(args, "stream_json", False)),
+        )
+    except KeyboardInterrupt:
+        emit_error_message(
+            "cancelled by user",
+            exit_code=130,
+            stream_json=bool(getattr(args, "stream_json", False)),
+            code="user_cancelled",
         )
 
 

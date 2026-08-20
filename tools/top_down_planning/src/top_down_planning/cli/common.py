@@ -258,6 +258,55 @@ def require_cli_run_id(run_id: str | None, *, stream_json: bool) -> str:
         raise
 
 
+def recovery_fields(
+    *,
+    code: str,
+    run_id: str | None = None,
+    planning_run_id: str | None = None,
+    phase: str | None = None,
+) -> dict[str, Any] | None:
+    """Machine-readable recovery hint derived from error code and durable identity."""
+
+    identity = str(run_id or planning_run_id or "").strip()
+    if not identity:
+        return None
+    if code in {
+        "run_revision_conflict",
+        "store_authorization_conflict",
+        "run_owned_by_live_process",
+    }:
+        return {"command": "status", "run_id": identity}
+    if code == "corrupt_run":
+        return {"command": "doctor", "run_id": identity}
+    if code == "prepare_incomplete":
+        return {"command": "resume", "run_id": identity}
+    if code == "package_build_failed":
+        if str(phase or "") == "plan_validated":
+            return {"command": "prepare", "planning_run_id": identity}
+        return {"command": "resume", "run_id": identity}
+    if code.startswith("sub_tdp_") or code.startswith("package_"):
+        return {"command": "inspect", "run_id": identity}
+    if code in {"operational_error", "user_cancelled"}:
+        return {"command": "status", "run_id": identity}
+    if code == "run_not_found":
+        return None
+    return {"command": "resume", "run_id": identity}
+
+
+def _with_recovery(extra: dict[str, Any] | None, *, code: str) -> dict[str, Any] | None:
+    merged = dict(extra or {})
+    if "recovery" not in merged:
+        recovery = recovery_fields(
+            code=code,
+            run_id=str(merged.get("run_id") or "") or None,
+            planning_run_id=str(merged.get("planning_run_id") or "") or None,
+            phase=str(merged.get("phase") or "") or None,
+        )
+        if recovery:
+            merged["recovery"] = recovery
+    return merged or None
+
+
 def emit_run_access_error(
     exc: BaseException,
     *,
@@ -275,7 +324,7 @@ def emit_run_access_error(
             exit_code=1,
             stream_json=stream_json,
             code="run_not_found",
-            extra=extra,
+            extra=_with_recovery(extra, code="run_not_found"),
         )
     if isinstance(exc, StoreRevisionConflictError):
         emit_error_with_fields(
@@ -283,7 +332,7 @@ def emit_run_access_error(
             exit_code=1,
             stream_json=stream_json,
             code="run_revision_conflict",
-            extra=extra,
+            extra=_with_recovery(extra, code="run_revision_conflict"),
         )
     if isinstance(exc, StoreAuthorizationConflictError):
         emit_error_with_fields(
@@ -291,7 +340,7 @@ def emit_run_access_error(
             exit_code=1,
             stream_json=stream_json,
             code="store_authorization_conflict",
-            extra=extra,
+            extra=_with_recovery(extra, code="store_authorization_conflict"),
         )
     if isinstance(exc, PersistenceError):
         emit_error_with_fields(
@@ -299,7 +348,7 @@ def emit_run_access_error(
             exit_code=1,
             stream_json=stream_json,
             code="corrupt_run",
-            extra=extra,
+            extra=_with_recovery(extra, code="corrupt_run"),
         )
     if isinstance(exc, OSError):
         if extra:
@@ -310,7 +359,7 @@ def emit_run_access_error(
                 exit_code=1,
                 stream_json=stream_json,
                 code="operational_error",
-                extra=extra,
+                extra=_with_recovery(extra, code="operational_error"),
             )
         emit_operational_error(exc, stream_json=stream_json)
     raise exc
@@ -401,7 +450,7 @@ def emit_continue_run_error(
             exit_code=1,
             stream_json=stream_json,
             code=exc.code,
-            extra=extra,
+            extra=_with_recovery(extra, code=exc.code),
         )
     if isinstance(exc, PersistenceError):
         emit_run_access_error(exc, stream_json=stream_json, extra=extra)
@@ -431,6 +480,7 @@ __all__ = [
     "emit_operational_error",
     "emit_continue_run_error",
     "emit_error_with_fields",
+    "recovery_fields",
     "require_cli_run_id",
     "format_run_startup_diagnostics",
     "load_config_for_runs_dir",

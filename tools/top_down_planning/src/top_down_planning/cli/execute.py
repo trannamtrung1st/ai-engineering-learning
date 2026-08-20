@@ -394,31 +394,42 @@ def handle_execute_command(args: Namespace) -> None:
                 stream_json=args.stream_json,
             )
             return
+    except ExecutionPackageError as exc:
+        from top_down_planning.cli.common import recovery_fields
+
+        code = getattr(exc, "code", "package_invalid")
+        extra: dict[str, Any] = {}
+        if run_id:
+            extra["run_id"] = run_id
+        recovery = recovery_fields(code=code, run_id=run_id)
+        if recovery:
+            extra["recovery"] = recovery
+        emit_error_with_fields(
+            str(exc),
+            code=code,
+            stream_json=args.stream_json,
+            extra=extra or None,
+        )
     except PersistenceError as exc:
         extra = {"run_id": run_id} if run_id else None
-        if extra is not None:
-            from core_tools.persistence import RunNotFoundError
-
-            code = "run_not_found" if isinstance(exc, RunNotFoundError) else "corrupt_run"
-            emit_error_with_fields(
-                str(exc),
-                code=code,
-                stream_json=args.stream_json,
-                extra=extra,
-            )
-        emit_run_access_error(exc, stream_json=args.stream_json)
+        emit_run_access_error(exc, stream_json=args.stream_json, extra=extra)
     except OSError as exc:
         extra = {"run_id": run_id} if run_id else None
-        if extra is not None:
-            from top_down_planning.orchestrator.failure import sanitize_operational_error
-
-            emit_error_with_fields(
-                sanitize_operational_error(exc),
-                code="operational_error",
+        emit_run_access_error(exc, stream_json=args.stream_json, extra=extra)
+    except KeyboardInterrupt:
+        if run_id:
+            emit_error_message(
+                "cancelled by user",
+                exit_code=130,
                 stream_json=args.stream_json,
-                extra=extra,
+                code="user_cancelled",
             )
-        emit_operational_error(exc, stream_json=args.stream_json)
+        emit_error_message(
+            "cancelled by user",
+            exit_code=130,
+            stream_json=args.stream_json,
+            code="user_cancelled",
+        )
 
     _drive_execution_run(
         args,
@@ -585,19 +596,19 @@ def _execute_unit(
             str(exc),
             code=getattr(exc, "code", "package_invalid"),
             stream_json=args.stream_json,
-            extra={"run_id": child_run_id, "recovery": {"command": "resume", "run_id": child_run_id}},
+            extra={"run_id": child_run_id},
         )
     except PersistenceError as exc:
         emit_run_access_error(
             exc,
             stream_json=args.stream_json,
-            extra={"run_id": child_run_id, "recovery": {"command": "resume", "run_id": child_run_id}},
+            extra={"run_id": child_run_id},
         )
     except OSError as exc:
         emit_run_access_error(
             exc,
             stream_json=args.stream_json,
-            extra={"run_id": child_run_id, "recovery": {"command": "resume", "run_id": child_run_id}},
+            extra={"run_id": child_run_id},
         )
     finally:
         observability.close()

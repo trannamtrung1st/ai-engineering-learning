@@ -67,13 +67,15 @@ def build_input_ref_inventory(
         ref_text = str(ref)
         path = (workspace / ref_text).resolve()
         entry: dict[str, Any] = {"path": ref_text, "sha256": "", "size": 0}
-        if path.is_file():
-            sha = digest_file(path)
-            entry["sha256"] = sha
-            entry["size"] = path.stat().st_size
-            digest_entries.append({"ref": ref_text, "digest": sha})
-        else:
-            digest_entries.append({"ref": ref_text, "digest": digest_text(ref_text)})
+        if not path.is_file():
+            raise ValueError(
+                f"input ref {ref_text!r} is not a file; execution packages require "
+                "authoritative input files"
+            )
+        sha = digest_file(path)
+        entry["sha256"] = sha
+        entry["size"] = path.stat().st_size
+        digest_entries.append({"ref": ref_text, "digest": sha})
         refs.append(entry)
     computed_aggregate = digest_text(
         json.dumps(digest_entries, sort_keys=True, separators=(",", ":"))
@@ -127,15 +129,20 @@ class ExecutionPackageBuilder:
         *,
         output_dir: Path,
         replace: bool = False,
+        snapshot: Any | None = None,
     ) -> BuiltExecutionPackage:
-        snapshot = store.load_canonical_snapshot(planning_run_id)
+        if snapshot is None:
+            snapshot = store.load_canonical_snapshot(planning_run_id)
         run = snapshot.run
         from top_down_planning.domain.run_kind import RUN_KIND_PLANNING, resolve_run_kind
+        from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 
         if resolve_run_kind(run) != RUN_KIND_PLANNING:
             raise ValueError(
                 "execution packages can only be materialized from a planning run"
             )
+        if str(run.get("phase") or "") != PLAN_VALIDATED:
+            raise ValueError("planning run is not at plan_validated")
         plan = Plan.from_dict(snapshot.plan)
         config = snapshot.resolved_config
         reviews = snapshot.reviews
@@ -160,6 +167,8 @@ class ExecutionPackageBuilder:
 
         staging = output_dir.parent / f".staging-{output_dir.name}-{uuid.uuid4().hex[:8]}"
         backup: Path | None = None
+        published = False
+        built: BuiltExecutionPackage | None = None
         try:
             if staging.exists():
                 shutil.rmtree(staging)
@@ -185,14 +194,24 @@ class ExecutionPackageBuilder:
                 backup = output_dir.parent / f".backup-{output_dir.name}-{uuid.uuid4().hex[:8]}"
                 output_dir.rename(backup)
             staging.rename(output_dir)
+            published = True
             if backup is not None and backup.exists():
-                shutil.rmtree(backup)
+                try:
+                    shutil.rmtree(backup)
+                except (OSError, KeyboardInterrupt):
+                    pass
             return BuiltExecutionPackage(
                 package_id=built.package_id,
                 manifest_path=output_dir / "manifest.json",
                 manifest=built.manifest,
             )
-        except Exception:
+        except BaseException:
+            if published and built is not None and output_dir.exists():
+                return BuiltExecutionPackage(
+                    package_id=built.package_id,
+                    manifest_path=output_dir / "manifest.json",
+                    manifest=built.manifest,
+                )
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
             if backup is not None and backup.exists() and not output_dir.exists():

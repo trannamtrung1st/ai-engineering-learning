@@ -298,7 +298,8 @@ class FileRunStore:
             self._root / f".creating-{validated_run_id}.lock"
         )
         remove_creation_lock = False
-        with exclusive_file_lock(creation_lock_path):
+        try:
+          with exclusive_file_lock(creation_lock_path):
             if final_run_dir.exists():
                 raise PersistenceError(f"run already exists: {validated_run_id}")
 
@@ -437,16 +438,18 @@ class FileRunStore:
                 )
                 staging_dir.rename(final_run_dir)
                 remove_creation_lock = True
-            except Exception:
+            except BaseException:
                 if staging_dir.exists():
                     shutil.rmtree(staging_dir)
                 raise
-
-        if remove_creation_lock and creation_lock_path.exists():
-            try:
-                creation_lock_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        finally:
+            if creation_lock_path.exists() and (
+                remove_creation_lock or not final_run_dir.exists()
+            ):
+                try:
+                    creation_lock_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         if canonical_run is None:
             raise PersistenceError(
