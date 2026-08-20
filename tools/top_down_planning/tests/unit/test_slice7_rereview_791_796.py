@@ -116,8 +116,11 @@ def test_create_run_returns_identity_when_interrupt_follows_publish(tmp_path: Pa
     leftover = _run_dirs(tmp_path / "runs")
     _assert_no_traceback(result)
     assert leftover
+    assert result.exit_code == 130
     payload = _stdout_json(result)
     assert payload.get("run_id") == leftover[0].name
+    assert payload.get("ok") is False
+    engine.continue_run.assert_not_called()
     assert not any(p.name.endswith(".lock") for p in (tmp_path / "runs").iterdir() if p.name.startswith(".creating-"))
 
 

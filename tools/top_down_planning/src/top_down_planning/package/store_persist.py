@@ -50,6 +50,17 @@ def _contained_under(package_root: Path, candidate: Path, *, label: str) -> Path
     return resolved
 
 
+def _directory_holds_package(target_dir: Path, package_id: str, package_digest: str) -> bool:
+    try:
+        loaded = ExecutionPackageLoader().load(target_dir, verify_workspace=False)
+    except (OSError, ExecutionPackageError, ValueError, TypeError):
+        return False
+    return (
+        str(loaded.manifest.get("package_id") or "") == package_id
+        and str(loaded.manifest.get("package_digest") or "") == package_digest
+    )
+
+
 def persist_package_in_store(
     store_root: Path,
     package: LoadedExecutionPackage,
@@ -124,7 +135,7 @@ def persist_package_in_store(
                         pass
                 return target_manifest
             except BaseException:
-                if target_dir.exists() and (target_dir / "manifest.json").is_file():
+                if _directory_holds_package(target_dir, package_id, package_digest):
                     return target_manifest
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)

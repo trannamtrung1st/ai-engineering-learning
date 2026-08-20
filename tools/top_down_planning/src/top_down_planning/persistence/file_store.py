@@ -181,6 +181,15 @@ def new_run_record(
     }
 
 
+class RunPublishedInterrupt(Exception):
+    """The run was published, then the creating command was interrupted."""
+
+    def __init__(self, run_id: str, run: dict[str, Any]) -> None:
+        self.run_id = run_id
+        self.run = run
+        super().__init__(f"run {run_id} published before interrupt")
+
+
 class FileRunStore:
     """Canonical file layout under ``<root>/<run-id>/``."""
 
@@ -444,9 +453,9 @@ class FileRunStore:
                 if final_run_dir.exists() and (final_run_dir / "run.json").is_file():
                     remove_creation_lock = True
                     if isinstance(exc, KeyboardInterrupt):
-                        canonical_run = self._read_run(validated_run_id)
-                    else:
-                        raise
+                        published = self._read_run(validated_run_id)
+                        raise RunPublishedInterrupt(validated_run_id, dict(published)) from exc
+                    raise
                 else:
                     raise
         finally:

@@ -624,7 +624,12 @@ def _execute_unit(
     if cancelled:
         return
 
-    child_run = _cli_load_run(store, child_run_id, stream_json=args.stream_json)
+    child_run = _cli_load_run(
+        store,
+        child_run_id,
+        stream_json=args.stream_json,
+        extra={"runs_dir": str(resolved_runs.path)},
+    )
     ok = _child_success(child_run)
     payload: dict[str, Any] = {
         "ok": ok,
@@ -712,10 +717,7 @@ def _drive_execution_run(
         emit_continue_run_error(
             exc,
             stream_json=args.stream_json,
-            extra={
-                "run_id": run_id,
-                "recovery": {"command": "resume", "run_id": run_id},
-            },
+            extra={"run_id": run_id, "runs_dir": str(resolved_runs.path)},
         )
     finally:
         observability.close()
@@ -728,7 +730,12 @@ def _drive_execution_run(
             status=continuation.status,
         )
 
-    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
+    run_record = _cli_load_run(
+        store,
+        run_id,
+        stream_json=args.stream_json,
+        extra={"runs_dir": str(resolved_runs.path)},
+    )
     payload = {
         "ok": continuation.ok,
         "run_id": run_id,

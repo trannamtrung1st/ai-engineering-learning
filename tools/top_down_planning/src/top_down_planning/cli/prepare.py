@@ -14,6 +14,7 @@ from top_down_planning.cli.common import (
     emit_create_run_error,
     emit_continue_run_error,
     emit_error_with_fields,
+    locator_fields,
     recovery_fields,
     format_run_startup_diagnostics,
     provider_extra_env,
@@ -26,6 +27,7 @@ from top_down_planning.cli.user import (
     _cli_load_run,
     _create_provider_for_run,
     _exit_for_cancel,
+    _exit_for_command_interrupt,
     _handle_blocking_run_interrupt,
     _initial_plan,
 )
@@ -47,7 +49,7 @@ from top_down_planning.observability import ObservabilityContext, build_observab
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.package.builder import ExecutionPackageBuilder
-from top_down_planning.persistence import FileRunStore, PersistenceError
+from top_down_planning.persistence import FileRunStore, PersistenceError, RunPublishedInterrupt
 from top_down_planning.persistence.path_ids import new_run_id
 from core_tools.observability import ConsoleEvent
 
@@ -152,6 +154,7 @@ def handle_prepare_command(args: Namespace) -> None:
             run_id=run_id,
             output_dir=output_dir,
             snapshot=snapshot,
+            resolved_runs=resolved_runs,
         )
         return
 
@@ -220,40 +223,56 @@ def handle_prepare_command(args: Namespace) -> None:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
+    except RunPublishedInterrupt as exc:
+        _exit_for_command_interrupt(
+            run_id=exc.run_id,
+            stream_json=args.stream_json,
+            run=exc.run,
+        )
     except KeyboardInterrupt:
         emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
-            extra={"run_id": run_id, "planning_run_id": run_id},
         )
 
-    diagnostics = run_startup_diagnostics_payload(
-        cwd=cwd,
-        config_path=config_path,
-        workspace=workspace,
-        resolved_runs=resolved_runs,
-        run_id=run_id,
-        store=store,
-    )
-    observability = build_observability_context(
-        options=invocation.observability,
-        run_id=run_id,
-        run_dir=resolved_runs.path / run_id,
-    )
-    notifications = NotificationContext(options=invocation.notifications)
-    observability.emit(
-        ConsoleEvent(
-            category="run:start",
-            message=(
-                "Starting prepare run (planning + review + package materialization).\n"
-                f"{format_run_startup_diagnostics(diagnostics)}"
-            ),
-            fields={"until": "validated"},
+    try:
+        diagnostics = run_startup_diagnostics_payload(
+            cwd=cwd,
+            config_path=config_path,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
             run_id=run_id,
+            store=store,
         )
-    )
+        observability = build_observability_context(
+            options=invocation.observability,
+            run_id=run_id,
+            run_dir=resolved_runs.path / run_id,
+        )
+        notifications = NotificationContext(options=invocation.notifications)
+        observability.emit(
+            ConsoleEvent(
+                category="run:start",
+                message=(
+                    "Starting prepare run (planning + review + package materialization).\n"
+                    f"{format_run_startup_diagnostics(diagnostics)}"
+                ),
+                fields={"until": "validated"},
+                run_id=run_id,
+            )
+        )
+    except OSError as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={
+                "run_id": run_id,
+                "planning_run_id": run_id,
+                **locator_fields(resolved_runs, args),
+            },
+        )
 
     try:
         engine = _build_run_engine(
@@ -279,6 +298,7 @@ def handle_prepare_command(args: Namespace) -> None:
             extra={
                 "planning_run_id": run_id,
                 "run_id": run_id,
+                **locator_fields(resolved_runs, args),
             },
         )
     finally:
@@ -298,7 +318,11 @@ def handle_prepare_command(args: Namespace) -> None:
         emit_run_access_error(
             exc,
             stream_json=args.stream_json,
-            extra={"planning_run_id": run_id, "run_id": run_id},
+            extra={
+                "planning_run_id": run_id,
+                "run_id": run_id,
+                **locator_fields(resolved_runs, args),
+            },
         )
     if str(snapshot.run.get("phase") or "") != PLAN_VALIDATED:
         emit_error_with_fields(
@@ -310,11 +334,13 @@ def handle_prepare_command(args: Namespace) -> None:
                 "run_id": run_id,
                 "planning_run_id": run_id,
                 "phase": str(snapshot.run.get("phase") or ""),
+                **locator_fields(resolved_runs, args),
                 "recovery": recovery_fields(
                     code="prepare_incomplete",
                     run_id=run_id,
                     planning_run_id=run_id,
                     phase=str(snapshot.run.get("phase") or ""),
+                    runs_dir=str(resolved_runs.path),
                 ),
             },
         )
@@ -325,6 +351,7 @@ def handle_prepare_command(args: Namespace) -> None:
         run_id=run_id,
         output_dir=output_dir,
         snapshot=snapshot,
+        resolved_runs=resolved_runs,
     )
 
 
@@ -335,7 +362,9 @@ def _materialize_prepare_package(
     run_id: str,
     output_dir: Path,
     snapshot: Any | None = None,
+    resolved_runs: Any | None = None,
 ) -> None:
+    locators = locator_fields(resolved_runs, args)
     try:
         built = ExecutionPackageBuilder().build_from_planning_run(
             store,
@@ -352,11 +381,15 @@ def _materialize_prepare_package(
             extra={
                 "planning_run_id": run_id,
                 "run_id": run_id,
+                **locators,
                 "recovery": recovery_fields(
                     code="package_build_failed",
                     run_id=run_id,
                     planning_run_id=run_id,
                     phase=PLAN_VALIDATED,
+                    runs_dir=locators.get("runs_dir"),
+                    output=locators.get("output"),
+                    replace=bool(locators.get("replace")),
                 ),
             },
         )
@@ -364,7 +397,7 @@ def _materialize_prepare_package(
         emit_run_access_error(
             exc,
             stream_json=args.stream_json,
-            extra={"planning_run_id": run_id, "run_id": run_id},
+            extra={"planning_run_id": run_id, "run_id": run_id, **locators},
         )
     except OSError as exc:
         emit_run_access_error(
@@ -374,6 +407,7 @@ def _materialize_prepare_package(
                 "planning_run_id": run_id,
                 "run_id": run_id,
                 "phase": PLAN_VALIDATED,
+                **locators,
             },
         )
     except KeyboardInterrupt:
@@ -382,7 +416,7 @@ def _materialize_prepare_package(
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
-            extra={"run_id": run_id, "planning_run_id": run_id},
+            extra={"run_id": run_id, "planning_run_id": run_id, **locators},
         )
 
     planning = built.manifest.get("planning_run") or {}
@@ -394,14 +428,18 @@ def _materialize_prepare_package(
         "plan_revision": planning.get("approved_plan_revision"),
         "plan_digest": planning.get("approved_plan_digest"),
     }
-    if getattr(built, "cleanup_warning", None):
-        payload["cleanup_warning"] = built.cleanup_warning
+    warning = getattr(built, "cleanup_warning", None)
+    if warning:
+        payload["cleanup_warning"] = warning
+    human_message = (
+        f"Prepared package {built.package_id} from planning run {run_id} "
+        f"(manifest: {built.manifest_path})."
+    )
+    if warning:
+        human_message = f"{human_message}\nWarning: {warning}"
     emit_command_result(
         payload,
-        human_message=(
-            f"Prepared package {built.package_id} from planning run {run_id} "
-            f"(manifest: {built.manifest_path})."
-        ),
+        human_message=human_message,
         stream_json=args.stream_json,
     )
 

@@ -120,6 +120,20 @@ class BuiltExecutionPackage:
     cleanup_warning: str | None = None
 
 
+def _directory_holds_built_package(output_dir: Path, built: BuiltExecutionPackage) -> bool:
+    from top_down_planning.package.loader import ExecutionPackageLoader
+
+    try:
+        loaded = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
+    except (OSError, ValueError, TypeError, Exception):
+        return False
+    return (
+        str(loaded.manifest.get("package_id") or "") == built.package_id
+        and str(loaded.manifest.get("package_digest") or "")
+        == str(built.manifest.get("package_digest") or "")
+    )
+
+
 class ExecutionPackageBuilder:
     """Derive units, snapshots, digests, and manifest.json atomically."""
 
@@ -213,12 +227,7 @@ class ExecutionPackageBuilder:
                 cleanup_warning=cleanup_warning,
             )
         except BaseException:
-            published = (
-                built is not None
-                and output_dir.exists()
-                and (output_dir / "manifest.json").is_file()
-            )
-            if published:
+            if built is not None and _directory_holds_built_package(output_dir, built):
                 return BuiltExecutionPackage(
                     package_id=built.package_id,
                     manifest_path=output_dir / "manifest.json",

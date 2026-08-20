@@ -20,6 +20,7 @@ from top_down_planning.cli.common import (
     emit_create_run_error,
     emit_continue_run_error,
     emit_error_with_fields,
+    locator_fields,
     run_access_boundary,
     format_run_startup_diagnostics,
     open_run_store_for_cli,
@@ -29,6 +30,7 @@ from top_down_planning.cli.common import (
     run_startup_diagnostics_payload,
     store_diagnostics_payload,
 )
+from top_down_planning.persistence import RunPublishedInterrupt
 from top_down_planning.persistence.path_ids import new_run_id
 from top_down_planning.config import (
     ConfigError,
@@ -258,8 +260,12 @@ def _cli_load_run(
     run_id: str,
     *,
     stream_json: bool,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    with run_access_boundary(stream_json=stream_json):
+    bound = {"run_id": run_id}
+    if extra:
+        bound.update(extra)
+    with run_access_boundary(stream_json=stream_json, extra=bound):
         return store.load_run(run_id)
 
 
@@ -435,42 +441,54 @@ def handle_run_command(args: Namespace) -> None:
         emit_create_run_error(exc, stream_json=args.stream_json)
     except OSError as exc:
         emit_operational_error(exc, stream_json=args.stream_json)
+    except RunPublishedInterrupt as exc:
+        _exit_for_command_interrupt(
+            run_id=exc.run_id,
+            stream_json=args.stream_json,
+            run=exc.run,
+        )
     except KeyboardInterrupt:
         emit_error_with_fields(
             "cancelled by user",
             exit_code=130,
             stream_json=args.stream_json,
             code="user_cancelled",
-            extra={"run_id": run_id} if run_id else None,
         )
 
-    diagnostics = run_startup_diagnostics_payload(
-        cwd=cwd,
-        config_path=config_path,
-        workspace=workspace,
-        resolved_runs=resolved_runs,
-        run_id=run_id,
-        store=store,
-    )
-    observability = build_observability_context(
-        options=invocation.observability,
-        run_id=run_id,
-        run_dir=resolved_runs.path / run_id,
-    )
-    notifications = NotificationContext(options=invocation.notifications)
-    until = invocation.until or "plan"
-    observability.emit(
-        ConsoleEvent(
-            category="run:start",
-            message=(
-                "Starting run (blocking on provider until the target milestone).\n"
-                f"{format_run_startup_diagnostics(diagnostics)}\n"
-                f"Run path: {resolved_runs.path / run_id}"
-            ),
-            fields={"until": until},
+    try:
+        diagnostics = run_startup_diagnostics_payload(
+            cwd=cwd,
+            config_path=config_path,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
             run_id=run_id,
+            store=store,
         )
-    )
+        observability = build_observability_context(
+            options=invocation.observability,
+            run_id=run_id,
+            run_dir=resolved_runs.path / run_id,
+        )
+        notifications = NotificationContext(options=invocation.notifications)
+        until = invocation.until or "plan"
+        observability.emit(
+            ConsoleEvent(
+                category="run:start",
+                message=(
+                    "Starting run (blocking on provider until the target milestone).\n"
+                    f"{format_run_startup_diagnostics(diagnostics)}\n"
+                    f"Run path: {resolved_runs.path / run_id}"
+                ),
+                fields={"until": until},
+                run_id=run_id,
+            )
+        )
+    except OSError as exc:
+        emit_run_access_error(
+            exc,
+            stream_json=args.stream_json,
+            extra={"run_id": run_id, **locator_fields(resolved_runs)},
+        )
 
     try:
         try:
@@ -494,7 +512,7 @@ def handle_run_command(args: Namespace) -> None:
             emit_continue_run_error(
                 exc,
                 stream_json=args.stream_json,
-                extra={"run_id": run_id},
+                extra={"run_id": run_id, **locator_fields(resolved_runs)},
             )
     finally:
         observability.close()
@@ -507,7 +525,12 @@ def handle_run_command(args: Namespace) -> None:
             status=continuation.status,
         )
 
-    run_record = _cli_load_run(store, run_id, stream_json=args.stream_json)
+    run_record = _cli_load_run(
+        store,
+        run_id,
+        stream_json=args.stream_json,
+        extra=locator_fields(resolved_runs),
+    )
     if until and continuation.target_reached and continuation.status == "running":
         notify_run_outcome(
             "target_reached",

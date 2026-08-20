@@ -258,12 +258,67 @@ def require_cli_run_id(run_id: str | None, *, stream_json: bool) -> str:
         raise
 
 
+def locator_fields(
+    resolved_runs: ResolvedRunsDir | None = None,
+    args: Namespace | None = None,
+) -> dict[str, Any]:
+    """Store and materialization locators for executable recovery commands."""
+
+    fields: dict[str, Any] = {}
+    if resolved_runs is not None:
+        fields["runs_dir"] = str(resolved_runs.path)
+    if args is not None:
+        output = getattr(args, "output", None)
+        if output:
+            fields["output"] = str(Path(output).resolve())
+        if getattr(args, "replace", False):
+            fields["replace"] = True
+    return fields
+
+
+def _attach_locator(recovery: dict[str, Any], extra: Mapping[str, Any] | None) -> dict[str, Any]:
+    attached = dict(recovery)
+    source = extra or {}
+    if source.get("runs_dir") and "runs_dir" not in attached:
+        attached["runs_dir"] = str(source["runs_dir"])
+    if source.get("output") and "output" not in attached:
+        attached["output"] = str(source["output"])
+    if source.get("replace") and "replace" not in attached:
+        attached["replace"] = True
+    return attached
+
+
+def format_recovery_next_command(recovery: Mapping[str, Any]) -> str | None:
+    command = str(recovery.get("command") or "").strip()
+    if not command:
+        return None
+    parts = ["tdp", command]
+    target = str(recovery.get("planning_run_id") or recovery.get("run_id") or "").strip()
+    if command == "prepare" and target:
+        parts.extend(["--planning-run", target])
+    elif target:
+        parts.extend(["--run", target])
+    runs_dir = str(recovery.get("runs_dir") or "").strip()
+    if runs_dir:
+        parts.extend(["--runs-dir", runs_dir])
+    if command == "prepare":
+        output = str(recovery.get("output") or "").strip()
+        if output:
+            parts.extend(["--output", output])
+        if recovery.get("replace"):
+            parts.append("--replace")
+    return " ".join(parts)
+
+
 def recovery_fields(
     *,
     code: str,
     run_id: str | None = None,
     planning_run_id: str | None = None,
     phase: str | None = None,
+    runs_dir: str | None = None,
+    output: str | None = None,
+    replace: bool | None = None,
 ) -> dict[str, Any] | None:
     """Machine-readable recovery hint derived from error code and durable identity."""
 
@@ -275,22 +330,31 @@ def recovery_fields(
         "store_authorization_conflict",
         "run_owned_by_live_process",
     }:
-        return {"command": "status", "run_id": identity}
-    if code == "corrupt_run":
-        return {"command": "doctor", "run_id": identity}
-    if code == "prepare_incomplete":
-        return {"command": "resume", "run_id": identity}
-    if code in {"package_build_failed", "operational_error"} and str(phase or "") == "plan_validated":
-        return {"command": "prepare", "planning_run_id": identity}
-    if code == "package_build_failed":
-        return {"command": "resume", "run_id": identity}
-    if code.startswith("sub_tdp_") or code.startswith("package_"):
-        return {"command": "inspect", "run_id": identity}
-    if code in {"operational_error", "user_cancelled"}:
-        return {"command": "status", "run_id": identity}
-    if code == "run_not_found":
+        hint: dict[str, Any] = {"command": "status", "run_id": identity}
+    elif code == "corrupt_run":
+        hint = {"command": "doctor", "run_id": identity}
+    elif code == "prepare_incomplete":
+        hint = {"command": "resume", "run_id": identity}
+    elif code in {"package_build_failed", "operational_error"} and str(phase or "") == "plan_validated":
+        hint = {"command": "prepare", "planning_run_id": identity}
+    elif code == "package_build_failed":
+        hint = {"command": "resume", "run_id": identity}
+    elif code.startswith("sub_tdp_") or code.startswith("package_"):
+        hint = {"command": "inspect", "run_id": identity}
+    elif code in {"operational_error", "user_cancelled"}:
+        hint = {"command": "status", "run_id": identity}
+    elif code == "run_not_found":
         return None
-    return {"command": "resume", "run_id": identity}
+    else:
+        hint = {"command": "resume", "run_id": identity}
+    return _attach_locator(
+        hint,
+        {
+            "runs_dir": runs_dir or "",
+            "output": output or "",
+            "replace": bool(replace),
+        },
+    )
 
 
 def _with_recovery(extra: dict[str, Any] | None, *, code: str) -> dict[str, Any] | None:
@@ -301,9 +365,14 @@ def _with_recovery(extra: dict[str, Any] | None, *, code: str) -> dict[str, Any]
             run_id=str(merged.get("run_id") or "") or None,
             planning_run_id=str(merged.get("planning_run_id") or "") or None,
             phase=str(merged.get("phase") or "") or None,
+            runs_dir=str(merged.get("runs_dir") or "") or None,
+            output=str(merged.get("output") or "") or None,
+            replace=bool(merged.get("replace")),
         )
         if recovery:
             merged["recovery"] = recovery
+    elif isinstance(merged.get("recovery"), dict):
+        merged["recovery"] = _attach_locator(merged["recovery"], merged)
     return merged or None
 
 
@@ -366,13 +435,17 @@ def emit_run_access_error(
 
 
 @contextmanager
-def run_access_boundary(*, stream_json: bool) -> Iterator[None]:
+def run_access_boundary(
+    *,
+    stream_json: bool,
+    extra: dict[str, Any] | None = None,
+) -> Iterator[None]:
     """Catch missing-run, corrupt-run, and filesystem errors for user commands."""
 
     try:
         yield
     except (RunNotFoundError, PersistenceError, OSError) as exc:
-        emit_run_access_error(exc, stream_json=stream_json)
+        emit_run_access_error(exc, stream_json=stream_json, extra=extra)
 
 
 def emit_create_run_error(exc: BaseException, *, stream_json: bool) -> None:
@@ -440,17 +513,9 @@ def emit_error_with_fields(
             lines.append(f"Planning run: {planning_run_id}")
         recovery = extra.get("recovery")
         if isinstance(recovery, dict):
-            command = str(recovery.get("command") or "").strip()
-            target = str(
-                recovery.get("planning_run_id") or recovery.get("run_id") or ""
-            ).strip()
-            if command == "prepare" and target:
-                lines.append(f"Next: tdp prepare --planning-run {target}")
-            elif command and target:
-                flag = "--planning-run" if command == "prepare" else "--run"
-                lines.append(f"Next: tdp {command} {flag} {target}")
-            elif command:
-                lines.append(f"Next: tdp {command}")
+            next_command = format_recovery_next_command(_attach_locator(recovery, extra))
+            if next_command:
+                lines.append(f"Next: {next_command}")
     print("\n".join(lines), file=sys.stderr)
     raise SystemExit(exit_code)
 

@@ -18,7 +18,12 @@ from top_down_planning.persistence.digests import (
     semantic_config_projection,
 )
 from top_down_planning.persistence.commit import StoreAuthorizationConflictError, StagedArtifact
-from top_down_planning.persistence.file_store import AGENT_REQUESTS_DIR, FileRunStore, new_run_record
+from top_down_planning.persistence.file_store import (
+    AGENT_REQUESTS_DIR,
+    FileRunStore,
+    RunPublishedInterrupt,
+    new_run_record,
+)
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
@@ -38,6 +43,7 @@ __all__ = [
     "AGENT_REQUESTS_DIR",
     "FileRunStore",
     "PersistenceError",
+    "RunPublishedInterrupt",
     "RunNotFoundError",
     "RunStore",
     "StagedArtifact",
