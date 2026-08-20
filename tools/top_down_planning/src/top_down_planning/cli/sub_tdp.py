@@ -7,7 +7,9 @@ from pathlib import Path
 
 from top_down_planning.cli.common import (
     emit_command_result,
+    emit_continue_run_error,
     emit_error_message,
+    emit_error_with_fields,
     emit_run_access_error,
     open_run_store_for_cli,
     remember_cli_locator,
@@ -94,21 +96,33 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
         )
 
     try:
+        remember_cli_locator(
+            resolved_runs, args, extra={**attach_context, "run_id": parent_run_id}
+        )
         with run_ownership(parent_run_id, run_dir=parent_run_dir):
-            with run_ownership(child_run_id, run_dir=child_run_dir):
-                _attach_child_under_ownership(
-                    args,
-                    store=store,
-                    resolved_runs=resolved_runs,
-                    parent_run_id=parent_run_id,
-                    child_run_id=child_run_id,
+            remember_cli_locator(
+                resolved_runs, args, extra={**attach_context, "run_id": child_run_id}
+            )
+            try:
+                with run_ownership(child_run_id, run_dir=child_run_dir):
+                    _attach_child_under_ownership(
+                        args,
+                        store=store,
+                        resolved_runs=resolved_runs,
+                        parent_run_id=parent_run_id,
+                        child_run_id=child_run_id,
+                    )
+            except RunOwnershipError as exc:
+                emit_continue_run_error(
+                    exc,
+                    stream_json=args.stream_json,
+                    extra={**attach_context, "run_id": child_run_id},
                 )
     except RunOwnershipError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
+        emit_continue_run_error(
+            exc,
             stream_json=args.stream_json,
-            code="sub_tdp_attach_rejected",
+            extra={**attach_context, "run_id": parent_run_id},
         )
     except KeyboardInterrupt:
         from top_down_planning.cli.user import _exit_for_command_interrupt
@@ -129,6 +143,16 @@ def _attach_child_under_ownership(
     parent_run_id: str,
     child_run_id: str,
 ) -> None:
+    remember_cli_locator(
+        resolved_runs,
+        args,
+        extra={
+            "run_id": parent_run_id,
+            "parent_run_id": parent_run_id,
+            "child_run_id": child_run_id,
+            "runs_dir": str(resolved_runs.path),
+        },
+    )
     parent_run = store.load_run(parent_run_id)
     if resolve_run_kind(parent_run) != RUN_KIND_PARENT_EXECUTION:
         emit_error_message(
@@ -308,6 +332,7 @@ def _attach_child_under_ownership(
             code="sub_tdp_attach_rejected",
         )
 
+    from top_down_planning.agent_tool.errors import RequestError
     from top_down_planning.package.lineage import validate_accepted_child_delivery
 
     try:
@@ -318,12 +343,18 @@ def _attach_child_under_ownership(
             child_production=child_production,
             verify_evidence=True,
         )
-    except ValueError as exc:
-        emit_error_message(
+    except (ValueError, RequestError) as exc:
+        emit_error_with_fields(
             str(exc),
             exit_code=1,
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
+            extra={
+                "run_id": child_run_id,
+                "parent_run_id": parent_run_id,
+                "child_run_id": child_run_id,
+                "runs_dir": str(resolved_runs.path),
+            },
         )
 
     if state is None:
@@ -371,25 +402,39 @@ def _attach_child_under_ownership(
         )
 
     unit = package.units[plan_item_id]
-    accepted = accepted_result_record(
-        child_run=child_run,
-        child_production=child_production,
-        unit_id=plan_item_id,
-        unit_plan_digest=unit.plan_digest,
-        package_id=str(package.manifest.get("package_id") or ""),
-        package_digest=str(package.manifest.get("package_digest") or ""),
-        assigned_subtree_digest=unit.assigned_subtree_digest,
-    )
-    from top_down_planning.package.lineage import accepted_result_digest
+    try:
+        accepted = accepted_result_record(
+            child_run=child_run,
+            child_production=child_production,
+            unit_id=plan_item_id,
+            unit_plan_digest=unit.plan_digest,
+            package_id=str(package.manifest.get("package_id") or ""),
+            package_digest=str(package.manifest.get("package_digest") or ""),
+            assigned_subtree_digest=unit.assigned_subtree_digest,
+        )
+        from top_down_planning.package.lineage import accepted_result_digest
 
-    unit_record["child_run_id"] = child_run_id
-    unit_record["status"] = unit_status_from_child_run(child_run)
-    unit_record["summary"] = child_run_summary(child_production, child_run)
-    unit_record["accepted_result"] = accepted
-    unit_record["accepted_result_digest"] = accepted_result_digest(accepted)
-    from top_down_planning.package.lineage import verify_accepted_result_attestation
+        unit_record["child_run_id"] = child_run_id
+        unit_record["status"] = unit_status_from_child_run(child_run)
+        unit_record["summary"] = child_run_summary(child_production, child_run)
+        unit_record["accepted_result"] = accepted
+        unit_record["accepted_result_digest"] = accepted_result_digest(accepted)
+        from top_down_planning.package.lineage import verify_accepted_result_attestation
 
-    verify_accepted_result_attestation(unit_record)
+        verify_accepted_result_attestation(unit_record)
+    except ValueError as exc:
+        emit_error_with_fields(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+            extra={
+                "run_id": child_run_id,
+                "parent_run_id": parent_run_id,
+                "child_run_id": child_run_id,
+                "runs_dir": str(resolved_runs.path),
+            },
+        )
     state["active_unit_id"] = None
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
