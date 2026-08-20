@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from core_tools.observability import redact_value
+
 from top_down_planning.notifications.desktop import send_desktop_notification
 from top_down_planning.notifications.options import NotificationOptions
 from top_down_planning.orchestrator import phases as run_phases
@@ -156,6 +158,7 @@ class NotificationDedupeState:
 
     recent_keys: dict[tuple[str, str], float] = field(default_factory=dict)
     last_run_paused_at: float | None = None
+    last_limit_exceeded_at: float | None = None
 
     def prune(self, *, now: float) -> None:
         expired = [
@@ -170,6 +173,11 @@ class NotificationDedupeState:
             and now - self.last_run_paused_at > _DEDUPE_WINDOW_SECONDS
         ):
             self.last_run_paused_at = None
+        if (
+            self.last_limit_exceeded_at is not None
+            and now - self.last_limit_exceeded_at > _DEDUPE_WINDOW_SECONDS
+        ):
+            self.last_limit_exceeded_at = None
 
 
 def _event_tier(event_type: str) -> NotificationTier | None:
@@ -225,13 +233,13 @@ def _detail_line(event: dict[str, Any]) -> str:
         for key in ("message", "reason", "code"):
             value = stop.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return str(redact_value(value.strip()))
     for key in ("outcome", "reason", "until"):
         value = event.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return str(redact_value(value.strip()))
     label = _EVENT_LABELS.get(str(event.get("type") or ""), "")
-    return label
+    return str(redact_value(label))
 
 
 def _format_message(*, run_id: str, phase: str | None, detail: str) -> str:
@@ -287,6 +295,13 @@ def _should_skip_dedupe(
         if (
             state.last_run_paused_at is not None
             and now - state.last_run_paused_at <= _DEDUPE_WINDOW_SECONDS
+        ):
+            return True
+
+    if event_type == "run_paused":
+        if (
+            state.last_limit_exceeded_at is not None
+            and now - state.last_limit_exceeded_at <= _DEDUPE_WINDOW_SECONDS
         ):
             return True
 
@@ -346,4 +361,6 @@ def handle_audit_event(
         state.recent_keys[(event_type, stable)] = now
         if event_type == "run_paused":
             state.last_run_paused_at = now
+        if event_type.endswith(_LIMIT_EXCEEDED_SUFFIX):
+            state.last_limit_exceeded_at = now
     return sent

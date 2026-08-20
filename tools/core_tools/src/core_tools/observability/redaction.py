@@ -14,8 +14,23 @@ _SECRET_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
+_AUTH_HEADER_RE = re.compile(
+    r"(Authorization:\s*(?:Bearer|Basic)\s+)\S+",
+    re.IGNORECASE,
+)
+_SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"\b(password|passwd|secret|token|credential|api[_-]?key)\s*([=:])\s*"
+    r"(?:[\"'][^\"']+[\"']|\S+)",
+    re.IGNORECASE,
+)
+_BARE_CREDENTIAL_RE = re.compile(
+    r"\b(credential)\s+[A-Za-z0-9._\-+=/]{4,}",
+    re.IGNORECASE,
+)
 
 _REDACTED = "[REDACTED]"
+_SURROGATE_MIN = 0xD800
+_SURROGATE_MAX = 0xDFFF
 
 
 @dataclass(frozen=True)
@@ -59,8 +74,21 @@ def _redact_dict_entry(key: str, value: Any, *, max_len: int | None) -> Any:
     return redact_value(value, max_len=max_len)
 
 
+def _sanitize_surrogates(text: str) -> str:
+    if not any(_SURROGATE_MIN <= ord(ch) <= _SURROGATE_MAX for ch in text):
+        return text
+    return "".join(
+        ch if not (_SURROGATE_MIN <= ord(ch) <= _SURROGATE_MAX) else "\ufffd"
+        for ch in text
+    )
+
+
 def _redact_string(text: str) -> str:
-    return _CAPABILITY_TOKEN_RE.sub(_REDACTED, text)
+    text = _sanitize_surrogates(text)
+    text = _CAPABILITY_TOKEN_RE.sub(_REDACTED, text)
+    text = _AUTH_HEADER_RE.sub(rf"\1{_REDACTED}", text)
+    text = _SENSITIVE_ASSIGNMENT_RE.sub(rf"\1\2{_REDACTED}", text)
+    return _BARE_CREDENTIAL_RE.sub(rf"\1 {_REDACTED}", text)
 
 
 def _truncate(text: str, max_len: int) -> str:

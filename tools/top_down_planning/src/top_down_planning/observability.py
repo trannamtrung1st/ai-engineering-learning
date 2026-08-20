@@ -18,6 +18,8 @@ from core_tools.observability import (
     LogLevel,
     NullSink,
     RedactionPolicy,
+    flush_stream,
+    redact_value,
     truncate_text,
 )
 from core_tools.provider.events import is_tool_call_end, is_tool_call_start
@@ -129,11 +131,15 @@ class ObservabilityContext:
             )
         self.sink.emit(event)
 
+    def flush_stream(self) -> None:
+        flush_stream(self.sink)
+
     def provider_callback(self) -> Any:
         bridge = self._ensure_provider_bridge()
         return bridge.handle
 
     def close(self) -> None:
+        self.flush_stream()
         if self._jsonl_sink is not None:
             self._jsonl_sink.close()
         if self._transcript_sink is not None:
@@ -153,22 +159,26 @@ def build_observability_context(
 ) -> ObservabilityContext:
     """Construct filtered sinks for a CLI invocation."""
 
-    sinks: list[EventSink] = []
     jsonl_sink: JsonlEventSink | None = None
     transcript_sink: JsonlEventSink | None = None
     policy = RedactionPolicy(max_message_length=options.max_message_length)
 
     if options.log_format == "jsonl":
         jsonl_sink = JsonlEventSink(sys.stderr, policy=policy)
-        sinks.append(jsonl_sink)
+        presentation: EventSink = jsonl_sink
     else:
-        sinks.append(
-            ColorizedConsoleSink(
-                color=options.color,  # type: ignore[arg-type]
-                show_timestamps=options.show_timestamps,
-                policy=policy,
-            )
+        presentation = ColorizedConsoleSink(
+            color=options.color,  # type: ignore[arg-type]
+            show_timestamps=options.show_timestamps,
+            policy=policy,
         )
+
+    presentation = FilteredSink(
+        presentation,
+        log_level=options.log_level,
+        no_agent_text=options.no_agent_text,
+    )
+    sinks: list[EventSink] = [presentation]
 
     if options.agent_transcript and run_dir is not None:
         transcript_sink = JsonlEventSink(
@@ -192,14 +202,8 @@ def build_observability_context(
             )
         )
 
-    composite = CompositeSink(*sinks) if sinks else NullSink()
-    filtered = FilteredSink(
-        composite,
-        log_level=options.log_level,
-        no_agent_text=options.no_agent_text,
-    )
     return ObservabilityContext(
-        sink=filtered,
+        sink=CompositeSink(*sinks),
         options=options,
         run_id=run_id,
         _jsonl_sink=jsonl_sink,
@@ -280,6 +284,8 @@ class ProviderToConsoleBridge:
                         fields=self._provider_fields(event),
                     )
                 )
+            else:
+                self._context.flush_stream()
             return
 
     def _provider_fields(self, event: dict[str, Any]) -> dict[str, str]:
@@ -315,7 +321,10 @@ class ProviderToConsoleBridge:
         summary = str(event.get("summary") or "")
         if not summary:
             return
-        summary = truncate_text(summary, self._context.options.max_tool_summary_length)
+        summary = truncate_text(
+            str(redact_value(summary)),
+            self._context.options.max_tool_summary_length,
+        )
         key = _tool_call_key(event, summary)
         seen = self._seen_tool_starts if category == "tool:start" else self._seen_tool_ends
         if key in seen:

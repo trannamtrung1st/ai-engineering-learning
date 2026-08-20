@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import sys
 
+from core_tools.observability import redact_value
+
 _MAX_TITLE_LENGTH = 120
 _MAX_MESSAGE_LENGTH = 240
 _APPLICATION_NAME = "tdp"
@@ -28,8 +30,8 @@ def send_desktop_notification(title: str, message: str) -> bool:
     if _notifications_suppressed():
         return False
 
-    title = title[:_MAX_TITLE_LENGTH]
-    message = message[:_MAX_MESSAGE_LENGTH]
+    title = str(redact_value(title))[:_MAX_TITLE_LENGTH]
+    message = str(redact_value(message))[:_MAX_MESSAGE_LENGTH]
 
     try:
         from notifypy import Notify

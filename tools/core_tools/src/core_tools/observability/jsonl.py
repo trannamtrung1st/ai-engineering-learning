@@ -35,9 +35,9 @@ class JsonlEventSink:
 
     def emit(self, event: ConsoleEvent) -> None:
         if event.category in _STREAMING_CATEGORIES:
-            if (
-                self._stream_buffer_category is not None
-                and self._stream_buffer_category != event.category
+            if self._stream_buffer_event is not None and (
+                self._stream_buffer_category != event.category
+                or self._stream_buffer_event.session_id != event.session_id
             ):
                 self._flush_stream_buffer()
             self._stream_buffer_category = event.category
@@ -47,6 +47,9 @@ class JsonlEventSink:
 
         self._flush_stream_buffer()
         self._write_event(event)
+
+    def flush_stream(self) -> None:
+        self._flush_stream_buffer()
 
     def close(self) -> None:
         self._flush_stream_buffer()

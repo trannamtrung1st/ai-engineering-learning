@@ -78,6 +78,7 @@ class ColorizedConsoleSink:
         )
         self._streaming_line_open = False
         self._streaming_block_category: str | None = None
+        self._streaming_session_id: str | None = None
 
     def emit(self, event: ConsoleEvent) -> None:
         safe = redact_event(event, policy=self._policy)
@@ -103,9 +104,9 @@ class ColorizedConsoleSink:
         if not event.message:
             return
 
-        if (
-            self._streaming_block_category is not None
-            and self._streaming_block_category != event.category
+        if self._streaming_block_category is not None and (
+            self._streaming_block_category != event.category
+            or self._streaming_session_id != event.session_id
         ):
             self._end_streaming_line()
 
@@ -126,12 +127,17 @@ class ColorizedConsoleSink:
 
         self._streaming_line_open = True
         self._streaming_block_category = event.category
+        self._streaming_session_id = event.session_id
+
+    def flush_stream(self) -> None:
+        self._end_streaming_line()
 
     def _end_streaming_line(self) -> None:
         if self._streaming_line_open:
             self._stream.write("\n")
             self._streaming_line_open = False
         self._streaming_block_category = None
+        self._streaming_session_id = None
 
 
 def _build_prefix(ts: datetime, tag: str, *, show_timestamps: bool) -> str:

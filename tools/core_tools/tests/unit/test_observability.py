@@ -162,6 +162,43 @@ def test_redaction_strips_capability_tokens_and_secret_keys() -> None:
     assert redacted["API_KEY"] == "[REDACTED]"
 
 
+def test_redaction_strips_free_form_secrets_in_strings() -> None:
+    token = "cap-abc123.deadbeef0123456789abcdef0123456789abcdef0123456789"
+    payload = {
+        "auth": "Authorization: Bearer SUPER_SECRET_BEARER",
+        "login": "password=hunter2-password",
+        "provider": "api_key=sk-example-key",
+        "error": "request failed: credential credential-abc123 rejected",
+        "prose": f"resume with {token} please",
+        "nested": {"inner": {"note": "api-key=nested-secret-value"}},
+    }
+    redacted = redact_value(payload)
+    serialized = json.dumps(redacted)
+    assert "SUPER_SECRET_BEARER" not in serialized
+    assert "hunter2-password" not in serialized
+    assert "sk-example-key" not in serialized
+    assert "credential-abc123" not in serialized
+    assert "nested-secret-value" not in serialized
+    assert token not in serialized
+    assert serialized.count("[REDACTED]") >= 5
+
+
+def test_redaction_happens_before_truncation_near_secret() -> None:
+    secret = "VISIBLE_SECRET_FRAGMENT"
+    text = "prefix api_key=" + secret + ("x" * 40)
+    safe = redact_value(text, max_len=30)
+    assert secret not in safe
+    assert "api_key=" in safe
+    assert "[REDACTED]" in safe
+
+
+def test_redaction_replaces_lone_unicode_surrogates() -> None:
+    text = "ok" + chr(0xD800) + "bad"
+    safe = redact_value(text)
+    assert not any(0xD800 <= ord(ch) <= 0xDFFF for ch in safe)
+    json.dumps(safe)
+
+
 def test_redaction_truncates_oversized_strings() -> None:
     policy = RedactionPolicy(max_message_length=20)
     event = ConsoleEvent(category="response", message="x" * 100)
@@ -212,6 +249,89 @@ def test_jsonl_sink_writes_valid_redacted_json(tmp_path) -> None:
     payload = json.loads(path.read_text(encoding="utf-8").strip())
     assert payload["category"] == "tool:start"
     assert payload["fields"]["token"] == "[REDACTED]"
+
+
+def test_jsonl_sink_flushes_stream_on_explicit_boundary(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(ConsoleEvent(category="response", message="turn one", session_id="s1"))
+    sink.flush_stream()
+    sink.emit(ConsoleEvent(category="response", message="turn two", session_id="s1"))
+    sink.close()
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [record["message"] for record in records] == ["turn one", "turn two"]
+
+
+def test_jsonl_sink_splits_records_when_session_id_changes(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(ConsoleEvent(category="response", message="from session one", session_id="s1"))
+    sink.emit(ConsoleEvent(category="response", message="from session two", session_id="s2"))
+    sink.close()
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    assert records[0]["session_id"] == "s1"
+    assert records[0]["message"] == "from session one"
+    assert records[1]["session_id"] == "s2"
+    assert records[1]["message"] == "from session two"
+
+
+def test_jsonl_sink_persists_multiline_and_control_chars_as_one_line(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    message = "line one\nline two\r\ttab\x1besc\x00nul"
+    sink.emit(ConsoleEvent(category="response", message=message))
+    sink.close()
+    raw = path.read_text(encoding="utf-8")
+    assert raw.count("\n") == 1
+    payload = json.loads(raw)
+    assert payload["message"] == message
+
+
+def test_jsonl_sink_persists_surrogate_input_as_valid_json(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(ConsoleEvent(category="response", message="bad" + chr(0xD800) + "text"))
+    sink.close()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["message"].startswith("bad")
+    assert payload["message"].endswith("text")
+    assert not any(0xD800 <= ord(ch) <= 0xDFFF for ch in payload["message"])
+
+
+def test_console_sink_redacts_bearer_secret() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(
+        ConsoleEvent(
+            category="error",
+            message="Authorization: Bearer SUPER_SECRET_BEARER",
+        )
+    )
+    output = stderr.getvalue()
+    assert "SUPER_SECRET_BEARER" not in output
+    assert "[REDACTED]" in output
+
+
+def test_console_sink_flushes_stream_between_same_category_turns() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="thinking", message="first turn"))
+    sink.flush_stream()
+    sink.emit(ConsoleEvent(category="thinking", message="second turn"))
+    lines = [line for line in stderr.getvalue().splitlines() if line]
+    assert lines[0].startswith("[thinking] first turn")
+    assert lines[1].startswith("[thinking] second turn")
+
+
+def test_console_sink_ends_open_stream_before_cancel() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(ConsoleEvent(category="response", message="partial reply"))
+    sink.emit(ConsoleEvent(category="session:cancel", message="cancelled by user"))
+    lines = [line for line in stderr.getvalue().splitlines() if line]
+    assert lines[0].startswith("[response] partial reply")
+    assert lines[1].startswith("[session:cancel] cancelled by user")
 
 
 def test_console_sink_writes_to_stderr_not_stdout() -> None:

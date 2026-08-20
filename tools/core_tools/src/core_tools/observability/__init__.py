@@ -20,6 +20,7 @@ from core_tools.observability.sink import (
     EventSink,
     FilteredSink,
     NullSink,
+    flush_stream,
 )
 from core_tools.observability.text_stream import AgentTextStreamController
 
@@ -37,6 +38,7 @@ __all__ = [
     "NullSink",
     "RedactionPolicy",
     "category_tag",
+    "flush_stream",
     "redact_event",
     "redact_value",
     "resolve_color_mode",

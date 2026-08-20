@@ -82,9 +82,9 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--color auto\|always\|never` | from config / `auto` | Color mode (`--no-color` ⇒ `never`) |
-| `--log-level quiet\|normal\|verbose\|trace` | from config / `normal` | Verbosity |
+| `--log-level quiet\|normal\|verbose\|trace` | from config / `normal` | Stderr verbosity only (does not change `--agent-transcript`) |
 | `--log-format console\|jsonl` | from config / `console` | Human console vs JSONL on stderr |
-| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text (streamed incrementally) |
+| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text on stderr (does not change `--agent-transcript`) |
 | `--timestamps` / `--no-timestamps` | from config / off | Category prefix on the first line of each event; optional timestamp when enabled (streaming `thinking`/`response` blocks share one prefix) |
 | `--agent-transcript` / `--no-agent-transcript` | from config / off | Persist redacted provider transcript |
 | `--max-message-length N` | from config / unlimited | Truncate console event messages after *N* characters |
@@ -109,7 +109,7 @@ Agent session lifecycle: `[session:start]` on `planner_session_started` / `produ
 
 **`phase` vs `stage`:** `phase` is the run lifecycle (`planning`, `whole_plan_review`, `sub_tdps`, `production`, …). `stage` is a mandatory review loop step (`initial_review`, `finding_verification`, `scope_review`) and appears on reviewer session audit events for `whole_plan` / `whole_output` gates only. Mandatory review orchestration maps to `[review:start]` (loop bootstrap) and `[review:stage]` (scope-review transition); run lifecycle transitions remain `[phase:start]` / `[phase:end]`.
 
-`events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens and secrets are redacted at every log level. Console message and tool-summary truncation are unlimited by default; set `observability.max_message_length` and/or `observability.max_tool_summary_length` (or the matching CLI flags) to cap stderr output length.
+`events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens and secrets are redacted at every log level, including free-form credential forms (authorization headers, `password=` / `api_key=` assignments, and capability tokens in prose) in stderr, JSONL, `agent-transcript.jsonl`, and desktop notifications. `--log-level` and `--no-agent-text` filter stderr presentation only; `--agent-transcript` still persists its provider categories independently. Successful provider turns flush streaming `thinking`/`response` blocks so adjacent turns and session changes stay separate records. Console message and tool-summary truncation are unlimited by default; set `observability.max_message_length` and/or `observability.max_tool_summary_length` (or the matching CLI flags) to cap stderr output length. Secrets are redacted before truncation.
 
 `tdp run` and `tdp resume` trap SIGINT/SIGTERM during the engine loop: tracked agent subprocesses are terminated, orphan agents are cleaned up, `[session:cancel]` is emitted on stderr, durable cancel audit events (`agent_terminated`, `*_session_ended`) are recorded, console `[session:end]` lines are emitted for each active session, the run pauses with `stop.code: user_cancelled` and `stop.details.terminated_pids`, and the CLI exits with code 130 when the run is durably cancelled.
 

@@ -13,11 +13,25 @@ class EventSink(Protocol):
     def emit(self, event: ConsoleEvent) -> None:
         """Handle a single event."""
 
+    def flush_stream(self) -> None:
+        """Close any open streaming block without emitting a user-facing event."""
+
+
+def flush_stream(sink: EventSink) -> None:
+    """Flush buffered streaming output when the sink supports it."""
+
+    flusher = getattr(sink, "flush_stream", None)
+    if flusher is not None:
+        flusher()
+
 
 class NullSink:
     """No-op sink for tests and disabled observability."""
 
     def emit(self, event: ConsoleEvent) -> None:
+        return None
+
+    def flush_stream(self) -> None:
         return None
 
 
@@ -30,6 +44,10 @@ class CompositeSink:
     def emit(self, event: ConsoleEvent) -> None:
         for sink in self._sinks:
             sink.emit(event)
+
+    def flush_stream(self) -> None:
+        for sink in self._sinks:
+            flush_stream(sink)
 
 
 class FilteredSink:
@@ -56,3 +74,6 @@ class FilteredSink:
         if self._no_agent_text and event.category in {"thinking", "response"}:
             return
         self._sink.emit(event)
+
+    def flush_stream(self) -> None:
+        flush_stream(self._sink)

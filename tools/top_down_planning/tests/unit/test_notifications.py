@@ -240,6 +240,75 @@ def test_handle_audit_event_respects_disabled_tier(bridge_send_mock) -> None:
     bridge_send_mock.assert_not_called()
 
 
+def test_handle_audit_event_redacts_secrets_in_notification_body(bridge_send_mock) -> None:
+    options = NotificationOptions()
+    token = "cap-abc123.deadbeef0123456789abcdef0123456789abcdef0123456789"
+    handle_audit_event(
+        {
+            "type": "run_paused",
+            "stop": {"message": f"Authorization: Bearer SUPER_SECRET_BEARER token={token}"},
+        },
+        run_id="run-1",
+        options=options,
+        phase="planning",
+    )
+    handle_audit_event(
+        {
+            "type": "run_failed",
+            "reason": "password=hunter2-password api_key=sk-example-key",
+        },
+        run_id="run-1",
+        options=options,
+        phase="planning",
+    )
+    sent_messages = [call.args[1] for call in bridge_send_mock.call_args_list]
+    combined = " ".join(sent_messages)
+    assert "SUPER_SECRET_BEARER" not in combined
+    assert token not in combined
+    assert "hunter2-password" not in combined
+    assert "sk-example-key" not in combined
+    assert "[REDACTED]" in combined
+
+
+def test_handle_audit_event_redacts_secret_before_notification_truncation(
+    bridge_send_mock,
+) -> None:
+    secret = "NOTIFICATION_SECRET_VALUE"
+    options = NotificationOptions()
+    handle_audit_event(
+        {
+            "type": "run_paused",
+            "stop": {"message": ("prefix " * 30) + f"password={secret}" + (" tail" * 30)},
+        },
+        run_id="run-1",
+        options=options,
+        phase="planning",
+    )
+    message = bridge_send_mock.call_args.args[1]
+    assert secret not in message
+    assert "[REDACTED]" in message
+
+
+def test_handle_audit_event_dedupes_limit_then_pause(bridge_send_mock) -> None:
+    options = NotificationOptions()
+    state = NotificationDedupeState()
+    handle_audit_event(
+        {"type": "planning_limit_exceeded"},
+        run_id="run-1",
+        options=options,
+        phase="planning",
+        dedupe_state=state,
+    )
+    handle_audit_event(
+        {"type": "run_paused", "reason": "limit"},
+        run_id="run-1",
+        options=options,
+        phase="planning",
+        dedupe_state=state,
+    )
+    assert bridge_send_mock.call_count == 1
+
+
 def test_handle_audit_event_dedupes_pause_and_limit(bridge_send_mock) -> None:
     options = NotificationOptions()
     state = NotificationDedupeState()

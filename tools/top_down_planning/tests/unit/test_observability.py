@@ -19,7 +19,9 @@ from top_down_planning.observability import (
     build_observability_context,
     map_audit_event,
 )
-from tests.helpers import done_events
+from top_down_planning.persistence import FileRunStore
+from tests.conftest import run_cli
+from tests.helpers import apply_plan, done_events, only_run_id, with_root_contract, write_config
 
 
 class _CollectSink:
@@ -499,6 +501,258 @@ def test_secret_redaction_in_console_output() -> None:
     assert "[REDACTED]" in stderr.getvalue()
 
 
+def test_free_form_secrets_are_redacted_in_console_jsonl_and_transcript(
+    tmp_path: Path,
+) -> None:
+    token = "cap-abc123.deadbeef0123456789abcdef0123456789abcdef0123456789"
+    stderr = io.StringIO()
+    run_dir = tmp_path / "run-20260101T001010-001010"
+    with patch("top_down_planning.observability.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                log_format="jsonl",
+                color="never",
+                agent_transcript=True,
+            ),
+            run_id="run-20260101T001010-001010",
+            run_dir=run_dir,
+        )
+        context.emit(
+            ConsoleEvent(
+                category="error",
+                message="Authorization: Bearer SUPER_SECRET_BEARER",
+                run_id="run-20260101T001010-001010",
+            )
+        )
+        context.emit(
+            ConsoleEvent(
+                category="response",
+                message=f"password=hunter2-password token={token}",
+                run_id="run-20260101T001010-001010",
+            )
+        )
+        context.emit(
+            ConsoleEvent(
+                category="tool:start",
+                message="shell api_key=sk-example-key",
+                run_id="run-20260101T001010-001010",
+            )
+        )
+        context.close()
+
+    stderr_text = stderr.getvalue()
+    transcript = (run_dir / "agent-transcript.jsonl").read_text(encoding="utf-8")
+    for secret in (
+        "SUPER_SECRET_BEARER",
+        "hunter2-password",
+        token,
+        "sk-example-key",
+    ):
+        assert secret not in stderr_text
+        assert secret not in transcript
+
+
+def test_no_agent_text_still_persists_redacted_transcript(tmp_path: Path) -> None:
+    stderr = io.StringIO()
+    run_dir = tmp_path / "run-20260101T001011-001011"
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                color="never",
+                no_agent_text=True,
+                agent_transcript=True,
+            ),
+            run_id="run-20260101T001011-001011",
+            run_dir=run_dir,
+        )
+        context.emit(ConsoleEvent(category="thinking", message="private reasoning"))
+        context.emit(
+            ConsoleEvent(
+                category="response",
+                message="Authorization: Bearer SUPER_SECRET_BEARER",
+            )
+        )
+        context.emit(ConsoleEvent(category="tool:start", message="read README.md"))
+        context.close()
+
+    stderr_text = stderr.getvalue()
+    assert "private reasoning" not in stderr_text
+    assert "SUPER_SECRET_BEARER" not in stderr_text
+    assert "[response]" not in stderr_text
+    assert "[tool:start] read README.md" in stderr_text
+
+    records = [
+        json.loads(line)
+        for line in (run_dir / "agent-transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    categories = [record["category"] for record in records]
+    assert "thinking" in categories
+    assert "response" in categories
+    transcript = json.dumps(records)
+    assert "private reasoning" in transcript
+    assert "SUPER_SECRET_BEARER" not in transcript
+    assert "[REDACTED]" in transcript
+
+
+def test_quiet_log_level_does_not_drop_agent_transcript(tmp_path: Path) -> None:
+    stderr = io.StringIO()
+    run_dir = tmp_path / "run-20260101T001012-001012"
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                color="never",
+                log_level="quiet",
+                agent_transcript=True,
+            ),
+            run_id="run-20260101T001012-001012",
+            run_dir=run_dir,
+        )
+        context.emit(ConsoleEvent(category="response", message="keep this prose"))
+        context.emit(ConsoleEvent(category="error", message="boom"))
+        context.close()
+
+    stderr_text = stderr.getvalue()
+    assert "keep this prose" not in stderr_text
+    assert "boom" in stderr_text
+    records = [
+        json.loads(line)
+        for line in (run_dir / "agent-transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(record["category"] == "response" and "keep this prose" in record["message"] for record in records)
+
+
+def test_provider_done_creates_separate_jsonl_turn_records(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-20260101T001013-001013"
+    stderr = io.StringIO()
+    with patch("top_down_planning.observability.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                log_format="jsonl",
+                color="never",
+                agent_transcript=True,
+            ),
+            run_id="run-20260101T001013-001013",
+            run_dir=run_dir,
+        )
+        bridge = ProviderToConsoleBridge(context)
+        bridge.handle({"type": "assistant", "text": "turn one", "session_id": "s1"})
+        bridge.handle({"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"})
+        bridge.handle({"type": "assistant", "text": "turn two", "session_id": "s1"})
+        bridge.handle({"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"})
+        bridge.handle({"type": "thinking", "text": "think one", "session_id": "s1"})
+        bridge.handle({"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"})
+        bridge.handle({"type": "thinking", "text": "think two", "session_id": "s1"})
+        bridge.handle({"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"})
+        bridge.handle({"type": "assistant", "text": "session one", "session_id": "s1"})
+        bridge.handle({"type": "done", "subtype": "success", "is_error": False, "session_id": "s1"})
+        bridge.handle({"type": "assistant", "text": "session two", "session_id": "s2"})
+        context.close()
+
+    records = [
+        json.loads(line)
+        for line in (run_dir / "agent-transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    messages = [record["message"] for record in records]
+    assert "turn one" in messages
+    assert "turn two" in messages
+    assert "think one" in messages
+    assert "think two" in messages
+    assert "session one" in messages
+    assert "session two" in messages
+    assert "turn oneturn two" not in messages
+    sessions = [record["session_id"] for record in records if record["message"].startswith("session ")]
+    assert sessions == ["s1", "s2"]
+
+
+def test_provider_bridge_drops_exact_duplicate_assistant_text() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "assistant", "text": "same reply"})
+    bridge.handle({"type": "assistant", "text": "same reply"})
+    responses = [event.message for event in collector.events if event.category == "response"]
+    assert responses == ["same reply"]
+
+
+def test_provider_bridge_keeps_transcript_boundaries_after_retry_and_error(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-20260101T001014-001014"
+    stderr = io.StringIO()
+    with patch("top_down_planning.observability.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                log_format="jsonl",
+                color="never",
+                agent_transcript=True,
+            ),
+            run_id="run-20260101T001014-001014",
+            run_dir=run_dir,
+        )
+        bridge = ProviderToConsoleBridge(context)
+        bridge.handle({"type": "assistant", "text": "before retry"})
+        bridge.handle({"type": "retry", "text": "provider retry", "attempt": 1})
+        bridge.handle({"type": "assistant", "text": "after retry"})
+        bridge.handle({"type": "error", "text": "provider error"})
+        context.close()
+
+    records = [
+        json.loads(line)
+        for line in (run_dir / "agent-transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["category"] for record in records] == [
+        "response",
+        "retry",
+        "response",
+        "error",
+    ]
+    assert records[0]["message"] == "before retry"
+    assert records[2]["message"] == "after retry"
+
+
+def test_provider_bridge_redacts_secret_in_truncated_tool_summary() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(
+        sink=collector,
+        options=ObservabilityOptions(max_tool_summary_length=40),
+    )
+    bridge = ProviderToConsoleBridge(context)
+    started = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "call_id": "call-secret",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {"command": "curl -H api_key=SUPER_SECRET_TOOL_VALUE " + ("x" * 80)}
+                }
+            },
+        }
+    )
+    assert started is not None
+    bridge.handle(started)
+    summary = collector.events[0].message
+    assert "SUPER_SECRET_TOOL_VALUE" not in summary
+    assert "[REDACTED]" in summary
+
+
+def test_cancel_event_closes_open_response_stream() -> None:
+    stderr = io.StringIO()
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(color="never"),
+            run_id="run-20260101T001015-001015",
+        )
+        context.emit(ConsoleEvent(category="response", message="still streaming"))
+        from top_down_planning.observability import cancel_console_event
+
+        context.emit(cancel_console_event(run_id="run-20260101T001015-001015", phase="planning"))
+        context.close()
+    lines = [line for line in stderr.getvalue().splitlines() if line]
+    assert lines[0].startswith("[response] still streaming")
+    assert lines[1].startswith("[session:cancel]")
+
+
 def test_build_observability_context_truncates_response_when_configured(tmp_path: Path) -> None:
     stderr = io.StringIO()
     with patch("core_tools.observability.console.sys.stderr", stderr):
@@ -519,8 +773,9 @@ def test_build_observability_context_truncates_response_when_configured(tmp_path
         )
         context.close()
     output = stderr.getvalue()
-    assert output.endswith("...")
-    assert len(output.split("[response] ", 1)[1]) == 40
+    response_text = output.split("[response] ", 1)[1].rstrip("\n")
+    assert response_text.endswith("...")
+    assert len(response_text) == 40
 
 
 def test_provider_bridge_truncates_tool_summary_when_configured() -> None:
@@ -561,3 +816,61 @@ def test_provider_bridge_keeps_full_tool_summary_by_default() -> None:
     assert started is not None
     bridge.handle(started)
     assert collector.events[0].message == f"read {long_path}"
+
+
+def test_stream_json_stdout_stays_parseable_with_noisy_provider_text(
+    tmp_path: Path,
+) -> None:
+    config_path = write_config(
+        tmp_path / "run.yaml",
+        """
+run:
+  output_goal: Deliver the sample output.
+provider:
+  name: stub
+planning:
+  max_depth: 4
+""",
+    )
+    runs_dir = tmp_path / "runs"
+    store = FileRunStore(runs_dir)
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+            },
+        ]
+    )
+    provider = StubProvider()
+    noisy = "not a json payload\n{broken\r\ttab"
+    provider.script_turn(
+        done_events(signal="candidate_plan_ready", text=noisy),
+        mutate_store=lambda: apply_plan(
+            store,
+            only_run_id(store),
+            base_revision=0,
+            operations=operations,
+        )(),
+    )
+
+    with patch("top_down_planning.cli.user.create_provider", return_value=provider):
+        result = run_cli(
+            [
+                "run",
+                "--config",
+                str(config_path),
+                "--runs-dir",
+                str(runs_dir),
+                "--stream-json",
+            ]
+        )
+
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, dict)
+    assert "run_id" in payload
+    assert noisy not in result.stdout
