@@ -1,22 +1,182 @@
-"""Slice 9: stable test-support imports and Darwin CLI-cancel CI coverage."""
+"""Slice 9: repo-wide test-support isolation and Darwin CLI-cancel CI coverage."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_BOUNDARIES = Path(__file__).resolve().parent / "test_slice7_rereview_boundaries.py"
+_TESTS_ROOT = Path(__file__).resolve().parents[1]
+_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "tdp.yml"
+
+_SIBLING_IMPORT = re.compile(
+    r"^\s*(?:from\s+tests\.unit\.test_\w+|import\s+tests\.unit\.test_\w+)",
+    re.MULTILINE,
+)
+
+# Historical modules that still import sibling test_*.py helpers. New modules
+# must use tests.support / tests.helpers; shrink this set when a module is migrated.
+_SIBLING_IMPORT_ALLOWLIST = frozenset(
+    {
+        "integration/test_resume_cross_phase_e2e.py",
+        "unit/test_agent_process_cleanup.py",
+        "unit/test_apply_resume_crash.py",
+        "unit/test_composite_baseline_regression.py",
+        "unit/test_cursor_reviewer_session_binding.py",
+        "unit/test_focused_review_families.py",
+        "unit/test_mandatory_in_process_transitions.py",
+        "unit/test_mandatory_review_acceptance.py",
+        "unit/test_mandatory_review_orchestration.py",
+        "unit/test_notifications.py",
+        "unit/test_orchestration_lifecycle_atomicity.py",
+        "unit/test_payload_cutover_contracts.py",
+        "unit/test_persistence_correction_fixes.py",
+        "unit/test_persistence_review_fixes.py",
+        "unit/test_persistence_round10_fixes.py",
+        "unit/test_persistence_round11_fixes.py",
+        "unit/test_persistence_round12_fixes.py",
+        "unit/test_persistence_round13_fixes.py",
+        "unit/test_persistence_round14_fixes.py",
+        "unit/test_persistence_round15_fixes.py",
+        "unit/test_persistence_round16_fixes.py",
+        "unit/test_persistence_round17_fixes.py",
+        "unit/test_persistence_round3_fixes.py",
+        "unit/test_persistence_round4_fixes.py",
+        "unit/test_persistence_round5_fixes.py",
+        "unit/test_persistence_round6_fixes.py",
+        "unit/test_persistence_round7_fixes.py",
+        "unit/test_persistence_round8_fixes.py",
+        "unit/test_persistence_round9_fixes.py",
+        "unit/test_production_apply_snapshot_evidence.py",
+        "unit/test_provider_turns.py",
+        "unit/test_resume_stop_validators.py",
+        "unit/test_review_revision_cas.py",
+        "unit/test_reviewer_session_release.py",
+        "unit/test_run_lifecycle_reconciliation.py",
+        "unit/test_slice5_rereview_065f8a22_fixes.py",
+        "unit/test_slice5_rereview_27eaa0b_fixes.py",
+        "unit/test_slice5_rereview_2af6712b_fixes.py",
+        "unit/test_slice5_rereview_41a27ee_fixes.py",
+        "unit/test_slice5_rereview_4dae4f6_fixes.py",
+        "unit/test_slice5_rereview_568f97b_fixes.py",
+        "unit/test_slice5_rereview_6481aeb_fixes.py",
+        "unit/test_slice5_rereview_992f5a0_fixes.py",
+        "unit/test_slice5_rereview_c67af97_fixes.py",
+        "unit/test_slice5_rereview_c947561_fixes.py",
+        "unit/test_slice5_rereview_eb572b0_fixes.py",
+        "unit/test_slice5_rereview_ff20bb4_fixes.py",
+        "unit/test_slice6_rereview_0cd5abc8_fixes.py",
+        "unit/test_slice6_rereview_1f93dab4_fixes.py",
+        "unit/test_slice7_cli_config_fixes.py",
+        "unit/test_slice7_rereview_739_747.py",
+        "unit/test_slice7_rereview_739_750.py",
+        "unit/test_slice7_rereview_751_754.py",
+        "unit/test_slice7_rereview_755_758.py",
+        "unit/test_slice7_rereview_759_761.py",
+        "unit/test_slice7_rereview_760_764.py",
+        "unit/test_slice7_rereview_760_767.py",
+        "unit/test_slice7_rereview_768_774.py",
+        "unit/test_slice7_rereview_775_783.py",
+        "unit/test_slice7_rereview_784_790.py",
+        "unit/test_slice7_rereview_791_796.py",
+        "unit/test_slice7_rereview_797_784.py",
+        "unit/test_slice7_rereview_798_801.py",
+        "unit/test_slice7_rereview_802_803.py",
+        "unit/test_slice7_rereview_804_789.py",
+        "unit/test_slice7_rereview_805_789.py",
+        "unit/test_slice7_rereview_806.py",
+        "unit/test_store_persist.py",
+        "unit/test_sub_tdp_attach_cli.py",
+        "unit/test_sub_tdp_attach_ownership.py",
+        "unit/test_sub_tdp_code_review_fixes.py",
+        "unit/test_sub_tdp_content_bound_baseline.py",
+        "unit/test_sub_tdp_cutover_defects.py",
+        "unit/test_sub_tdp_defect_rescan.py",
+        "unit/test_sub_tdp_explicit_baseline.py",
+        "unit/test_sub_tdp_orchestrator.py",
+        "unit/test_sub_tdp_remaining_defects.py",
+        "unit/test_sub_tdp_review_continued.py",
+        "unit/test_sub_tdp_review_fixes.py",
+        "unit/test_sub_tdp_upstream_and_execute_guards.py",
+        "unit/test_sub_tdp_whole_output_review.py",
+        "unit/test_whole_output_review.py",
+        "unit/test_whole_plan_review.py",
+    }
+)
 
 
-def test_slice7_rereview_boundaries_does_not_import_sibling_test_modules() -> None:
-    source = _BOUNDARIES.read_text(encoding="utf-8")
-    assert "from tests.unit.test_" not in source
-    assert "from tests.support." in source
+def _rel_test_path(path: Path) -> str:
+    return path.relative_to(_TESTS_ROOT).as_posix()
+
+
+def _modules_with_sibling_test_imports() -> set[str]:
+    found: set[str] = set()
+    for path in _TESTS_ROOT.rglob("test_*.py"):
+        if _SIBLING_IMPORT.search(path.read_text(encoding="utf-8")):
+            found.add(_rel_test_path(path))
+    return found
+
+
+def _workflow_job_source(workflow: str, job_id: str) -> str:
+    """Return only the named top-level job block (not later jobs)."""
+
+    lines = workflow.splitlines()
+    header = f"  {job_id}:"
+    start = next((index for index, line in enumerate(lines) if line == header), None)
+    if start is None:
+        raise AssertionError(f"workflow job {job_id!r} not found")
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if line.startswith("  ") and not line.startswith("   ") and line.endswith(":"):
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
+def test_test_modules_do_not_import_sibling_test_modules_except_allowlist() -> None:
+    offenders = _modules_with_sibling_test_imports()
+    unexpected = offenders - _SIBLING_IMPORT_ALLOWLIST
+    stale = _SIBLING_IMPORT_ALLOWLIST - offenders
+    assert not unexpected, (
+        "new sibling test-module imports; move helpers to tests.support "
+        f"or tests.helpers: {sorted(unexpected)}"
+    )
+    assert not stale, (
+        "allowlist entries no longer import sibling tests; remove them: "
+        f"{sorted(stale)}"
+    )
+
+
+def test_workflow_job_source_excludes_later_jobs() -> None:
+    workflow = """
+jobs:
+  darwin-janitor:
+    steps:
+      - run: echo orphan-only
+  later-job:
+    steps:
+      - run: |
+          python -m pytest -p no:xdist -o addopts='' \\
+            tests/unit/test_cli_os_process_cancel.py
+"""
+    darwin = _workflow_job_source(workflow, "darwin-janitor")
+    assert "test_cli_os_process_cancel.py" not in darwin
+    assert "orphan-only" in darwin
+    later = _workflow_job_source(workflow, "later-job")
+    assert "test_cli_os_process_cancel.py" in later
 
 
 def test_darwin_ci_runs_cli_os_process_cancel_serially() -> None:
-    workflow = (_REPO_ROOT / ".github" / "workflows" / "tdp.yml").read_text(encoding="utf-8")
-    darwin = workflow.split("darwin-janitor:")[1]
-    assert "test_cli_os_process_cancel.py" in darwin
-    assert "-p no:xdist" in darwin
-    assert "-o addopts=''" in darwin
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    darwin = _workflow_job_source(workflow, "darwin-janitor")
+    cancel_steps = [
+        block
+        for block in darwin.split("- name:")
+        if "test_cli_os_process_cancel.py" in block
+    ]
+    assert len(cancel_steps) == 1, darwin
+    command = cancel_steps[0]
+    assert "-p no:xdist" in command
+    assert "-o addopts=''" in command
+    assert "tests/unit/test_cli_os_process_cancel.py" in command

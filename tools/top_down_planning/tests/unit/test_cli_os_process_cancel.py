@@ -44,7 +44,7 @@ provider:
     env["TDP_STUB_TURN_BLOCK_SECONDS"] = "30"
 
     tdp = shutil.which("tdp")
-    assert tdp, "expected an installed non-editable tdp on PATH"
+    assert tdp, "expected the tdp console script on PATH"
     child = subprocess.Popen(
         [
             tdp,
