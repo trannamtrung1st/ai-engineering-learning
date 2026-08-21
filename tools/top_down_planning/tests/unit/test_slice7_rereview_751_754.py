@@ -18,19 +18,13 @@ from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitEx
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import CliResult, run_cli
 from tests.helpers import accept_child_run, write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_739_747 import _assert_operational_without_traceback
-from tests.unit.test_slice7_rereview_cli_schema import (
-    _create_planning_run,
-    _stdout_json,
-)
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
-
-
-def _assert_no_traceback(result: CliResult) -> None:
-    assert "Traceback" not in result.stdout
-    assert "Traceback" not in result.stderr
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_operational_without_traceback
+from tests.support.run_builders import _create_planning_run
+from tests.support.cli_fakes import _stdout_json
+from tests.support.run_builders import _parent_with_orchestration
+from tests.support.cli_fakes import _assert_no_traceback, _resume_check_argv
 
 
 def test_terminal_resume_ok_status_outcome_share_one_run_revision(tmp_path: Path) -> None:
@@ -130,10 +124,6 @@ def test_resume_check_consumed_limits_match_expected_run_revision(tmp_path: Path
         (before_rev + 1, before_consumed + 1),
     }
     assert (expected_revision, consumed) in coherent
-
-
-def _resume_check_argv(run_id: str, runs_dir: Path) -> list[str]:
-    return ["resume", "--run", run_id, "--runs-dir", str(runs_dir), "--check"]
 
 
 def test_resume_evidence_permission_error_is_operational(tmp_path: Path) -> None:

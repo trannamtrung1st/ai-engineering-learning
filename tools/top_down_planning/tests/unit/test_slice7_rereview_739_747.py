@@ -20,24 +20,13 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.commit import CommitSpec
 from tests.conftest import CliResult, run_cli
 from tests.helpers import accept_child_run, create_run_kwargs, write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_cli_schema import (
-    _create_planning_run,
-    _stdout_json,
-)
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
-from tests.unit.test_sub_tdp_defect_pass import _build_package as _dependent_build_package
-
-
-def _assert_operational_without_traceback(result: CliResult) -> None:
-    assert result.exit_code == 1
-    assert "Traceback" not in result.stdout
-    assert "Traceback" not in result.stderr
-    if result.stdout.strip().startswith("{"):
-        payload = _stdout_json(result)
-        assert payload["ok"] is False
-        assert payload["error"]["code"] == "operational_error"
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.run_builders import _create_planning_run
+from tests.support.cli_fakes import _stdout_json
+from tests.support.run_builders import _parent_with_orchestration
+from tests.support.run_builders import _build_package as _dependent_build_package
+from tests.support.cli_fakes import _assert_operational_without_traceback
 
 
 def _fail_load_run_after_continue(continue_fn):

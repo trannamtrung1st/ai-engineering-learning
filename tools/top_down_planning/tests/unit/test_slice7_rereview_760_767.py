@@ -16,13 +16,13 @@ from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, write_config
 from tests.support.cli_fakes import _engine_patches, _patch_prepare_plan_validated
+from tests.support.cli_fakes import _assert_operational_without_traceback
 from tests.unit.test_slice7_rereview_739_747 import (
-    _assert_operational_without_traceback,
     _dependent_build_package,
     _execute_item_b_argv,
 )
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback, _resume_check_argv
-from tests.unit.test_slice7_rereview_755_758 import _assert_structured_error, _stdout_json
+from tests.support.cli_fakes import _assert_no_traceback, _resume_check_argv
+from tests.support.cli_fakes import _assert_structured_error, _stdout_json
 from tests.unit.test_slice7_rereview_760_764 import (
     _bump_after_first_child_load,
     _pause_child_for_resume,

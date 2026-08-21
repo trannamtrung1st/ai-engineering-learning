@@ -15,18 +15,13 @@ from top_down_planning.package.loader import ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import CliResult, run_cli
 from tests.helpers import whole_plan_approval_record, write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_739_747 import (
-    _assert_operational_without_traceback,
-    _execute_item_b_argv,
-)
-from tests.unit.test_slice7_rereview_cli_schema import (
-    _create_planning_run,
-    _stdout_json,
-    _wipe_txn_dirs,
-)
-from tests.unit.test_sub_tdp_defect_pass import _build_package as _dependent_build_package
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_operational_without_traceback
+from tests.unit.test_slice7_rereview_739_747 import _execute_item_b_argv
+from tests.support.run_builders import _create_planning_run, _wipe_txn_dirs
+from tests.support.cli_fakes import _stdout_json
+from tests.support.run_builders import _build_package as _dependent_build_package
 
 
 def _assert_no_traceback(result: CliResult) -> None:

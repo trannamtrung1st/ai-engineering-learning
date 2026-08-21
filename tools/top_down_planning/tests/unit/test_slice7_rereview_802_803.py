@@ -17,10 +17,10 @@ from top_down_planning.orchestrator.sub_tdp_child_driver import PreparedChildRes
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import create_run_kwargs, write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
-from tests.unit.test_slice7_rereview_755_758 import _stdout_json
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_no_traceback
+from tests.support.cli_fakes import _stdout_json
 from tests.unit.test_slice7_rereview_768_774 import _run_dirs
 from tests.unit.test_slice7_rereview_791_796 import _rename_then_interrupt_when
 from tests.unit.test_slice7_rereview_798_801 import _json_objects, _next_argv

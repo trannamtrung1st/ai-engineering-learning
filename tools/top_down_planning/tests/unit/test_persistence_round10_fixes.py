@@ -16,7 +16,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.commit import CommitSpec
 from tests.helpers import create_run_kwargs, minimal_resolved_config
-from tests.unit.test_commit_crash_recovery import _create_run
+from tests.support.persistence import _create_run
 
 
 def _new_run_id(suffix: str) -> str:

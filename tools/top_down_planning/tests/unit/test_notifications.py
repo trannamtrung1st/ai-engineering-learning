@@ -660,7 +660,7 @@ def test_resume_single_step_does_not_emit_target_reached(
 
     from top_down_planning.cli.user import handle_resume_command
     from top_down_planning.orchestrator.phases import PRODUCTION
-    from tests.unit.test_resume_cli import _create_paused_production_run
+    from tests.support.run_builders import _create_paused_production_run
 
     store = FileRunStore(tmp_path)
     run_id = _create_paused_production_run(store)
@@ -701,7 +701,7 @@ def test_resume_until_emits_target_reached_when_still_running(
 
     from top_down_planning.cli.user import handle_resume_command
     from top_down_planning.orchestrator.phases import PRODUCTION
-    from tests.unit.test_resume_cli import _create_paused_production_run
+    from tests.support.run_builders import _create_paused_production_run
 
     store = FileRunStore(tmp_path)
     run_id = _create_paused_production_run(store)

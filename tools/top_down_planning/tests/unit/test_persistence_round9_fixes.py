@@ -16,7 +16,7 @@ from top_down_planning.persistence.capabilities import (
 )
 from top_down_planning.persistence.commit import CommitSpec
 from tests.helpers import create_run_kwargs
-from tests.unit.test_commit_crash_recovery import _create_run
+from tests.support.persistence import _create_run
 
 
 def _outside_file(tmp_path: Path) -> Path:

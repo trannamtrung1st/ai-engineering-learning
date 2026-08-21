@@ -13,12 +13,12 @@ from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitEx
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_no_traceback
 from tests.unit.test_slice7_rereview_768_774 import _run_dirs
 from tests.unit.test_slice7_rereview_798_801 import _json_objects, _next_argv
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
+from tests.support.run_builders import _parent_with_orchestration
 
 
 def _assert_command_interrupted(result, run_id: str, *, stream_json: bool) -> None:

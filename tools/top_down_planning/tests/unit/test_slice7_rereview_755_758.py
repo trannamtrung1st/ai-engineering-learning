@@ -18,11 +18,15 @@ from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_plan_update
 from tests.conftest import CliResult, run_cli
 from tests.helpers import write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_739_747 import _assert_operational_without_traceback
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback, _resume_check_argv
-from tests.unit.test_slice7_rereview_cli_schema import _stdout_json
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_operational_without_traceback
+from tests.support.cli_fakes import (
+    _assert_no_traceback,
+    _assert_structured_error,
+    _resume_check_argv,
+    _stdout_json,
+)
 
 
 def _publish_valid_plan_run_revision(store: FileRunStore, run_id: str) -> None:
@@ -48,14 +52,6 @@ def _assert_no_canonical_run(runs_dir: Path) -> None:
         return
     leftover = [path for path in runs_dir.iterdir() if path.is_dir() and path.name.startswith("run-")]
     assert leftover == []
-
-
-def _assert_structured_error(result: CliResult, code: str) -> None:
-    _assert_no_traceback(result)
-    assert result.exit_code != 0
-    payload = _stdout_json(result)
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == code
 
 
 def test_resume_check_uses_one_canonical_snapshot_across_plan_run_bump(

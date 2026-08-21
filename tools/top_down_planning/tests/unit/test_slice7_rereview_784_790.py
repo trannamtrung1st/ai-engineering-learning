@@ -19,12 +19,12 @@ from top_down_planning.persistence.commit import CommitSpec, StoreAuthorizationC
 from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_plan_update
 from tests.conftest import run_cli
 from tests.helpers import create_run_kwargs, whole_plan_approval_record, write_config
-from tests.unit.test_execution_package import _approved_parent_plan, _planning_run_at_validated
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
-from tests.unit.test_slice7_rereview_755_758 import _assert_structured_error, _stdout_json
-from tests.unit.test_slice7_rereview_760_764 import _engine_patches
-from tests.unit.test_slice7_rereview_760_767 import _patch_prepare_plan_validated
+from tests.support.run_builders import _approved_parent_plan, _planning_run_at_validated
+from tests.support.run_builders import _built_package
+from tests.support.cli_fakes import _assert_no_traceback
+from tests.support.cli_fakes import _assert_structured_error, _stdout_json
+from tests.support.cli_fakes import _engine_patches
+from tests.support.cli_fakes import _patch_prepare_plan_validated
 from tests.unit.test_slice7_rereview_768_774 import _run_dirs
 
 

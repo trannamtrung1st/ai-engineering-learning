@@ -21,8 +21,8 @@ from top_down_planning.package.lineage import (
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import accept_child_run, create_run_kwargs, whole_plan_approval_record
-from tests.unit.test_production_auth_alignment import write_config
-from tests.unit.test_sub_tdp_defect_pass import _item
+from tests.helpers import write_config
+from tests.support.run_builders import _item
 
 
 def _plan_with_shared_resource(run_id: str, *, dependent: bool = True) -> Plan:

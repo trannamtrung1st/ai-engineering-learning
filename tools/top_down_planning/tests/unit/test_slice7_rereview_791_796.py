@@ -22,11 +22,11 @@ from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_plan_update
 from tests.conftest import run_cli
 from tests.helpers import create_run_kwargs, write_config
-from tests.unit.test_execution_package import _approved_parent_plan, _planning_run_at_validated
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
-from tests.unit.test_slice7_rereview_755_758 import _stdout_json
-from tests.unit.test_slice7_rereview_760_767 import _patch_prepare_plan_validated
+from tests.support.run_builders import _approved_parent_plan, _planning_run_at_validated
+from tests.support.run_builders import _built_package
+from tests.support.cli_fakes import _assert_no_traceback
+from tests.support.cli_fakes import _stdout_json
+from tests.support.cli_fakes import _patch_prepare_plan_validated
 from tests.unit.test_slice7_rereview_768_774 import _run_dirs
 from tests.unit.test_slice7_rereview_784_790 import _planning_argv
 
@@ -134,7 +134,7 @@ def test_human_post_create_error_includes_run_identity(tmp_path: Path) -> None:
     )
     argv = ["run", "--config", str(config_path), "--runs-dir", str(tmp_path / "runs")]
     with ExitStack() as stack:
-        from tests.unit.test_slice7_rereview_760_764 import _engine_patches
+        from tests.support.cli_fakes import _engine_patches
 
         for item in _engine_patches(tmp_path):
             stack.enter_context(item)

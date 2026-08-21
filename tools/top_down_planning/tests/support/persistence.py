@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.persistence import atomic_write_json
+from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.commit import CommitSpec
+from tests.helpers import create_run_kwargs, minimal_resolved_config
 
 
 def _multi_file_commit(store: FileRunStore, run_id: str) -> None:
@@ -94,3 +96,36 @@ def _crash_on_appending_events_journal_write() -> Any:
         original_write(path, payload)
 
     return patched_write
+
+
+def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601") -> None:
+    workspace = store.root
+    config = minimal_resolved_config()
+    plan = Plan(
+        id="plan-run-20260101T000601-000601",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            )
+        },
+    )
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(workspace, resolved_config=config),
+    )
+
+
+def _find_txn_dir(store: FileRunStore, run_id: str) -> Path | None:
+    txn_dirs = sorted(store.run_dir(run_id).glob(".txn-*"))
+    return txn_dirs[0] if txn_dirs else None
+
+
+def _find_txn_dir_local(store: FileRunStore, run_id: str) -> Path | None:
+    return _find_txn_dir(store, run_id)

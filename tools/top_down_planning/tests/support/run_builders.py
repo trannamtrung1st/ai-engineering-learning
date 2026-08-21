@@ -7,7 +7,8 @@ from pathlib import Path
 
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
-from top_down_planning.orchestrator.phases import PLANNING, SUB_TDPS
+from core_tools.persistence import atomic_write_json
+from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, PLANNING, PRODUCTION, SUB_TDPS
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.package.builder import ExecutionPackageBuilder
 from top_down_planning.package.loader import ExecutionPackageLoader
@@ -186,3 +187,125 @@ def _parent_with_orchestration(tmp_path: Path):
     merged["revision"] = expected_revision + 1
     store.save_production(parent_id, merged, expected_revision)
     return store, parent_id, package, config
+
+
+def _sample_plan() -> Plan:
+    return Plan(
+        id="plan-run-test",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            )
+        },
+    )
+
+
+def _create_paused_production_run(store: FileRunStore) -> str:
+    run_id = "run-20260101T002201-002201"
+    config = minimal_resolved_config()
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=PRODUCTION,
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "limit_exhausted",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "limit reached",
+        "details": {
+            "limit": "limits.production.max_batches",
+            "consumed": 1,
+            "configured": 1,
+        },
+    }
+    store.save_run(run_id, run, expected_revision)
+    return run_id
+
+
+def _item(item_id: str, *, parent_id: str | None, order_key: str, title: str, **kwargs):
+    return PlanItem(
+        id=item_id,
+        parent_id=parent_id,
+        order_key=order_key,
+        title=title,
+        outcome=f"{title} outcome.",
+        kind=kwargs.get("kind", "work"),
+        depends_on=list(kwargs.get("depends_on") or []),
+        scope=Scope(includes=[title.lower()]),
+    )
+
+
+def _dependent_plan(run_id: str) -> Plan:
+    return Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Ship.",
+        input_refs=[],
+        items={
+            PLAN_ROOT_ITEM_ID: _item(
+                PLAN_ROOT_ITEM_ID,
+                parent_id=None,
+                order_key="0",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-a": _item("item-a", parent_id=PLAN_ROOT_ITEM_ID, order_key="1", title="A"),
+            "item-b": _item(
+                "item-b",
+                parent_id=PLAN_ROOT_ITEM_ID,
+                order_key="2",
+                title="B",
+                depends_on=["item-a"],
+            ),
+        },
+    )
+
+
+def _build_package(tmp_path: Path) -> tuple[FileRunStore, Path, Plan]:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T004001-004001"
+    plan = _dependent_plan(run_id)
+    from top_down_planning.domain.run_kind import RUN_KIND_PLANNING
+
+    kwargs = create_run_kwargs(tmp_path)
+    store.create_run(
+        run_id,
+        plan=plan,
+        phase="plan_validated",
+        run_extras={"run_kind": RUN_KIND_PLANNING},
+        **kwargs,
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    output_dir = tmp_path / "pkg"
+    ExecutionPackageBuilder().build_from_planning_run(store, run_id, output_dir=output_dir)
+    return store, output_dir, plan
+
+
+def _force_run_fields(store: FileRunStore, run_id: str, **fields) -> None:
+    run = store.load_run(run_id)
+    run = dict(run)
+    run.update(fields)
+    if (
+        str(run.get("outcome") or "") == "accepted"
+        and str(run.get("phase") or "") == OUTPUT_VALIDATED
+    ):
+        binding = dict(run.get("package_binding") or {})
+        if not str(binding.get("whole_output_review_id") or "").strip():
+            binding["whole_output_review_id"] = "review-whole-output-1"
+            binding["whole_output_review_digest"] = "r" * 64
+            run["package_binding"] = binding
+    atomic_write_json(store.run_dir(run_id) / "run.json", run)

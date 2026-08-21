@@ -18,7 +18,7 @@ from top_down_planning.persistence.sub_tdp_state import (
     merge_sub_tdp_state_into_production,
 )
 from tests.helpers import accept_child_run, create_run_kwargs
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 
 
 def _setup_parent_execution(

@@ -31,7 +31,7 @@ from tests.helpers import (
     mirrored_production_batch,
     whole_plan_approval_record,
 )
-from tests.unit.test_commit_crash_recovery import _create_run
+from tests.support.persistence import _create_run
 from tests.unit.test_persistence_round12_fixes import (
     _create_resource_run,
     _new_run_id as _resource_run_id,

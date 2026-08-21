@@ -32,8 +32,8 @@ from top_down_planning.persistence.sub_tdp_state import (
     merge_sub_tdp_state_into_production,
 )
 from tests.helpers import accept_child_run, create_run_kwargs, goal_met_completion_claim, whole_plan_approval_record
-from tests.unit.test_production_auth_alignment import write_config
-from tests.unit.test_sub_tdp_defect_pass import _item
+from tests.helpers import write_config
+from tests.support.run_builders import _item
 
 
 def _plan_parallel_composite(run_id: str) -> Plan:

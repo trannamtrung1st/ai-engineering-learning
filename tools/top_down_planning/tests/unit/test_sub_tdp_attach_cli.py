@@ -17,7 +17,7 @@ from top_down_planning.package.lineage import accepted_result_digest, accepted_r
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, create_run_kwargs
 from tests.support.run_builders import _built_package, _parent_with_orchestration
-from tests.unit.test_sub_tdp_defect_pass import _build_package as _dependent_build_package
+from tests.support.run_builders import _build_package as _dependent_build_package
 
 
 def test_sub_tdp_attach_updates_orchestration(tmp_path: Path) -> None:
@@ -72,7 +72,7 @@ def test_sub_tdp_attach_rejects_lineage_mismatch(tmp_path: Path) -> None:
     store, parent_id, _, _ = _parent_with_orchestration(tmp_path)
     other_package_dir = tmp_path / "execution-other"
     from top_down_planning.package.builder import ExecutionPackageBuilder
-    from tests.unit.test_execution_package import _planning_run_at_validated
+    from tests.support.run_builders import _planning_run_at_validated
 
     planning_store = FileRunStore(tmp_path / "runs")
     planning_run_id = "run-20260101T001101-001101"

@@ -13,6 +13,37 @@ from top_down_planning.orchestrator.engine import RunContinuationResult
 from top_down_planning.persistence import FileRunStore
 
 
+def _stdout_json(result) -> dict:
+    return json.loads(result.stdout)
+
+
+def _assert_no_traceback(result) -> None:
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def _assert_structured_error(result, code: str) -> None:
+    _assert_no_traceback(result)
+    assert result.exit_code != 0
+    payload = _stdout_json(result)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == code
+
+
+def _resume_check_argv(run_id: str, runs_dir: Path) -> list[str]:
+    return ["resume", "--run", run_id, "--runs-dir", str(runs_dir), "--check"]
+
+
+def _assert_operational_without_traceback(result) -> None:
+    assert result.exit_code == 1
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr
+    if str(getattr(result, "stdout", "") or "").strip().startswith("{"):
+        payload = _stdout_json(result)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "operational_error"
+
+
 def _assert_operational_error(result, *, structured: bool) -> None:
     assert result.exit_code == 1
     assert "Traceback" not in result.stderr

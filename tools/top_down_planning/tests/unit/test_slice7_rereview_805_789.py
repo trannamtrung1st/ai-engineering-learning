@@ -16,10 +16,10 @@ from top_down_planning.domain.run_ownership import (
 from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
+from tests.support.cli_fakes import _assert_no_traceback
 from tests.unit.test_slice7_rereview_798_801 import _json_objects, _next_argv
 from tests.unit.test_slice7_rereview_804_789 import _attach_argv
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
+from tests.support.run_builders import _parent_with_orchestration
 
 
 def _accepted_attach_pair(tmp_path: Path):

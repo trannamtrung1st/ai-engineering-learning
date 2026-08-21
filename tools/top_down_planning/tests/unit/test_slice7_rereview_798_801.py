@@ -18,11 +18,11 @@ from top_down_planning.package.builder import ExecutionPackageBuilder
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import write_config
-from tests.unit.test_execution_package import _planning_run_at_validated
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
-from tests.unit.test_slice7_rereview_755_758 import _stdout_json
+from tests.support.run_builders import _planning_run_at_validated
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_no_traceback
+from tests.support.cli_fakes import _stdout_json
 from tests.unit.test_slice7_rereview_768_774 import _run_dirs
 from tests.unit.test_slice7_rereview_784_790 import _planning_argv
 from tests.unit.test_slice7_rereview_791_796 import _rename_then_interrupt_when
@@ -134,7 +134,7 @@ def test_observability_close_failure_does_not_emit_second_payload(tmp_path: Path
         module = "user" if command == "run" else command
         patches = [patch(f"top_down_planning.cli.{module}._build_run_engine", return_value=engine)]
         if command == "prepare":
-            from tests.unit.test_slice7_rereview_760_767 import _patch_prepare_plan_validated
+            from tests.support.cli_fakes import _patch_prepare_plan_validated
 
             patches.append(_patch_prepare_plan_validated())
         expected_id = None

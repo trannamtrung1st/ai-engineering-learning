@@ -27,7 +27,7 @@ from tests.unit.test_sub_tdp_content_bound_baseline import (
     _create_and_accept_shared_writer,
     _plan_with_shared_resource,
 )
-from tests.unit.test_sub_tdp_defect_pass import _item
+from tests.support.run_builders import _item
 
 
 def _plan_abc_chain(run_id: str) -> Plan:
@@ -68,7 +68,7 @@ def _build_abc_package(tmp_path: Path):
     from top_down_planning.package.builder import ExecutionPackageBuilder
     from top_down_planning.package.loader import ExecutionPackageLoader
     from tests.helpers import create_run_kwargs, whole_plan_approval_record
-    from tests.unit.test_production_auth_alignment import write_config
+    from tests.helpers import write_config
 
     workspace = tmp_path
     shared = workspace / "shared" / "state.json"
@@ -218,7 +218,7 @@ def test_explicit_baseline_overwrite_orders_by_snapshot_lineage(tmp_path: Path) 
     from top_down_planning.package.builder import ExecutionPackageBuilder
     from top_down_planning.package.loader import ExecutionPackageLoader
     from tests.helpers import create_run_kwargs, whole_plan_approval_record
-    from tests.unit.test_production_auth_alignment import write_config
+    from tests.helpers import write_config
 
     workspace = tmp_path
     shared = workspace / "shared" / "state.json"
@@ -304,7 +304,7 @@ def test_sync_run_production_digests_rebases_resource_snapshot(tmp_path: Path) -
     from top_down_planning.package.builder import ExecutionPackageBuilder
     from top_down_planning.package.loader import ExecutionPackageLoader
     from tests.helpers import apply_production, create_run_kwargs, whole_plan_approval_record
-    from tests.unit.test_production_auth_alignment import write_config
+    from tests.helpers import write_config
 
     workspace = tmp_path
     shared = workspace / "shared" / "state.json"

@@ -10,7 +10,7 @@ import pytest
 
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.package.store_persist import persist_package_in_store
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 
 
 def test_persist_package_is_idempotent(tmp_path: Path) -> None:

@@ -12,7 +12,8 @@ from core_tools.persistence import TransactionRecoveryError, atomic_write_json
 from top_down_planning.persistence import FileRunStore, PersistenceError
 from top_down_planning.persistence.commit import CommitSpec
 from tests.helpers import events_append_boundary
-from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
+from tests.support.persistence import _find_txn_dir_local
+from tests.unit.test_persistence_correction_fixes import _create_run
 
 
 def _append_event_line_without_newline(events_path: Path, event: dict[str, object]) -> None:

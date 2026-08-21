@@ -195,7 +195,7 @@ def test_planning_completion_preserves_capabilities_when_commit_fails(tmp_path: 
 
 
 def test_planning_completion_crash_during_replace_restores_prior_phase(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     store, run_id = _planning_store(tmp_path)
     revision_before = int(store.load_run(run_id)["revision"])
@@ -338,7 +338,7 @@ def _production_store_at_plan_validated(
 
 
 def test_production_entry_crash_during_replace_restores_prior_phase(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     store, run_id = _production_store_at_plan_validated(tmp_path)
     revision_before = int(store.load_run(run_id)["revision"])
@@ -363,7 +363,7 @@ def test_production_completion_crash_during_replace_restores_prior_phase(
     tmp_path: Path,
 ) -> None:
     from tests.helpers import goal_met_completion_claim
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     store, run_id = _production_store_at_plan_validated(tmp_path)
     orch = ProductionPhaseOrchestrator(store, run_id, StubProvider())
@@ -424,7 +424,7 @@ def test_production_completion_crash_during_replace_restores_prior_phase(
 
 
 def test_production_limit_crash_during_replace_retries_pause_once(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     store, run_id = _production_store_at_plan_validated(tmp_path, max_batches=1)
     orch = ProductionPhaseOrchestrator(store, run_id, StubProvider())
@@ -499,7 +499,7 @@ def _amendment_production_fixture(
 def test_amendment_entry_crash_during_replace_restores_production_state(
     tmp_path: Path,
 ) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     provider = StubProvider()
     store, run_id, amendment_id = _amendment_production_fixture(tmp_path, provider)
@@ -535,7 +535,7 @@ def test_amendment_entry_crash_during_replace_restores_production_state(
 
 
 def test_amendment_activation_crash_during_replace_retries_once(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     provider = StubProvider()
     store, run_id, amendment_id = _amendment_production_fixture(tmp_path, provider)
@@ -573,7 +573,7 @@ def test_amendment_activation_crash_during_replace_retries_once(tmp_path: Path) 
 def test_amendment_to_whole_plan_review_crash_retries_transition_once(
     tmp_path: Path,
 ) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
     from top_down_planning.orchestrator.run_transitions import pending_capability_revoke_phase
 
     provider = StubProvider()
@@ -611,7 +611,7 @@ def test_amendment_to_whole_plan_review_crash_retries_transition_once(
 
 
 def test_amendment_to_production_crash_retries_transition_once(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
     from top_down_planning.orchestrator.run_transitions import pending_capability_revoke_phase
 
     provider = StubProvider()
@@ -652,7 +652,7 @@ def test_amendment_to_production_crash_retries_transition_once(tmp_path: Path) -
 
 
 def test_amendment_limit_crash_during_replace_retries_pause_once(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     provider = StubProvider()
     store, run_id, amendment_id = _amendment_production_fixture(tmp_path, provider)
@@ -755,7 +755,7 @@ def test_phase_action_assignment_and_event_share_commit_txn(tmp_path: Path) -> N
 
 
 def test_phase_action_assignment_crash_during_replace_retries_once(tmp_path: Path) -> None:
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     store, run_id = _planning_store(tmp_path)
     revision_before = int(store.load_run(run_id)["revision"])

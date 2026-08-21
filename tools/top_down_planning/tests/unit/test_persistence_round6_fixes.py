@@ -9,12 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from top_down_planning.persistence import FileRunStore
-from tests.unit.test_commit_crash_recovery import (
-    _crash_on_appending_events_journal_write,
-    _create_run,
-    _find_txn_dir,
-    _multi_file_commit,
-)
+from tests.support.persistence import _crash_on_appending_events_journal_write, _create_run, _find_txn_dir, _multi_file_commit
 
 
 def test_crash_after_final_replaced_before_appending_events_recovers(tmp_path: Path) -> None:

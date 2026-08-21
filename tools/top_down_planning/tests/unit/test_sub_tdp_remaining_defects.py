@@ -21,7 +21,7 @@ from top_down_planning.package.loader import ExecutionPackageError, ExecutionPac
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest, digest_canonical_payload
 from tests.helpers import complete_child_production, create_run_kwargs
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 
 
 def test_child_run_binds_unit_output_goal_digest_not_parent_config(tmp_path: Path) -> None:
@@ -367,7 +367,7 @@ def test_factory_defaults_workspace_baseline_to_upstream_results(tmp_path: Path)
 
     from top_down_planning.package.lineage import upstream_accepted_result_binding
     from tests.helpers import accept_child_run
-    from tests.unit.test_sub_tdp_defect_pass import _build_package
+    from tests.support.run_builders import _build_package
 
     store, output_dir, _ = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
@@ -417,7 +417,7 @@ def test_factory_defaults_workspace_baseline_to_upstream_results(tmp_path: Path)
 def test_factory_rejects_dependent_unit_without_upstream(tmp_path: Path) -> None:
     """P1#9: dependent units cannot be created with an empty upstream set."""
 
-    from tests.unit.test_sub_tdp_defect_pass import _build_package
+    from tests.support.run_builders import _build_package
 
     store, output_dir, _ = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)

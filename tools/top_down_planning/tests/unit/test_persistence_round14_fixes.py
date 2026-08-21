@@ -19,7 +19,7 @@ from top_down_planning.package.lineage import (
 )
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import bind_evidence_snapshot
-from tests.unit.test_commit_crash_recovery import _create_run
+from tests.support.persistence import _create_run
 
 
 def _new_run_id(suffix: str) -> str:

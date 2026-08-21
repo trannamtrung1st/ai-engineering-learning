@@ -23,8 +23,8 @@ from top_down_planning.persistence.capabilities import write_capability_token_fi
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.review_commit import review_record_revision
 from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
-from tests.unit.test_commit_crash_recovery import _create_run, _find_txn_dir, _multi_file_commit
-from tests.unit.test_persistence_correction_fixes import _find_txn_dir_local
+from tests.support.persistence import _create_run, _find_txn_dir, _multi_file_commit
+from tests.support.persistence import _find_txn_dir_local
 
 
 def _sample_plan(run_id: str = "run-20260101T000901-000901") -> Plan:

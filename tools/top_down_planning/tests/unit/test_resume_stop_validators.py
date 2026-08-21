@@ -26,7 +26,7 @@ from top_down_planning.persistence.sub_tdp_state import (
     merge_sub_tdp_state_into_production,
 )
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 from top_down_planning.persistence import FileRunStore
 
 

@@ -10,7 +10,8 @@ import pytest
 from core_tools.persistence import TransactionRecoveryError, atomic_write_json, digest_file
 from top_down_planning.persistence import FileRunStore, PersistenceError
 from tests.helpers import events_append_boundary, recovery_journal_events
-from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
+from tests.support.persistence import _find_txn_dir_local
+from tests.unit.test_persistence_correction_fixes import _create_run
 
 
 def _file_entry(

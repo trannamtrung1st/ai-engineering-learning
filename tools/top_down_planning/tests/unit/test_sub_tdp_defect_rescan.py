@@ -38,8 +38,8 @@ from tests.helpers import (
     mirrored_production_batch,
     whole_plan_approval_record,
 )
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _parent_with_orchestration
 from tests.unit.test_sub_tdp_orchestrator import _setup_parent_execution
 
 
@@ -772,7 +772,7 @@ def test_integration_producer_includes_all_completed_units(tmp_path: Path) -> No
         merge_sub_tdp_state_into_production,
     )
     from top_down_planning.package.lineage import accepted_result_record
-    from tests.unit.test_sub_tdp_defect_pass import _build_package
+    from tests.support.run_builders import _build_package
 
     store, output_dir, _plan = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)

@@ -23,8 +23,8 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.domain.review_loop_factory import new_focused_review_loop
 from top_down_planning.persistence.commit import CommitSpec
 from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
-from tests.unit.test_commit_crash_recovery import _create_run, _multi_file_commit
-from tests.unit.test_persistence_correction_fixes import _find_txn_dir_local
+from tests.support.persistence import _create_run, _multi_file_commit
+from tests.support.persistence import _find_txn_dir_local
 
 
 def _sample_plan(run_id: str = "run-20260101T000901-000901") -> Plan:

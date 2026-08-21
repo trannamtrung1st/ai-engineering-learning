@@ -22,8 +22,8 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import CliResult, run_cli
 from tests.helpers import write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
 
 
 def _stdout_json(result: CliResult) -> dict:
@@ -714,7 +714,7 @@ def test_doctor_fix_nonzero_exit_when_repair_incomplete(tmp_path: Path) -> None:
 
 def test_sub_tdp_attach_human_success_mode(tmp_path: Path) -> None:
     from tests.helpers import accept_child_run
-    from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
+    from tests.support.run_builders import _parent_with_orchestration
     from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
 
     store, parent_id, package, config = _parent_with_orchestration(tmp_path)

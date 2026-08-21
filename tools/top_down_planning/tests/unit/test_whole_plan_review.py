@@ -954,7 +954,7 @@ def test_whole_plan_approval_commit_crash_retries_phase_transition_once(
     tmp_path: Path,
 ) -> None:
     from tests.helpers import whole_plan_approval_record
-    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+    from tests.support.persistence import _crash_after_dest_replace_count
 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000302-000302"

@@ -19,8 +19,8 @@ from top_down_planning.orchestrator.prepared_unit_executor import (
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from tests.conftest import run_cli
 from tests.helpers import create_run_kwargs
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_sub_tdp_defect_pass import _build_package
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _build_package
 
 
 def test_parse_upstream_bindings_rejects_duplicate_unit() -> None:

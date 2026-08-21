@@ -31,7 +31,7 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_config_execution_digest
 from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
 from tests.helpers import accept_child_run, mirrored_production_batch, apply_production
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 from tests.unit.test_sub_tdp_orchestrator import _setup_parent_execution
 
 

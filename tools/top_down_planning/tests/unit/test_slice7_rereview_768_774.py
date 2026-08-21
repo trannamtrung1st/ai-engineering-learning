@@ -26,17 +26,18 @@ from top_down_planning.persistence.snapshot_bindings import (
 )
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, create_run_kwargs, write_config
-from tests.unit.test_execution_package import _planning_run_at_validated
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _planning_run_at_validated
+from tests.support.run_builders import _built_package
+from tests.support.cli_fakes import _assert_operational_without_traceback
 from tests.unit.test_slice7_rereview_739_747 import (
-    _assert_operational_without_traceback,
     _dependent_build_package,
     _execute_item_b_argv,
 )
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
-from tests.unit.test_slice7_rereview_755_758 import _assert_structured_error, _stdout_json
-from tests.unit.test_slice7_rereview_760_764 import _engine_patches, _pause_child_for_resume
-from tests.unit.test_slice7_rereview_760_767 import _patch_prepare_plan_validated
+from tests.support.cli_fakes import _assert_no_traceback
+from tests.support.cli_fakes import _assert_structured_error, _stdout_json
+from tests.support.cli_fakes import _engine_patches
+from tests.unit.test_slice7_rereview_760_764 import _pause_child_for_resume
+from tests.support.cli_fakes import _patch_prepare_plan_validated
 
 
 def _publish_valid_config_run_revision(store: FileRunStore, run_id: str) -> None:

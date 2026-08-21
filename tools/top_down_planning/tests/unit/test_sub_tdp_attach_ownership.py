@@ -8,7 +8,7 @@ from unittest.mock import patch
 from top_down_planning.domain.run_ownership import RunOwnershipError
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, create_run_kwargs
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
+from tests.support.run_builders import _parent_with_orchestration
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 
 

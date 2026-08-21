@@ -2,54 +2,37 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+
+from tests.support.isolation import sibling_test_import_modules
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
 _WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "tdp.yml"
 
-_SIBLING_IMPORT = re.compile(
-    r"^\s*(?:from\s+tests\.unit\.test_\w+|import\s+tests\.unit\.test_\w+)",
-    re.MULTILINE,
-)
-
-# Historical modules that still import sibling test_*.py helpers. New modules
-# must use tests.support / tests.helpers; shrink this set when a module is migrated.
+# Historical modules that still import sibling test_*.py helpers. Shrink when migrated.
 _SIBLING_IMPORT_ALLOWLIST = frozenset(
     {
         "integration/test_resume_cross_phase_e2e.py",
         "unit/test_agent_process_cleanup.py",
         "unit/test_apply_resume_crash.py",
-        "unit/test_composite_baseline_regression.py",
         "unit/test_cursor_reviewer_session_binding.py",
         "unit/test_focused_review_families.py",
         "unit/test_mandatory_in_process_transitions.py",
         "unit/test_mandatory_review_acceptance.py",
         "unit/test_mandatory_review_orchestration.py",
-        "unit/test_notifications.py",
         "unit/test_orchestration_lifecycle_atomicity.py",
+        "unit/test_packaging_suite_contract.py",
         "unit/test_payload_cutover_contracts.py",
-        "unit/test_persistence_correction_fixes.py",
         "unit/test_persistence_review_fixes.py",
-        "unit/test_persistence_round10_fixes.py",
-        "unit/test_persistence_round11_fixes.py",
-        "unit/test_persistence_round12_fixes.py",
-        "unit/test_persistence_round13_fixes.py",
-        "unit/test_persistence_round14_fixes.py",
         "unit/test_persistence_round15_fixes.py",
         "unit/test_persistence_round16_fixes.py",
         "unit/test_persistence_round17_fixes.py",
         "unit/test_persistence_round3_fixes.py",
         "unit/test_persistence_round4_fixes.py",
         "unit/test_persistence_round5_fixes.py",
-        "unit/test_persistence_round6_fixes.py",
-        "unit/test_persistence_round7_fixes.py",
-        "unit/test_persistence_round8_fixes.py",
-        "unit/test_persistence_round9_fixes.py",
         "unit/test_production_apply_snapshot_evidence.py",
         "unit/test_provider_turns.py",
-        "unit/test_resume_stop_validators.py",
         "unit/test_review_revision_cas.py",
         "unit/test_reviewer_session_release.py",
         "unit/test_run_lifecycle_reconciliation.py",
@@ -67,11 +50,7 @@ _SIBLING_IMPORT_ALLOWLIST = frozenset(
         "unit/test_slice5_rereview_ff20bb4_fixes.py",
         "unit/test_slice6_rereview_0cd5abc8_fixes.py",
         "unit/test_slice6_rereview_1f93dab4_fixes.py",
-        "unit/test_slice7_cli_config_fixes.py",
-        "unit/test_slice7_rereview_739_747.py",
         "unit/test_slice7_rereview_739_750.py",
-        "unit/test_slice7_rereview_751_754.py",
-        "unit/test_slice7_rereview_755_758.py",
         "unit/test_slice7_rereview_759_761.py",
         "unit/test_slice7_rereview_760_764.py",
         "unit/test_slice7_rereview_760_767.py",
@@ -85,21 +64,10 @@ _SIBLING_IMPORT_ALLOWLIST = frozenset(
         "unit/test_slice7_rereview_804_789.py",
         "unit/test_slice7_rereview_805_789.py",
         "unit/test_slice7_rereview_806.py",
-        "unit/test_store_persist.py",
-        "unit/test_sub_tdp_attach_cli.py",
-        "unit/test_sub_tdp_attach_ownership.py",
-        "unit/test_sub_tdp_code_review_fixes.py",
-        "unit/test_sub_tdp_content_bound_baseline.py",
         "unit/test_sub_tdp_cutover_defects.py",
         "unit/test_sub_tdp_defect_rescan.py",
-        "unit/test_sub_tdp_explicit_baseline.py",
-        "unit/test_sub_tdp_orchestrator.py",
-        "unit/test_sub_tdp_remaining_defects.py",
         "unit/test_sub_tdp_review_continued.py",
         "unit/test_sub_tdp_review_fixes.py",
-        "unit/test_sub_tdp_upstream_and_execute_guards.py",
-        "unit/test_sub_tdp_whole_output_review.py",
-        "unit/test_whole_output_review.py",
         "unit/test_whole_plan_review.py",
     }
 )
@@ -112,7 +80,7 @@ def _rel_test_path(path: Path) -> str:
 def _modules_with_sibling_test_imports() -> set[str]:
     found: set[str] = set()
     for path in _TESTS_ROOT.rglob("test_*.py"):
-        if _SIBLING_IMPORT.search(path.read_text(encoding="utf-8")):
+        if sibling_test_import_modules(path.read_text(encoding="utf-8")):
             found.add(_rel_test_path(path))
     return found
 
@@ -132,6 +100,23 @@ def _workflow_job_source(workflow: str, job_id: str) -> str:
             end = index
             break
     return "\n".join(lines[start:end])
+
+
+def test_sibling_import_detector_covers_relative_integration_and_package_imports() -> None:
+    source = """
+from tests.integration.test_packaging_smoke import helper
+from .test_prepared_runs import _built_package
+from tests.unit import test_commit_crash_recovery
+import tests.unit.test_foo as foo
+from tests.support.run_builders import _built_package as ok
+from tests.helpers import write_config
+"""
+    found = sibling_test_import_modules(source)
+    assert "tests.integration.test_packaging_smoke" in found
+    assert "test_prepared_runs" in found
+    assert "tests.unit.test_commit_crash_recovery" in found
+    assert "tests.unit.test_foo" in found
+    assert not any("run_builders" in name or "helpers" in name for name in found)
 
 
 def test_test_modules_do_not_import_sibling_test_modules_except_allowlist() -> None:
@@ -170,6 +155,8 @@ jobs:
 def test_darwin_ci_runs_cli_os_process_cancel_serially() -> None:
     workflow = _WORKFLOW.read_text(encoding="utf-8")
     darwin = _workflow_job_source(workflow, "darwin-janitor")
+    assert "runs-on: macos-latest" in darwin
+    assert 'python-version: ["3.11", "3.13"]' in darwin
     cancel_steps = [
         block
         for block in darwin.split("- name:")

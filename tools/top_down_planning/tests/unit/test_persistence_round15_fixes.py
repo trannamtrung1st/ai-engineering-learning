@@ -17,12 +17,12 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.persistence.sub_tdp_state import initial_sub_tdp_state_from_package
 from tests.helpers import apply_production, bind_evidence_snapshot, create_run_kwargs, grant_capability, whole_plan_approval_record, write_config
-from tests.unit.test_commit_crash_recovery import _create_run
+from tests.support.persistence import _create_run
 from tests.unit.test_persistence_round12_fixes import (
     _create_resource_run,
     _new_run_id as _resource_run_id,
 )
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 
 
 def _new_run_id(suffix: str) -> str:

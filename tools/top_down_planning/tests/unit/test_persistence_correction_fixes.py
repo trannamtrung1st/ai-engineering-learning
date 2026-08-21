@@ -25,10 +25,7 @@ from tests.fixtures.persistence_review_worker import (
     load_config_reader_worker,
 )
 from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config, recovery_journal_events
-from tests.unit.test_commit_crash_recovery import (
-    _crash_before_appending_events,
-    _find_txn_dir,
-)
+from tests.support.persistence import _crash_before_appending_events, _find_txn_dir
 
 
 def _sample_plan(run_id: str = "run-20260101T000801-000801") -> Plan:

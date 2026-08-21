@@ -20,7 +20,7 @@ from tests.helpers import (
     whole_plan_approval_record,
     write_config,
 )
-from tests.unit.test_commit_crash_recovery import _create_run
+from tests.support.persistence import _create_run
 
 
 def _new_run_id(suffix: str) -> str:

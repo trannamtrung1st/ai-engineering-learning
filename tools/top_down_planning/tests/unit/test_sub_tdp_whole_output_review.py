@@ -32,7 +32,7 @@ from tests.helpers import (
     mirrored_production_batch,
     whole_plan_approval_record,
 )
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package
 import pytest
 
 

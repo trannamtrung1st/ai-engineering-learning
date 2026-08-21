@@ -18,23 +18,7 @@ from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.orchestrator.session_policy import register_session_policy_executor
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, minimal_resolved_config, whole_plan_approval_record
-
-
-def _sample_plan() -> Plan:
-    return Plan(
-        id="plan-run-test",
-        revision=0,
-        output_goal="Goal.",
-        items={
-            "item-root": PlanItem(
-                id="item-root",
-                parent_id=None,
-                order_key="0000000000",
-                title="Root",
-                kind="aggregate",
-            )
-        },
-    )
+from tests.support.run_builders import _create_paused_production_run, _sample_plan
 
 
 def _run_dir_digest(run_dir: Path) -> str:
@@ -45,36 +29,6 @@ def _run_dir_digest(run_dir: Path) -> str:
         digest.update(path.relative_to(run_dir).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()
-
-
-def _create_paused_production_run(store: FileRunStore) -> str:
-    run_id = "run-20260101T002201-002201"
-    config = minimal_resolved_config()
-    store.create_run(
-        run_id,
-        plan=_sample_plan(),
-        phase=PRODUCTION,
-        **create_run_kwargs(store.root, resolved_config=config),
-    )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
-    run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["status"] = "paused"
-    run["stop"] = {
-        "code": "limit_exhausted",
-        "category": "operational",
-        "phase": PRODUCTION,
-        "message": "limit reached",
-        "details": {
-            "limit": "limits.production.max_batches",
-            "consumed": 1,
-            "configured": 1,
-        },
-    }
-    store.save_run(run_id, run, expected_revision)
-    return run_id
 
 
 def test_resume_check_performs_no_writes(tmp_path: Path) -> None:

@@ -11,8 +11,8 @@ from top_down_planning.package.builder import ExecutionPackageBuilder
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import write_config
-from tests.unit.test_execution_package import _planning_run_at_validated
-from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback
+from tests.support.run_builders import _planning_run_at_validated
+from tests.support.cli_fakes import _assert_no_traceback
 from tests.unit.test_slice7_rereview_768_774 import _run_dirs
 from tests.unit.test_slice7_rereview_784_790 import _planning_argv
 from tests.unit.test_slice7_rereview_798_801 import _json_objects, _next_argv

@@ -19,16 +19,14 @@ from top_down_planning.persistence.snapshot_bindings import (
 )
 from tests.conftest import run_cli
 from tests.helpers import make_review_loop, save_review_payload
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_resume_cli import _create_paused_production_run
-from tests.unit.test_slice7_rereview_739_747 import _assert_operational_without_traceback
-from tests.unit.test_slice7_rereview_751_754 import (
-    _assert_no_traceback,
-    _attached_parent_and_child,
-    _resume_check_argv,
-)
-from tests.unit.test_slice7_rereview_755_758 import _assert_structured_error
-from tests.unit.test_slice7_rereview_cli_schema import _create_planning_run, _stdout_json
+from tests.support.run_builders import _built_package
+from tests.support.run_builders import _create_paused_production_run
+from tests.support.cli_fakes import _assert_operational_without_traceback
+from tests.support.cli_fakes import _assert_no_traceback, _resume_check_argv
+from tests.unit.test_slice7_rereview_751_754 import _attached_parent_and_child
+from tests.support.cli_fakes import _assert_structured_error
+from tests.support.run_builders import _create_planning_run
+from tests.support.cli_fakes import _stdout_json
 
 
 def _fail_same_run(run_id: str, label: str, real):

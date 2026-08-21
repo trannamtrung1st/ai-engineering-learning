@@ -19,38 +19,10 @@ from tests.support.persistence import (
     _crash_before_appending_events,
     _crash_before_dest_replace_count,
     _crash_on_appending_events_journal_write,
+    _create_run,
+    _find_txn_dir,
     _multi_file_commit,
 )
-
-
-def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601") -> None:
-    workspace = store.root
-    config = minimal_resolved_config()
-    plan = Plan(
-        id="plan-run-20260101T000601-000601",
-        revision=0,
-        output_goal="Goal.",
-        items={
-            "item-root": PlanItem(
-                id="item-root",
-                parent_id=None,
-                order_key="0000000000",
-                title="Root",
-                kind="aggregate",
-            )
-        },
-    )
-    store.create_run(
-        run_id,
-        plan=plan,
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-
-def _find_txn_dir(store: FileRunStore, run_id: str) -> Path | None:
-    run_dir = store.run_dir(run_id)
-    txn_dirs = sorted(run_dir.glob(".txn-*"))
-    return txn_dirs[0] if txn_dirs else None
 
 
 def test_crash_during_replace_restores_prior_state(tmp_path: Path) -> None:
