@@ -45,6 +45,11 @@ def test_slice10_freeze_workflow_builds_wheelhouse_and_forbids_packaging_skip() 
     )
     assert "TDP_SLICE10_FREEZE" in packaging_block
     assert "-m packaging" in packaging_block
+    assert (
+        "tests/unit/test_slice10_scenario_matrix.py::"
+        "test_slice10_installed_artifact_gate_executes_when_freeze_requested"
+        in packaging_block
+    )
 
 
 def test_slice10_installed_artifact_gate_executes_when_freeze_requested() -> None:

@@ -71,7 +71,7 @@ jobs:
           cd tools/top_down_planning
           python -m pytest -o addopts='' -m packaging --tb=short
           python -m pytest -o addopts='' -p no:xdist \
-            tests/unit/test_slice10_scenario_matrix.py::test_slice10_installed_artifact_gate_executes
+            tests/unit/test_slice10_scenario_matrix.py::test_slice10_installed_artifact_gate_executes_when_freeze_requested
 
       - name: Wheel build gate
         run: python -m build --wheel tools/top_down_planning
