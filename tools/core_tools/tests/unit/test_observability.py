@@ -672,6 +672,22 @@ _SPLIT_SECRET_FORMS = (
     ("password=$(case x in a) ./esac\n)\nQUALIFIED_ESAC_SECRET\nesac)", "QUALIFIED_ESAC_SECRET"),
     ("password=$(cat <<EO\\\nF\nEO\n)\nCONTINUED_HEREDOC_SECRET\nEOF\n)", "CONTINUED_HEREDOC_SECRET"),
     ("password=$(cat <<EO\\\r\nF\nEO\n)\nCONTINUED_CRLF_SECRET\nEOF\n)", "CONTINUED_CRLF_SECRET"),
+    ("password=$(case x in a|esac) echo ALT_PATTERN_SECRET ;; esac)", "ALT_PATTERN_SECRET"),
+    ("password=$(case x in a|b) echo MULTI_ALT_SECRET ;; esac)", "MULTI_ALT_SECRET"),
+    (
+        "password=$(case x in a) case y in a|esac) echo NESTED_ALT_SECRET ;; esac ;; esac)",
+        "NESTED_ALT_SECRET",
+    ),
+    ("password=$(case x in a) esac.sh ;; b) echo SUFFIX_SECRET ;; esac)", "SUFFIX_SECRET"),
+    ("password=$(case x in a) esac/tool ;; b) echo SLASH_SUFFIX_SECRET ;; esac)", "SLASH_SUFFIX_SECRET"),
+    ("password=$(case x in a) /bin/esac\n)\nBIN_ESAC_SECRET\nesac)", "BIN_ESAC_SECRET"),
+    ("password=$(case x in a) foo/esac\n)\nFOO_ESAC_SECRET\nesac)", "FOO_ESAC_SECRET"),
+    ("password=$(case x in [!])esac] ) echo NEG_CLASS_SECRET ;; esac)", "NEG_CLASS_SECRET"),
+    ("password=$(case x in [[:alpha:])esac] ) echo POSIX_CLASS_SECRET ;; esac)", "POSIX_CLASS_SECRET"),
+    (
+        "password=$(case x in a) case y in [[:alpha:])esac] ) echo NESTED_POSIX_SECRET ;; esac ;; esac)",
+        "NESTED_POSIX_SECRET",
+    ),
 )
 
 
@@ -937,6 +953,9 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
         "password=[REDACTED] --output report.json"
     )
     assert redact_value("password=$(case x in a) ./esac; echo x ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in a) esac.sh; echo x ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )
 

@@ -197,6 +197,7 @@ class StreamingRedactor:
         self._cmd_qualified = False
         self._case_class = False
         self._case_class_first = False
+        self._case_posix = ""
         self._semi = False
         self._shell_comment = False
         self._heredoc = ""
@@ -277,6 +278,7 @@ class StreamingRedactor:
             + self._case_depth
             + int(self._cmd_qualified)
             + int(self._case_class)
+            + min(len(self._case_posix), 2)
             + int(self._shell_comment)
             + int(self._heredoc_crlf)
             + len(self._heredoc_tag)
@@ -308,6 +310,7 @@ class StreamingRedactor:
         self._cmd_qualified = False
         self._case_class = False
         self._case_class_first = False
+        self._case_posix = ""
         self._semi = False
         self._shell_comment = False
         self._heredoc = ""
@@ -751,17 +754,15 @@ class StreamingRedactor:
                 self._subst_word += char
             return
         if self._case_arm == "pattern":
+            if self._case_class:
+                self._step_case_class(char)
+                return
             if char == "[":
                 self._flush_subst_word()
-                self._case_class = True
-                self._case_class_first = True
+                self._enter_case_class()
                 return
-            if self._case_class:
-                if self._case_class_first:
-                    self._case_class_first = False
-                    return
-                if char == "]":
-                    self._case_class = False
+            if char == "|":
+                self._flush_subst_word()
                 return
         self._flush_subst_word()
         if char == ";":
@@ -773,6 +774,7 @@ class StreamingRedactor:
                     self._case_arm = "pattern"
                     self._case_class = False
                     self._case_class_first = False
+                    self._case_posix = ""
             else:
                 self._semi = True
                 self._cmd_pos = True
@@ -786,6 +788,7 @@ class StreamingRedactor:
                 self._case_arm = "pattern"
                 self._case_class = False
                 self._case_class_first = False
+                self._case_posix = ""
             return
         self._semi = False
         if char in "|&\r\n":
@@ -794,6 +797,47 @@ class StreamingRedactor:
         elif char == "(":
             self._cmd_pos = True
             self._cmd_qualified = False
+
+    def _enter_case_class(self) -> None:
+        self._case_class = True
+        self._case_class_first = True
+        self._case_posix = ""
+
+    def _step_case_class(self, char: str) -> None:
+        if self._case_posix == "open":
+            if char in ":.=":
+                self._case_posix = char
+                return
+            self._case_posix = ""
+        elif self._case_posix in ":.=":
+            if char == self._case_posix:
+                self._case_posix = "end"
+            return
+        elif self._case_posix == "end":
+            if char == "]":
+                self._case_posix = ""
+                return
+            if char in ":.=":
+                self._case_posix = char
+                return
+            self._case_posix = ""
+        if self._case_class_first:
+            if char in "!^":
+                return
+            self._case_class_first = False
+            if char == "]":
+                return
+            if char == "[":
+                self._case_posix = "open"
+                return
+            return
+        if char == "[":
+            self._case_posix = "open"
+            return
+        if char == "]":
+            self._case_class = False
+            self._case_class_first = False
+            self._case_posix = ""
 
     def _append_heredoc_tag(self, char: str) -> None:
         if len(self._heredoc_tag) >= _MAX_HEREDOC_TAG:
@@ -983,7 +1027,7 @@ class StreamingRedactor:
             self._allow_compound = False
             self._note_subst_char(char)
             return ""
-        if self._subst_stack and not (char.isalnum() or char == "_"):
+        if self._subst_stack and not (char.isalnum() or char in "_./"):
             self._flush_subst_word()
         if self._subst_stack and char == self._subst_stack[-1]:
             if char == ")" and self._case_depth and len(self._subst_stack) == 1:
@@ -994,6 +1038,7 @@ class StreamingRedactor:
                     self._case_arm = "body"
                     self._case_class = False
                     self._case_class_first = False
+                    self._case_posix = ""
                 self._cmd_pos = True
                 self._cmd_qualified = False
                 self._note_subst_char(char)
