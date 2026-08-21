@@ -21,6 +21,24 @@ class RedactionPolicy:
     max_message_length: int | None = None
 
 
+@dataclass
+class _SubstFrame:
+    closer: str
+    kind: str
+    cmd_pos: bool
+    word_active: bool
+    word_literal: str
+    word_qualified: bool
+
+
+@dataclass
+class _CaseFrame:
+    arm: str
+    in_class: bool = False
+    class_first: bool = False
+    posix: str = ""
+
+
 def truncate_text(text: str, max_len: int | None) -> str:
     """Truncate *text* when *max_len* is set; otherwise return unchanged."""
 
@@ -126,6 +144,9 @@ _MAX_HEREDOC_LINE = 256
 _MAX_HEREDOC_QUEUE = 8
 _MAX_JSON_NEST = 8
 _SHELL_WORD_BREAK = frozenset(" \t;|&(){}\r\n<>")
+_CONTROL_WORDS = frozenset(
+    {"!", "then", "do", "else", "elif", "if", "fi", "while", "until", "for", "done", "time"}
+)
 _SIMPLE_ESCAPES = {
     '"': '"',
     "'": "'",
@@ -187,19 +208,17 @@ class StreamingRedactor:
         self._dollar = False
         self._lt = False
         self._gt = False
-        self._subst_stack: list[tuple[str, str, bool]] = []
+        self._subst_stack: list[_SubstFrame] = []
         self._subst_seen = False
         self._subst_opaque = False
         self._arith_maybe = False
         self._allow_compound = False
-        self._subst_word = ""
-        self._case_depth = 0
-        self._case_arm = ""
+        self._word_active = False
+        self._word_literal = ""
+        self._word_qualified = False
+        self._line_cont_cr = False
+        self._case_stack: list[_CaseFrame] = []
         self._cmd_pos = False
-        self._cmd_qualified = False
-        self._case_class = False
-        self._case_class_first = False
-        self._case_posix = ""
         self._semi = False
         self._shell_comment = False
         self._heredoc = ""
@@ -277,11 +296,13 @@ class StreamingRedactor:
             + int(self._subst_opaque)
             + int(self._arith_maybe)
             + int(self._allow_compound)
-            + min(len(self._subst_word), 8)
-            + self._case_depth
-            + int(self._cmd_qualified)
-            + int(self._case_class)
-            + min(len(self._case_posix), 2)
+            + int(self._word_active)
+            + min(len(self._word_literal), 8)
+            + int(self._word_qualified)
+            + int(self._line_cont_cr)
+            + len(self._case_stack)
+            + int(any(frame.in_class for frame in self._case_stack))
+            + min(sum(len(frame.posix) for frame in self._case_stack), 2)
             + int(self._shell_comment)
             + int(self._heredoc_crlf)
             + len(self._heredoc_tag)
@@ -307,14 +328,12 @@ class StreamingRedactor:
         self._subst_opaque = False
         self._arith_maybe = False
         self._allow_compound = False
-        self._subst_word = ""
-        self._case_depth = 0
-        self._case_arm = ""
+        self._word_active = False
+        self._word_literal = ""
+        self._word_qualified = False
+        self._line_cont_cr = False
+        self._case_stack = []
         self._cmd_pos = False
-        self._cmd_qualified = False
-        self._case_class = False
-        self._case_class_first = False
-        self._case_posix = ""
         self._semi = False
         self._shell_comment = False
         self._heredoc = ""
@@ -676,10 +695,11 @@ class StreamingRedactor:
     def _step_quoted_value(self, char: str) -> str:
         if self._escape:
             self._escape = False
-            if self._case_class:
-                self._step_case_class(char)
+            if self._in_case_class():
+                self._step_case_class(char, escaped=True)
             elif self._subst_stack:
-                self._cmd_qualified = True
+                self._begin_word()
+                self._word_qualified = True
             return ""
         if char == "\\":
             self._escape = True
@@ -688,12 +708,14 @@ class StreamingRedactor:
             self._state = "unquoted_value"
             self._value_quote = ""
             if self._subst_stack:
-                self._cmd_qualified = True
+                self._begin_word()
+                self._word_qualified = True
             return ""
-        if self._case_class:
+        if self._in_case_class():
             self._step_case_class(char)
         elif self._subst_stack:
-            self._cmd_qualified = True
+            self._begin_word()
+            self._word_qualified = True
         return ""
 
     def _value_kind_for_separator(self, separator: str) -> str:
@@ -718,170 +740,220 @@ class StreamingRedactor:
 
     def _push_subst(self, closer: str, kind: str = "cmd") -> None:
         self._subst_seen = True
-        saved_cmd = self._cmd_pos
+        frame = _SubstFrame(
+            closer,
+            kind,
+            self._cmd_pos,
+            self._word_active,
+            self._word_literal,
+            self._word_qualified,
+        )
         self._cmd_pos = kind == "cmd"
+        self._word_active = False
+        self._word_literal = ""
+        self._word_qualified = False
         if self._subst_opaque:
             return
         if len(self._subst_stack) >= _MAX_SUBST_NEST:
             self._subst_opaque = True
             self._subst_stack.clear()
             return
-        self._subst_stack.append((closer, kind, saved_cmd))
+        self._subst_stack.append(frame)
 
     def _pop_subst(self) -> None:
-        _closer, _kind, saved_cmd = self._subst_stack.pop()
-        self._cmd_pos = saved_cmd
+        frame = self._subst_stack.pop()
+        self._cmd_pos = frame.cmd_pos
+        if frame.word_active:
+            self._word_active = True
+            self._word_literal = frame.word_literal
+            self._word_qualified = True
+        else:
+            self._word_active = True
+            self._word_literal = ""
+            self._word_qualified = True
         if not self._subst_stack and not self._subst_opaque:
             self._subst_seen = False
 
     def _subst_closer(self) -> str:
-        return self._subst_stack[-1][0] if self._subst_stack else ""
+        return self._subst_stack[-1].closer if self._subst_stack else ""
 
     def _subst_kind(self) -> str:
-        return self._subst_stack[-1][1] if self._subst_stack else ""
+        return self._subst_stack[-1].kind if self._subst_stack else ""
 
     def _in_cmd_grammar(self) -> bool:
-        return bool(
-            self._cmd_pos
-            and not self._cmd_qualified
-            and self._subst_stack
-            and self._subst_stack[-1][1] == "cmd"
-        )
+        return bool(self._cmd_pos and self._subst_kind() == "cmd")
+
+    def _case_top(self) -> _CaseFrame | None:
+        return self._case_stack[-1] if self._case_stack else None
+
+    def _in_case_class(self) -> bool:
+        top = self._case_top()
+        return bool(top and top.in_class)
+
+    def _case_arm(self) -> str:
+        top = self._case_top()
+        return top.arm if top else ""
+
+    def _clear_word(self) -> None:
+        self._word_active = False
+        self._word_literal = ""
+        self._word_qualified = False
+
+    def _begin_word(self) -> None:
+        if not self._word_active:
+            self._word_active = True
+            self._word_literal = ""
+            self._word_qualified = False
 
     def _extend_shell_word(self, char: str) -> None:
-        if char.isalnum() or char == "_":
-            if len(self._subst_word) < 8:
-                self._subst_word += char
+        if char == "!" and not self._word_active:
+            self._word_active = True
+            self._word_literal = "!"
+            self._word_qualified = False
             return
-        self._cmd_qualified = True
-        if char in "./" and len(self._subst_word) < 8:
-            self._subst_word += char
+        self._begin_word()
+        if char.isalnum() or char == "_":
+            if self._word_literal == "!":
+                self._word_qualified = True
+                self._word_literal = char
+                return
+            if not self._word_qualified and len(self._word_literal) < 8:
+                self._word_literal += char
+            return
+        if self._word_literal == "!":
+            self._word_qualified = True
+            return
+        self._word_qualified = True
 
     def _flush_subst_word(self) -> None:
-        word = self._subst_word.lower()
-        self._subst_word = ""
-        if not word:
+        if not self._word_active and not self._word_literal:
             return
-        if self._in_cmd_grammar() and word == "case":
-            if self._case_depth < _MAX_CASE_NEST:
-                self._case_depth += 1
+        word = self._word_literal.lower()
+        qualified = self._word_qualified
+        self._clear_word()
+        if self._in_cmd_grammar() and not qualified and word == "case":
+            if len(self._case_stack) < _MAX_CASE_NEST:
+                self._case_stack.append(_CaseFrame(arm="word"))
             else:
                 self._subst_opaque = True
-            self._case_arm = "word"
             self._cmd_pos = False
-            self._cmd_qualified = False
             return
-        if self._case_depth and self._in_cmd_grammar() and word == "esac":
-            self._case_depth -= 1
-            self._case_arm = "" if not self._case_depth else self._case_arm
+        if self._case_stack and self._in_cmd_grammar() and not qualified and word == "esac":
+            self._case_stack.pop()
             self._cmd_pos = False
-            self._cmd_qualified = False
             return
-        if self._case_arm == "word":
-            self._case_arm = "in"
+        top = self._case_top()
+        if top and top.arm == "word":
+            top.arm = "in"
             self._cmd_pos = False
-            self._cmd_qualified = False
             return
-        if self._case_arm == "in" and word == "in":
-            self._case_arm = "pattern"
+        if top and top.arm == "in" and not qualified and word == "in":
+            top.arm = "pattern"
             self._cmd_pos = False
-            self._cmd_qualified = False
+            return
+        if self._in_cmd_grammar() and not qualified and word in _CONTROL_WORDS:
+            self._cmd_pos = True
             return
         self._cmd_pos = False
-        self._cmd_qualified = False
+
+    def _reset_case_class(self) -> None:
+        top = self._case_top()
+        if top is None:
+            return
+        top.in_class = False
+        top.class_first = False
+        top.posix = ""
+
+    def _enter_pattern(self) -> None:
+        top = self._case_top()
+        if top is None:
+            return
+        top.arm = "pattern"
+        self._reset_case_class()
 
     def _note_subst_char(self, char: str) -> None:
-        if char.isalnum() or char in "_./":
-            if char in "./":
-                self._cmd_qualified = True
-            if len(self._subst_word) < 8:
-                self._subst_word += char
+        if self._case_arm() == "pattern" and char == "|":
             return
-        if self._case_arm == "pattern":
-            if self._case_class:
-                self._step_case_class(char)
-                return
-            if char == "[":
-                self._flush_subst_word()
-                self._enter_case_class()
-                return
-            if char == "|":
-                self._flush_subst_word()
-                return
-        self._flush_subst_word()
         if char == ";":
             if self._semi:
                 self._semi = False
                 self._cmd_pos = True
-                self._cmd_qualified = False
-                if self._case_depth:
-                    self._case_arm = "pattern"
-                    self._case_class = False
-                    self._case_class_first = False
-                    self._case_posix = ""
+                self._clear_word()
+                if self._case_stack:
+                    self._enter_pattern()
             else:
                 self._semi = True
                 self._cmd_pos = True
-                self._cmd_qualified = False
+                self._clear_word()
             return
         if char == "&" and self._semi:
             self._semi = False
             self._cmd_pos = True
-            self._cmd_qualified = False
-            if self._case_depth:
-                self._case_arm = "pattern"
-                self._case_class = False
-                self._case_class_first = False
-                self._case_posix = ""
+            self._clear_word()
+            if self._case_stack:
+                self._enter_pattern()
             return
         self._semi = False
         if char in "|&\r\n":
             self._cmd_pos = True
-            self._cmd_qualified = False
+            self._clear_word()
+        elif char == "{":
+            self._cmd_pos = True
+            self._clear_word()
         elif char == "(":
             self._cmd_pos = True
-            self._cmd_qualified = False
+            self._clear_word()
 
     def _enter_case_class(self) -> None:
-        self._case_class = True
-        self._case_class_first = True
-        self._case_posix = ""
-
-    def _step_case_class(self, char: str) -> None:
-        if self._case_posix == "open":
-            if char in ":.=":
-                self._case_posix = char
-                return
-            self._case_posix = ""
-        elif self._case_posix in (":", ".", "="):
-            if char == self._case_posix:
-                self._case_posix = "end"
+        top = self._case_top()
+        if top is None:
             return
-        elif self._case_posix == "end":
+        top.in_class = True
+        top.class_first = True
+        top.posix = ""
+
+    def _step_case_class(self, char: str, *, escaped: bool = False) -> None:
+        top = self._case_top()
+        if top is None:
+            return
+        if escaped:
+            if top.class_first:
+                top.class_first = False
+            return
+        if top.posix == "open":
+            if char in ":.=":
+                top.posix = char
+                return
+            top.posix = ""
+        elif top.posix in (":", ".", "="):
+            if char == top.posix:
+                top.posix = "end"
+            return
+        elif top.posix == "end":
             if char == "]":
-                self._case_posix = ""
+                top.posix = ""
                 return
             if char in ":.=":
-                self._case_posix = char
+                top.posix = char
                 return
-            self._case_posix = ""
-        if self._case_class_first:
+            top.posix = ""
+        if top.class_first:
             if char in "!^":
                 return
-            self._case_class_first = False
+            top.class_first = False
             if char == "]":
                 return
             if char == "[":
-                self._case_posix = "open"
+                top.posix = "open"
                 return
             return
         if char == "[":
-            self._case_posix = "open"
+            top.posix = "open"
             return
         if char == "]":
-            self._case_class = False
-            self._case_class_first = False
-            self._case_posix = ""
+            top.in_class = False
+            top.class_first = False
+            top.posix = ""
 
     def _append_heredoc_tag(self, char: str) -> None:
         if len(self._heredoc_tag) >= _MAX_HEREDOC_TAG:
@@ -989,6 +1061,9 @@ class StreamingRedactor:
                     self._heredoc_quote = ""
                     self._heredoc_strip = False
                     self._heredoc_body_strip = False
+                    self._flush_subst_word()
+                    self._cmd_pos = True
+                    self._semi = False
             else:
                 self._heredoc_line = ""
             return ""
@@ -1003,16 +1078,26 @@ class StreamingRedactor:
             return self._step_heredoc_rest(char)
         if self._heredoc == "body":
             return self._step_heredoc_body(char)
+        if self._line_cont_cr:
+            self._line_cont_cr = False
+            if char == "\n":
+                return ""
         if self._escape:
             self._escape = False
             self._dollar = False
             self._lt = False
             self._gt = False
             self._arith_maybe = False
-            if self._case_class:
-                self._step_case_class(char)
+            if char == "\n":
+                return ""
+            if char == "\r":
+                self._line_cont_cr = True
+                return ""
+            if self._in_case_class():
+                self._step_case_class(char, escaped=True)
             elif self._subst_stack:
-                self._cmd_qualified = True
+                self._begin_word()
+                self._word_qualified = True
             return ""
         if char == "\\":
             self._escape = True
@@ -1027,7 +1112,6 @@ class StreamingRedactor:
                 if self._subst_stack:
                     self._flush_subst_word()
                     self._cmd_pos = True
-                    self._cmd_qualified = False
             return ""
         dollar_consumed = False
         if self._dollar:
@@ -1041,6 +1125,8 @@ class StreamingRedactor:
                 else:
                     self._push_subst("}", "param")
                 return ""
+            self._begin_word()
+            self._word_qualified = True
         elif self._lt:
             self._lt = False
             self._arith_maybe = False
@@ -1056,7 +1142,7 @@ class StreamingRedactor:
                 self._heredoc_escape = False
                 return ""
             self._cmd_pos = False
-            self._cmd_qualified = False
+            self._clear_word()
         elif self._gt:
             self._gt = False
             self._arith_maybe = False
@@ -1064,7 +1150,7 @@ class StreamingRedactor:
                 self._push_subst(")", "cmd")
                 return ""
             self._cmd_pos = False
-            self._cmd_qualified = False
+            self._clear_word()
         elif char == "$" and self._value_kind == "shell":
             self._arith_maybe = False
             self._dollar = True
@@ -1083,14 +1169,20 @@ class StreamingRedactor:
             return ""
         elif self._arith_maybe and char != "(":
             self._arith_maybe = False
-        if char == "#" and self._subst_stack and self._value_kind == "shell" and not dollar_consumed:
-            if self._subst_word or self._cmd_qualified:
-                self._cmd_qualified = True
-                return ""
+        if (
+            char == "#"
+            and self._subst_kind() == "cmd"
+            and self._value_kind == "shell"
+            and not dollar_consumed
+            and not self._word_active
+        ):
             self._shell_comment = True
             return ""
+        if char == "#" and self._subst_stack and self._value_kind == "shell" and not dollar_consumed:
+            self._begin_word()
+            self._word_qualified = True
+            return ""
         if char == "`" and self._value_kind == "shell":
-            self._flush_subst_word()
             if self._subst_stack and self._subst_closer() == "`":
                 self._pop_subst()
             else:
@@ -1101,25 +1193,26 @@ class StreamingRedactor:
             and self._value_kind == "shell"
             and (self._subst_stack or self._allow_compound)
         ):
-            self._flush_subst_word()
             if self._arith_maybe:
                 self._arith_maybe = False
                 if self._subst_stack:
-                    closer, _kind, saved = self._subst_stack[-1]
-                    self._subst_stack[-1] = (closer, "arith", saved)
+                    self._subst_stack[-1].kind = "arith"
                     self._cmd_pos = False
                 self._push_subst(")", "arith")
             elif self._subst_kind() == "arith":
                 self._push_subst(")", "arith")
+            elif self._subst_kind() == "array" or (self._allow_compound and not self._subst_stack):
+                self._push_subst(")", "array")
             else:
+                self._flush_subst_word()
                 self._push_subst(")", "cmd")
                 self._note_subst_char(char)
             self._allow_compound = False
             return ""
         if char in "\"'":
             if self._subst_stack:
-                if self._subst_word:
-                    self._cmd_qualified = True
+                self._begin_word()
+                self._word_qualified = True
                 self._state = "quoted_value"
                 self._value_quote = char
                 return ""
@@ -1129,15 +1222,10 @@ class StreamingRedactor:
             self._value_quote = char
             return ""
         if self._subst_stack:
-            if self._case_class:
+            if self._in_case_class():
                 self._step_case_class(char)
                 return ""
-            if (
-                self._case_arm == "pattern"
-                and char == "["
-                and not self._subst_word
-                and not self._cmd_qualified
-            ):
+            if self._case_arm() == "pattern" and char == "[":
                 self._enter_case_class()
                 return ""
             if char not in _SHELL_WORD_BREAK:
@@ -1145,14 +1233,13 @@ class StreamingRedactor:
                 return ""
             self._flush_subst_word()
             if char == self._subst_closer():
-                if char == ")" and self._case_depth and len(self._subst_stack) == 1:
-                    if self._case_arm == "pattern":
-                        self._case_arm = "body"
-                        self._case_class = False
-                        self._case_class_first = False
-                        self._case_posix = ""
+                if char == ")" and self._case_stack and len(self._subst_stack) == 1:
+                    top = self._case_top()
+                    if top and top.arm == "pattern":
+                        top.arm = "body"
+                        self._reset_case_class()
                     self._cmd_pos = True
-                    self._cmd_qualified = False
+                    self._clear_word()
                     self._note_subst_char(char)
                     return ""
                 self._pop_subst()

@@ -704,6 +704,32 @@ _SPLIT_SECRET_FORMS = (
     ("password=$(case x in a) case#not-comment\n;; b) echo CASE_HASH_SECRET ;; esac)", "CASE_HASH_SECRET"),
     ("password=$(echo foo#bar HASH_WORD_SECRET)", "HASH_WORD_SECRET"),
     ("password=$(case x in [\\]]) echo BRACKET_ESC_SECRET ;; esac)", "BRACKET_ESC_SECRET"),
+    ("password=$(! case x in a) echo BANG_LEAK_123 ;; esac)", "BANG_LEAK_123"),
+    ("password=$(case\\\n x in a) echo CONTINUATION_LEAK_123 ;; esac)", "CONTINUATION_LEAK_123"),
+    ("password=$(case x in foo[)]|esac) echo MIDCLASS_LEAK_123 ;; esac)", "MIDCLASS_LEAK_123"),
+    ("password=$(case x in *[)]) echo STAR_CLASS_LEAK_123 ;; esac)", "STAR_CLASS_LEAK_123"),
+    ("password=$(case x in prefix[[:alpha:]]) echo PREFIX_POSIX_LEAK_123 ;; esac)", "PREFIX_POSIX_LEAK_123"),
+    ("password=$(case x in prefix[.x.]) echo PREFIX_COLLATE_LEAK_123 ;; esac)", "PREFIX_COLLATE_LEAK_123"),
+    ("password=$(case x in prefix[=x=]) echo PREFIX_EQUIV_LEAK_123 ;; esac)", "PREFIX_EQUIV_LEAK_123"),
+    (
+        "password=$(case x in a) case y in foo[)]|esac) echo NESTED_MIDCLASS_LEAK_123 ;; esac ;; esac)",
+        "NESTED_MIDCLASS_LEAK_123",
+    ),
+    ("password=$(case x in [a\\])]|esac) echo ESC_CLASS_LEAK_123 ;; esac)", "ESC_CLASS_LEAK_123"),
+    ("password=$(case x in a) esac`printf x` ;; b) echo PREFIX_EXP_LEAK_123 ;; esac)", "PREFIX_EXP_LEAK_123"),
+    ("password=$(case x in a) esac$(true) ;; b) echo PREFIX_CMD_LEAK_123 ;; esac)", "PREFIX_CMD_LEAK_123"),
+    ("password=$(case x in a) esac$((1)) ;; b) echo PREFIX_ARITH_LEAK_123 ;; esac)", "PREFIX_ARITH_LEAK_123"),
+    ("password=$(case x in a) ${cmd} esac ;; b) echo ARG_LEAK_123 ;; esac)", "ARG_LEAK_123"),
+    ("password=$(case x in a) $(printf cmd) esac ;; b) echo ARG_CMD_LEAK_123 ;; esac)", "ARG_CMD_LEAK_123"),
+    ("password=$(case x in a) `printf cmd` esac ;; b) echo ARG_TICK_LEAK_123 ;; esac)", "ARG_TICK_LEAK_123"),
+    ("password=$(case x in a) <(printf x) esac ;; b) echo ARG_PROC_LEAK_123 ;; esac)", "ARG_PROC_LEAK_123"),
+    ('password=$(case "$x" in a|esac) echo QUOTED_SELECTOR_LEAK_123 ;; esac)', "QUOTED_SELECTOR_LEAK_123"),
+    ("password=$(if true; then case x in a) echo THEN_LEAK_123 ;; esac; fi)", "THEN_LEAK_123"),
+    ("password=$(while true; do case x in a) echo DO_LEAK_123 ;; esac; break; done)", "DO_LEAK_123"),
+    ("password=$(if false; then x; else case x in a) echo ELSE_LEAK_123 ;; esac; fi)", "ELSE_LEAK_123"),
+    ("password=$(if false; then x; elif true; then case x in a) echo ELIF_LEAK_123 ;; esac; fi)", "ELIF_LEAK_123"),
+    ("password=$(time case x in a) echo TIME_LEAK_123 ;; esac)", "TIME_LEAK_123"),
+    ("password=$(cat <<EOF\nx\nEOF\ncase x in a) echo HEREDOC_CASE_LEAK_123 ;; esac)", "HEREDOC_CASE_LEAK_123"),
 )
 
 
@@ -1001,6 +1027,50 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
     assert redact_value("password=$(case x in [)]) echo safe ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )
+    assert redact_value("password=$(! case x in a) echo BANG_LEAK_123 ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case\\\n x in a) echo CONTINUATION_LEAK_123 ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    crlf = "password=$(case\\\r\n x in a) echo CONTINUATION_CRLF_LEAK_123 ;; esac) --output report.json"
+    assert redact_value(crlf) == "password=[REDACTED] --output report.json"
+    split = StreamingRedactor()
+    crlf_secret = "password=$(case\\\r\n x in a) echo CONTINUATION_CRLF_LEAK_123 ;; esac)"
+    for split_at in range(1, len(crlf_secret)):
+        redactor = StreamingRedactor()
+        output = (
+            redactor.ingest(crlf_secret[:split_at])
+            + redactor.ingest(crlf_secret[split_at:])
+            + redactor.flush()
+        )
+        assert "CONTINUATION_CRLF_LEAK_123" not in output, f"leaked at split {split_at}"
+        assert "[REDACTED]" in output
+    assert redact_value("password=$(case x in foo[)]|esac) echo MIDCLASS_LEAK_123 ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in [a\\])]|esac) echo ESC_CLASS_LEAK_123 ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value(
+        "password=$(case x in a) esac`printf x` ;; b) echo PREFIX_EXP_LEAK_123 ;; esac) --output report.json"
+    ) == ("password=[REDACTED] --output report.json")
+    assert redact_value("password=$(case x in a) ${cmd} esac ;; b) echo ARG_LEAK_123 ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value('password=$(case "$x" in a|esac) echo QUOTED_SELECTOR_LEAK_123 ;; esac) --output report.json') == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(if true; then case x in a) echo THEN_LEAK_123 ;; esac; fi) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value(
+        "password=$(cat <<EOF\nx\nEOF\ncase x in a) echo HEREDOC_CASE_LEAK_123 ;; esac) --output report.json"
+    ) == ("password=[REDACTED] --output report.json")
+    assert redact_value("password=$(printf '%s' ${#VALUE}) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("PASSWORD=(case) --output report.json") == "PASSWORD=[REDACTED] --output report.json"
 
 
 def test_redaction_does_not_treat_later_words_as_cli_secrets() -> None:
