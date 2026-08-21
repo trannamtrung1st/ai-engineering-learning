@@ -295,10 +295,11 @@ class StreamingRedactor:
         )
 
     def _begin_cap_candidate(self) -> str:
+        prefix = f"{self._component}-"
         self._start_component()
         self._state = "cap_candidate"
         self._cap_held = "cap-"
-        self._cap_raw = "cap-"
+        self._cap_raw = prefix
         self._cap_seen_dot = False
         return ""
 
@@ -418,33 +419,39 @@ class StreamingRedactor:
             if char == "u":
                 self._unicode_hex = ""
                 return f"\\{char}"
-            outgoing = self._complete_component()
+            self._apply_component_sensitivity()
+            self._start_component()
             self._absorb_ident_char(_SIMPLE_ESCAPES.get(char, char))
-            return outgoing + "\\" + char
+            return "\\" + char
         if char == "\\":
             self._escape = True
             return ""
         if char == self._key_quote:
-            outgoing = self._complete_component()
+            self._apply_component_sensitivity()
+            self._start_component()
             if self._sensitive:
                 self._state = "after_ident"
-                return outgoing + char
+                self._key_quote = ""
+                return char
             self._reset_ident()
-            return outgoing + char
+            return char
         if char in "=:":
-            outgoing = self._complete_component()
+            self._apply_component_sensitivity()
+            self._start_component()
             if self._sensitive:
-                return outgoing + self._open_value(char)
-            return outgoing + char
+                return self._open_value(char, outer_quote=self._key_quote)
+            return char
         if char in " \t":
-            outgoing = self._complete_component()
+            self._apply_component_sensitivity()
+            self._start_component()
             if self._sensitive and (self._cli or self._bare_credential):
-                return outgoing + self._open_value(char)
+                return self._open_value(char, outer_quote=self._key_quote)
             if self._sensitive:
                 self._state = "after_ident"
-                return outgoing + char
+                return char
             self._quote_dash = False
-            return outgoing + char
+            self._cli = False
+            return char
         if char == "-":
             if self._quote_dash and not self._component:
                 self._cli = True
@@ -454,22 +461,27 @@ class StreamingRedactor:
                 self._quote_dash = True
                 return "-"
             self._quote_dash = False
-            return self._feed_ident_char(char)
+            if self._is_cap_hyphen(char):
+                return self._begin_cap_candidate()
+            self._absorb_ident_char(char)
+            return char
         if _is_ident_char(char):
             self._quote_dash = False
-            return self._feed_ident_char(char)
-        outgoing = self._complete_component()
+            self._absorb_ident_char(char)
+            return char
+        self._apply_component_sensitivity()
         self._start_component()
         self._quote_dash = False
-        return outgoing + char
+        return char
 
     def _absorb_ident_char(self, char: str) -> None:
+        saved = self._emitted
         if _is_ident_char(char):
             self._feed_ident_char(char)
         else:
-            self._complete_component()
+            self._apply_component_sensitivity()
             self._start_component()
-        self._emitted = len(self._component)
+        self._emitted = min(saved, len(self._component))
 
     def _step_after_ident(self, char: str) -> str:
         if char in " \t":
@@ -505,7 +517,7 @@ class StreamingRedactor:
             self._escape = True
             return ""
         if char == self._value_quote:
-            self._state = "normal"
+            self._state = "unquoted_value"
             self._value_quote = ""
             return ""
         return ""
@@ -517,11 +529,19 @@ class StreamingRedactor:
         if char == "\\":
             self._escape = True
             return ""
-        if char == self._quote:
-            self._state = "normal"
-            self._quote = ""
-            return char
+        if char in "\"'":
+            if self._quote and char == self._quote:
+                self._state = "normal"
+                self._quote = ""
+                return char
+            self._state = "quoted_value"
+            self._value_quote = char
+            return ""
         if self._quote:
+            if char == self._quote:
+                self._state = "normal"
+                self._quote = ""
+                return char
             return ""
         if char.isspace() or char in ",;}]":
             self._state = "normal"
@@ -529,10 +549,18 @@ class StreamingRedactor:
         return ""
 
     def _step_line_value(self, char: str) -> str:
-        if char in "\r\n" or char == self._quote:
+        if self._escape:
+            self._escape = False
+            return ""
+        if char == "\\":
+            self._escape = True
+            return ""
+        if char in "\r\n":
             self._state = "normal"
-            if char == self._quote:
-                self._quote = ""
+            return char
+        if char == self._quote:
+            self._state = "unquoted_value"
+            self._quote = ""
             return char
         return ""
 
@@ -606,13 +634,12 @@ class StreamingRedactor:
         self._reset_ident()
         return self._step(char)
 
-    def _open_value(self, separator: str) -> str:
-        rest = self._component[self._emitted :]
+    def _open_value(self, separator: str, *, outer_quote: str = "") -> str:
+        rest = "" if self._key_quote else self._component[self._emitted :]
         emitted = f"{rest}{separator}{_REDACTED}"
         auth = self._auth_key
-        quote = self._key_quote or self._quote
         self._reset_ident()
-        self._quote = quote
+        self._quote = outer_quote
         self._auth = auth
         self._state = "value_start"
         return emitted
@@ -654,9 +681,10 @@ class StreamingRedactor:
             self._reset_ident()
             return emitted
         if self._state == "quoted_key":
-            emitted = self._complete_component()
+            self._apply_component_sensitivity()
+            self._start_component()
             self._reset_ident()
-            return emitted
+            return ""
         if self._state == "after_ident":
             emitted = self._component[self._emitted :]
             self._reset_ident()

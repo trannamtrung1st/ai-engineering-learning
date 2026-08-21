@@ -117,7 +117,7 @@ class JsonlEventSink:
                 category=event.category,
                 message=event.message,
                 ts=event.ts,
-                fields=redact_value(event.fields),
+                fields=redact_value(event.fields, max_len=self._policy.max_message_length),
                 level=event.level,
                 run_id=event.run_id,
                 session_id=event.session_id,

@@ -285,6 +285,13 @@ def test_redaction_keeps_benign_cap_prefixed_words() -> None:
     assert "[REDACTED]" not in safe
 
 
+def test_redaction_preserves_benign_cap_prefix_casing() -> None:
+    text = "see CAP-table and Cap-rate"
+    safe = redact_value(text)
+    assert safe == text
+    assert "[REDACTED]" not in safe
+
+
 def test_redaction_keeps_benign_assignment_identifiers() -> None:
     text = "tokenizer=bert-base secretary=Alice notsecret=value"
     safe = redact_value(text)
@@ -382,6 +389,23 @@ def test_jsonl_sink_bounds_stream_buffer_when_message_cap_is_set(tmp_path) -> No
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert len(payload["message"]) <= 10
     assert payload["message"].endswith("...")
+
+
+def test_jsonl_sink_applies_message_cap_to_streaming_fields(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path, policy=RedactionPolicy(max_message_length=10))
+    sink.emit(
+        ConsoleEvent(
+            category="response",
+            message="hello",
+            fields={"detail": "x" * 10000},
+        )
+    )
+    sink.close()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["message"] == "hello"
+    assert len(payload["fields"]["detail"]) <= 10
+    assert payload["fields"]["detail"].endswith("...")
 
 
 def test_jsonl_sink_aggregates_thinking_and_response_deltas(tmp_path) -> None:
@@ -533,6 +557,16 @@ _SPLIT_SECRET_FORMS = (
     (r"--password escaped\ cli-space-secret", "cli-space-secret"),
     (r'"cap-abc123\u002edeadbeef"', "deadbeef"),
     (r'"cap-abc123.\u0064eadbeef"', "eadbeef"),
+    ('password="foo"bar-concat-secret', "bar-concat-secret"),
+    ('--password "foo"bar-cli-concat-secret', "bar-cli-concat-secret"),
+    ('password=foo"bar baz-concat-secret"', "baz-concat-secret"),
+    ("PASSWORD='foo'bar-upper-concat-secret", "bar-upper-concat-secret"),
+    (r'curl -H "Authorization: Bearer foo\"bar-auth-secret"', "bar-auth-secret"),
+    ('password="a"\'b\'"c-triple-secret"', "c-triple-secret"),
+    ('--password foo"bar"baz-cli-triple-secret', "baz-cli-triple-secret"),
+    ('password=""empty-quote-secret', "empty-quote-secret"),
+    ('password="foo"\'bar-mix-secret\'', "bar-mix-secret"),
+    ('curl -H "Authorization: Bearer foo"bar-word-secret', "bar-word-secret"),
 )
 
 
@@ -735,6 +769,35 @@ def test_streaming_redactor_keeps_benign_tokenizer_and_secretary_assignments() -
     )
     assert output == "tokenizer=bert-base secretary=Alice"
     assert "[REDACTED]" not in output
+
+
+def test_redaction_preserves_json_structure_after_unquoted_secret_values() -> None:
+    cases = (
+        ('{"password":123,"ok":1}', '{"password":[REDACTED],"ok":1}'),
+        ('{"token":true,"ok":false}', '{"token":[REDACTED],"ok":false}'),
+        ('{"secret":null,"next":"value"}', '{"secret":[REDACTED],"next":"value"}'),
+    )
+    for text, expected in cases:
+        assert redact_value(text) == expected
+
+
+def test_redaction_preserves_raw_unicode_secret_key_spelling() -> None:
+    text = r'{"pass\u0077ord":"unicode-json-split-secret"}'
+    safe = redact_value(text)
+    assert safe == r'{"pass\u0077ord":[REDACTED]}'
+    assert "unicode-json-split-secret" not in safe
+
+
+def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
+    assert redact_value('password="secret" visible-tail') == "password=[REDACTED] visible-tail"
+    assert redact_value("--password foo visible-tail") == "--password [REDACTED] visible-tail"
+
+
+def test_redaction_does_not_treat_later_words_as_cli_secrets() -> None:
+    text = "'--tokenizer bert-base token bucket' '--format json password required'"
+    safe = redact_value(text)
+    assert safe == text
+    assert "[REDACTED]" not in safe
 
 
 def test_streaming_redactor_preserves_benign_quoted_escapes() -> None:
