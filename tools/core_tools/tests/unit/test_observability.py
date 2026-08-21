@@ -373,6 +373,17 @@ def test_jsonl_sink_joins_many_stream_chunks_exactly_once(tmp_path) -> None:
     assert payload["message"] == expected
 
 
+def test_jsonl_sink_bounds_stream_buffer_when_message_cap_is_set(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path, policy=RedactionPolicy(max_message_length=10))
+    for _ in range(500):
+        sink.emit(ConsoleEvent(category="response", message="xy"))
+    sink.close()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert len(payload["message"]) <= 10
+    assert payload["message"].endswith("...")
+
+
 def test_jsonl_sink_aggregates_thinking_and_response_deltas(tmp_path) -> None:
     path = tmp_path / "events.jsonl"
     sink = JsonlEventSink(path)
@@ -513,6 +524,15 @@ _SPLIT_SECRET_FORMS = (
     ('"cap-abc123.deadbeef"', "deadbeef"),
     ("curl -H 'Authorization: Token quoted-header-secret'", "quoted-header-secret"),
     ('{"note":"cap-abc123.deadbeef"}', "deadbeef"),
+    ("'--password quoted-cli-secret'", "quoted-cli-secret"),
+    ('"--accessToken quoted-cli-camel-secret"', "quoted-cli-camel-secret"),
+    ("'credential quoted-bare-secret'", "quoted-bare-secret"),
+    ("'password=quoted multi-word-secret'", "multi-word-secret"),
+    ("'password=quoted-semi;secret'", "quoted-semi;secret"),
+    (r"password=escaped\ space-secret", "space-secret"),
+    (r"--password escaped\ cli-space-secret", "cli-space-secret"),
+    (r'"cap-abc123\u002edeadbeef"', "deadbeef"),
+    (r'"cap-abc123.\u0064eadbeef"', "eadbeef"),
 )
 
 
@@ -723,6 +743,8 @@ def test_streaming_redactor_preserves_benign_quoted_escapes() -> None:
         r'say "C:\\temp\\file" done',
         'code {"foo":"bar"} done',
         'say "unclosed',
+        r'"x\u0061y"',
+        r'{"foo\u0041bar":"x"}',
     )
     for text in cases:
         redactor = StreamingRedactor()

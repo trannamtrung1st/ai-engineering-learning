@@ -160,7 +160,9 @@ class StreamingRedactor:
         self._key_quote = ""
         self._quote = ""
         self._cap_held = ""
+        self._cap_raw = ""
         self._cap_seen_dot = False
+        self._quote_dash = False
         self._cli = False
         self._auth = False
         self._dash = False
@@ -191,7 +193,9 @@ class StreamingRedactor:
         self._key_quote = ""
         self._quote = ""
         self._cap_held = ""
+        self._cap_raw = ""
         self._cap_seen_dot = False
+        self._quote_dash = False
         self._cli = False
         self._auth = False
         self._dash = False
@@ -208,6 +212,7 @@ class StreamingRedactor:
         return (
             held
             + len(self._cap_held)
+            + len(self._cap_raw)
             + len(self._trunc_hold)
             + unicode_len
             + int(self._dash)
@@ -293,6 +298,7 @@ class StreamingRedactor:
         self._start_component()
         self._state = "cap_candidate"
         self._cap_held = "cap-"
+        self._cap_raw = "cap-"
         self._cap_seen_dot = False
         return ""
 
@@ -405,7 +411,7 @@ class StreamingRedactor:
                     decoded = ""
                 self._unicode_hex = None
                 if decoded:
-                    return char + self._feed_quoted_decoded(decoded)
+                    self._absorb_ident_char(decoded)
             return char
         if self._escape:
             self._escape = False
@@ -413,7 +419,8 @@ class StreamingRedactor:
                 self._unicode_hex = ""
                 return f"\\{char}"
             outgoing = self._complete_component()
-            return outgoing + "\\" + char + self._feed_quoted_decoded(_SIMPLE_ESCAPES.get(char, char))
+            self._absorb_ident_char(_SIMPLE_ESCAPES.get(char, char))
+            return outgoing + "\\" + char
         if char == "\\":
             self._escape = True
             return ""
@@ -431,22 +438,38 @@ class StreamingRedactor:
             return outgoing + char
         if char in " \t":
             outgoing = self._complete_component()
+            if self._sensitive and (self._cli or self._bare_credential):
+                return outgoing + self._open_value(char)
             if self._sensitive:
                 self._state = "after_ident"
                 return outgoing + char
+            self._quote_dash = False
             return outgoing + char
+        if char == "-":
+            if self._quote_dash and not self._component:
+                self._cli = True
+                self._quote_dash = False
+                return "-"
+            if not self._component:
+                self._quote_dash = True
+                return "-"
+            self._quote_dash = False
+            return self._feed_ident_char(char)
         if _is_ident_char(char):
+            self._quote_dash = False
             return self._feed_ident_char(char)
         outgoing = self._complete_component()
         self._start_component()
+        self._quote_dash = False
         return outgoing + char
 
-    def _feed_quoted_decoded(self, char: str) -> str:
+    def _absorb_ident_char(self, char: str) -> None:
         if _is_ident_char(char):
-            return self._feed_ident_char(char)
-        outgoing = self._complete_component()
-        self._start_component()
-        return outgoing
+            self._feed_ident_char(char)
+        else:
+            self._complete_component()
+            self._start_component()
+        self._emitted = len(self._component)
 
     def _step_after_ident(self, char: str) -> str:
         if char in " \t":
@@ -463,6 +486,10 @@ class StreamingRedactor:
             self._state = "quoted_value"
             self._value_quote = char
             self._escape = False
+            return ""
+        if char == "\\":
+            self._state = "unquoted_value"
+            self._escape = True
             return ""
         if self._auth:
             self._state = "line_value"
@@ -484,10 +511,20 @@ class StreamingRedactor:
         return ""
 
     def _step_unquoted_value(self, char: str) -> str:
-        if char == self._quote or char.isspace() or char in ",;}]":
+        if self._escape:
+            self._escape = False
+            return ""
+        if char == "\\":
+            self._escape = True
+            return ""
+        if char == self._quote:
             self._state = "normal"
-            if char == self._quote:
-                self._quote = ""
+            self._quote = ""
+            return char
+        if self._quote:
+            return ""
+        if char.isspace() or char in ",;}]":
+            self._state = "normal"
             return char
         return ""
 
@@ -500,27 +537,63 @@ class StreamingRedactor:
         return ""
 
     def _step_cap_candidate(self, char: str) -> str:
-        if char.isalnum() or char in "._-":
-            self._cap_held += char
-            if char == ".":
+        if self._key_quote or self._quote:
+            return self._step_cap_candidate_quoted(char)
+        return self._feed_cap_semantic(char, raw=char)
+
+    def _step_cap_candidate_quoted(self, char: str) -> str:
+        if self._unicode_hex is not None:
+            self._cap_raw += char
+            self._unicode_hex += char
+            if len(self._unicode_hex) == 4:
+                try:
+                    decoded = chr(int(self._unicode_hex, 16))
+                except ValueError:
+                    decoded = ""
+                self._unicode_hex = None
+                if decoded:
+                    return self._feed_cap_semantic(decoded, raw="")
+            return ""
+        if self._escape:
+            self._escape = False
+            if char == "u":
+                self._unicode_hex = ""
+                self._cap_raw += f"\\{char}"
+                return ""
+            self._cap_raw += f"\\{char}"
+            return self._feed_cap_semantic(_SIMPLE_ESCAPES.get(char, char), raw="")
+        if char == "\\":
+            self._escape = True
+            return ""
+        return self._feed_cap_semantic(char, raw=char)
+
+    def _feed_cap_semantic(self, decoded: str, *, raw: str) -> str:
+        if decoded.isalnum() or decoded in "._-":
+            if raw:
+                self._cap_raw += raw
+            self._cap_held += decoded
+            if decoded == ".":
                 self._cap_seen_dot = True
-            elif self._cap_seen_dot and char.isalnum():
+            elif self._cap_seen_dot and decoded.isalnum():
                 self._cap_held = ""
+                self._cap_raw = ""
                 self._cap_seen_dot = False
                 self._state = "cap"
                 return _REDACTED
-            if len(self._cap_held) >= _MAX_CAP_HOLD:
-                outgoing = self._cap_held
+            if len(self._cap_held) >= _MAX_CAP_HOLD or len(self._cap_raw) >= _MAX_CAP_HOLD * 6:
+                outgoing = self._cap_raw or self._cap_held
                 self._cap_held = ""
+                self._cap_raw = ""
                 self._cap_seen_dot = False
                 self._state = "normal"
                 return outgoing
             return ""
-        outgoing = self._cap_held
+        outgoing = self._cap_raw or self._cap_held
         self._cap_held = ""
+        self._cap_raw = ""
         self._cap_seen_dot = False
         self._state = "normal"
-        return outgoing + self._step(char)
+        return outgoing + self._step(raw or decoded)
 
     def _step_cap(self, char: str) -> str:
         if char.isalnum() or char in "._-":
@@ -553,6 +626,7 @@ class StreamingRedactor:
         self._auth_key = False
         self._key_quote = ""
         self._quote = ""
+        self._quote_dash = False
         self._cli = False
         self._auth = False
         self._unicode_hex = None
@@ -569,8 +643,9 @@ class StreamingRedactor:
                 self._reset_ident()
             return f"{held}\\"
         if self._state == "cap_candidate":
-            outgoing = self._cap_held
+            outgoing = self._cap_raw or self._cap_held
             self._cap_held = ""
+            self._cap_raw = ""
             self._cap_seen_dot = False
             self._reset_ident()
             return outgoing

@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import TextIO
 
 from core_tools.observability.events import ConsoleEvent
-from core_tools.observability.redaction import RedactionPolicy, redact_event
+from core_tools.observability.redaction import (
+    RedactionPolicy,
+    StreamingRedactor,
+    redact_event,
+    redact_value,
+)
 
 _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
 
@@ -18,6 +23,7 @@ class _StreamBuffer:
     category: str
     chunks: list[str]
     event: ConsoleEvent
+    redactor: StreamingRedactor | None = None
 
 
 class JsonlEventSink:
@@ -47,9 +53,26 @@ class JsonlEventSink:
                 self._flush_key(key)
                 buffered = None
             if buffered is None:
-                self._streams[key] = _StreamBuffer(event.category, [event.message], event)
+                redactor = (
+                    StreamingRedactor(max_len=self._policy.max_message_length)
+                    if self._policy.max_message_length is not None
+                    else None
+                )
+                chunks = []
+                if redactor is None:
+                    chunks.append(event.message)
+                else:
+                    piece = redactor.ingest(event.message)
+                    if piece:
+                        chunks.append(piece)
+                self._streams[key] = _StreamBuffer(event.category, chunks, event, redactor)
             else:
-                buffered.chunks.append(event.message)
+                if buffered.redactor is not None:
+                    piece = buffered.redactor.ingest(event.message)
+                    if piece:
+                        buffered.chunks.append(piece)
+                else:
+                    buffered.chunks.append(event.message)
                 buffered.event = event
             return
 
@@ -72,20 +95,35 @@ class JsonlEventSink:
         buffered = self._streams.pop(key, None)
         if buffered is None:
             return
+        message = "".join(buffered.chunks)
+        if buffered.redactor is not None:
+            message += buffered.redactor.flush()
         self._write_event(
             ConsoleEvent(
                 category=buffered.category,
-                message="".join(buffered.chunks),
+                message=message,
                 ts=buffered.event.ts,
                 fields=dict(buffered.event.fields),
                 level=buffered.event.level,
                 run_id=buffered.event.run_id,
                 session_id=buffered.event.session_id,
-            )
+            ),
+            already_redacted=buffered.redactor is not None,
         )
 
-    def _write_event(self, event: ConsoleEvent) -> None:
-        safe = redact_event(event, policy=self._policy)
+    def _write_event(self, event: ConsoleEvent, *, already_redacted: bool = False) -> None:
+        if already_redacted:
+            safe = ConsoleEvent(
+                category=event.category,
+                message=event.message,
+                ts=event.ts,
+                fields=redact_value(event.fields),
+                level=event.level,
+                run_id=event.run_id,
+                session_id=event.session_id,
+            )
+        else:
+            safe = redact_event(event, policy=self._policy)
         self._handle.write(json.dumps(safe.to_dict(), sort_keys=True) + "\n")
         self._handle.flush()
 
