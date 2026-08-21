@@ -739,6 +739,10 @@ _SPLIT_SECRET_FORMS = (
     ("password=$(f() ( case x in a) echo X ;; esac ); echo FUNCTION_TAIL_LEAK_123)", "FUNCTION_TAIL_LEAK_123"),
     ("password=$(coproc case x in a) echo COPROC_CASE_LEAK_123 ;; esac)", "COPROC_CASE_LEAK_123"),
     ("password=$(coproc foo case x in a) echo COPROC_NAME_LEAK_123 ;; esac)", "COPROC_NAME_LEAK_123"),
+    (
+        "password=$(case x in $(echo x | case y in a) echo inner ;; esac)) echo OWNER_DEPTH_LEAK_123 ;; esac)",
+        "OWNER_DEPTH_LEAK_123",
+    ),
 )
 
 
@@ -775,6 +779,10 @@ _BOUNDARY_SPLIT_FORMS = (
     ('password=$(case x in [a"]")|esac)]) echo QUOTED_CLASS_LEAK_123 ;; esac)', "QUOTED_CLASS_LEAK_123"),
     ("password=$(f() case x in a) echo FUNC_CASE_LEAK_123 ;; esac; f)", "FUNC_CASE_LEAK_123"),
     ("password=$(coproc case x in a) echo COPROC_CASE_LEAK_123 ;; esac)", "COPROC_CASE_LEAK_123"),
+    (
+        "password=$(case x in $(echo x | case y in a) echo inner ;; esac)) echo OWNER_DEPTH_LEAK_123 ;; esac)",
+        "OWNER_DEPTH_LEAK_123",
+    ),
     ("password=$(while true; do case x in a) echo DO_LEAK_123 ;; esac; break; done)", "DO_LEAK_123"),
     ("password=$(time case x in a) echo TIME_LEAK_123 ;; esac)", "TIME_LEAK_123"),
     ("password=$(case x in [#]) echo safe ;; esac)", None),
@@ -1125,6 +1133,9 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
     assert redact_value("password=$(coproc case x in a) echo COPROC_CASE_LEAK_123 ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )
+    assert redact_value(
+        "password=$(case x in $(echo x | case y in a) echo inner ;; esac)) echo OWNER_DEPTH_LEAK_123 ;; esac) --output report.json"
+    ) == ("password=[REDACTED] --output report.json")
     assert redact_value("password=$(case x in [#]) echo safe ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )

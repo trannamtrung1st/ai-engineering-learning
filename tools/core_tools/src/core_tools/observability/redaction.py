@@ -811,17 +811,22 @@ class StreamingRedactor:
     def _case_top(self) -> _CaseFrame | None:
         return self._case_stack[-1] if self._case_stack else None
 
-    def _in_case_class(self) -> bool:
+    def _case_top_here(self) -> _CaseFrame | None:
         top = self._case_top()
+        if top and top.owner_depth == len(self._subst_stack):
+            return top
+        return None
+
+    def _in_case_class(self) -> bool:
+        top = self._case_top_here()
         return bool(top and top.in_class)
 
     def _case_arm(self) -> str:
-        top = self._case_top()
+        top = self._case_top_here()
         return top.arm if top else ""
 
     def _case_owned_here(self) -> bool:
-        top = self._case_top()
-        return bool(top and top.owner_depth == len(self._subst_stack))
+        return self._case_top_here() is not None
 
     def _clear_word(self) -> None:
         self._word_active = False
@@ -873,7 +878,7 @@ class StreamingRedactor:
             self._cmd_pos = False
             self._after_coproc = False
             return
-        top = self._case_top()
+        top = self._case_top_here()
         if top and top.arm == "word":
             top.arm = "in"
             self._cmd_pos = False
@@ -893,7 +898,7 @@ class StreamingRedactor:
         self._cmd_pos = False
 
     def _reset_case_class(self) -> None:
-        top = self._case_top()
+        top = self._case_top_here()
         if top is None:
             return
         top.in_class = False
@@ -901,7 +906,7 @@ class StreamingRedactor:
         top.posix = ""
 
     def _enter_pattern(self) -> None:
-        top = self._case_top()
+        top = self._case_top_here()
         if top is None:
             return
         top.arm = "pattern"
@@ -941,7 +946,7 @@ class StreamingRedactor:
             self._clear_word()
 
     def _enter_case_class(self) -> None:
-        top = self._case_top()
+        top = self._case_top_here()
         if top is None:
             return
         top.in_class = True
@@ -950,7 +955,7 @@ class StreamingRedactor:
         self._begin_word()
 
     def _step_case_class(self, char: str, *, escaped: bool = False) -> None:
-        top = self._case_top()
+        top = self._case_top_here()
         if top is None:
             return
         if escaped:
@@ -1300,7 +1305,7 @@ class StreamingRedactor:
             self._flush_subst_word()
             if char == self._subst_closer():
                 if char == ")" and self._case_owned_here():
-                    top = self._case_top()
+                    top = self._case_top_here()
                     if top and top.arm == "pattern":
                         top.arm = "body"
                         self._reset_case_class()
