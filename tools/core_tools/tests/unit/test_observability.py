@@ -609,6 +609,11 @@ _SPLIT_SECRET_FORMS = (
     ("password=$(case x in a) echo safe ;; b) echo SECOND_CASE_SECRET ;; esac)", "SECOND_CASE_SECRET"),
     ("password=$(echo safe # )\necho COMMENT_SECRET\n)", "COMMENT_SECRET"),
     ("password=$(cat <<'EOF'\n)\nHEREDOC_SECRET\nEOF\n)", "HEREDOC_SECRET"),
+    ("'[note \"password\": first SECOND_SECRET]'", "SECOND_SECRET"),
+    ("'[status \"token\" : first TOKEN_SUFFIX]'", "TOKEN_SUFFIX"),
+    ("password=$(case x in a) echo esac ;; b) echo SECOND_CASE_SECRET ;; esac)", "SECOND_CASE_SECRET"),
+    ("password=$(cat <<EOF extra\nEOFextra\n)\nHEREDOC_SECRET\nEOF\n)", "HEREDOC_SECRET"),
+    ("password=$(cat <<\\EOF\n\\EOF\n)\nESCAPED_HEREDOC_SECRET\nEOF\n)", "ESCAPED_HEREDOC_SECRET"),
 )
 
 
@@ -868,6 +873,9 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
     output = split.ingest("password=$(get_secret)") + split.ingest(" --output report.json") + split.flush()
     assert output == "password=[REDACTED] --output report.json"
     assert redact_value("password=$(for item in a b; do echo x; done) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in a) echo safe ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )
 

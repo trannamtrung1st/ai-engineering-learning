@@ -122,6 +122,9 @@ _MAX_CAP_HOLD = 128
 _MAX_SUBST_NEST = 8
 _MAX_CASE_NEST = 8
 _MAX_HEREDOC_TAG = 64
+_MAX_HEREDOC_LINE = 256
+_MAX_HEREDOC_QUEUE = 8
+_MAX_JSON_NEST = 8
 _SIMPLE_ESCAPES = {
     '"': '"',
     "'": "'",
@@ -177,6 +180,9 @@ class StreamingRedactor:
         self._json_ctx = False
         self._json_container = False
         self._json_expect_container = False
+        self._json_pos = ""
+        self._json_stack: list[str] = []
+        self._inner_is_json_key = False
         self._dollar = False
         self._lt = False
         self._gt = False
@@ -186,12 +192,17 @@ class StreamingRedactor:
         self._allow_compound = False
         self._subst_word = ""
         self._case_depth = 0
+        self._case_arm = ""
+        self._cmd_pos = False
+        self._semi = False
         self._shell_comment = False
         self._heredoc = ""
         self._heredoc_tag = ""
         self._heredoc_line = ""
         self._heredoc_quote = ""
         self._heredoc_strip = False
+        self._heredoc_escape = False
+        self._heredoc_queue: list[str] = []
         self._pending_redact = False
         self._escape = False
         self._unicode_hex: str | None = None
@@ -260,16 +271,20 @@ class StreamingRedactor:
             + min(len(self._subst_word), 8)
             + self._case_depth
             + int(self._shell_comment)
-            + min(len(self._heredoc_tag), 8)
-            + min(len(self._heredoc_line), 8)
+            + len(self._heredoc_tag)
+            + len(self._heredoc_line)
+            + sum(len(tag) for tag in self._heredoc_queue)
             + int(bool(self._heredoc))
-            + int(self._json_container)
+            + len(self._json_stack)
             + int(self._pending_redact)
         )
 
     def _reset_shell_lex(self) -> None:
         self._json_container = False
         self._json_expect_container = False
+        self._json_pos = ""
+        self._json_stack = []
+        self._inner_is_json_key = False
         self._dollar = False
         self._lt = False
         self._gt = False
@@ -279,12 +294,17 @@ class StreamingRedactor:
         self._allow_compound = False
         self._subst_word = ""
         self._case_depth = 0
+        self._case_arm = ""
+        self._cmd_pos = False
+        self._semi = False
         self._shell_comment = False
         self._heredoc = ""
         self._heredoc_tag = ""
         self._heredoc_line = ""
         self._heredoc_quote = ""
         self._heredoc_strip = False
+        self._heredoc_escape = False
+        self._heredoc_queue = []
 
     def _lex(self, incoming: str, *, flush: bool) -> str:
         outgoing = [self._step(char) for char in incoming]
@@ -352,6 +372,9 @@ class StreamingRedactor:
         self._json_ctx = False
         self._json_container = False
         self._json_expect_container = False
+        self._json_pos = ""
+        self._json_stack = []
+        self._inner_is_json_key = False
         self._cli = cli
         self._auth = False
         self._unicode_hex = None
@@ -508,10 +531,21 @@ class StreamingRedactor:
             if char in " \t":
                 return char
             if char in "{[":
-                self._json_container = True
                 self._json_expect_container = False
+                self._enter_json_container(char)
                 return char
             self._json_expect_container = False
+        if self._json_pos and not self._inner_quote:
+            if char in " \t":
+                return char
+            if char == "{" and self._json_pos == "value":
+                self._enter_json_container("{")
+                return char
+            if char == "[" and self._json_pos == "value":
+                self._enter_json_container("[")
+                return char
+            if char not in "\"'":
+                self._abort_json()
         if char == self._key_quote:
             self._apply_component_sensitivity()
             self._start_component()
@@ -529,12 +563,14 @@ class StreamingRedactor:
             if self._inner_quote:
                 if char == self._inner_quote:
                     if self._sensitive:
-                        self._json_key = self._json_container
-                        self._json_ctx = self._json_container
+                        self._json_key = self._inner_is_json_key
+                        self._json_ctx = self._inner_is_json_key
                         self._state = "after_ident"
                     self._inner_quote = ""
+                    self._inner_is_json_key = False
                 return char
             self._inner_quote = char
+            self._inner_is_json_key = self._json_pos == "key"
             return char
         if char in "=:":
             self._apply_component_sensitivity()
@@ -634,8 +670,24 @@ class StreamingRedactor:
             return "json"
         return "shell"
 
+    def _enter_json_container(self, opener: str) -> None:
+        if len(self._json_stack) >= _MAX_JSON_NEST:
+            self._abort_json()
+            return
+        self._json_stack.append(opener)
+        self._json_container = True
+        self._json_pos = "key" if opener == "{" else "value"
+
+    def _abort_json(self) -> None:
+        self._json_container = False
+        self._json_expect_container = False
+        self._json_pos = ""
+        self._json_stack = []
+        self._inner_is_json_key = False
+
     def _push_subst(self, closer: str) -> None:
         self._subst_seen = True
+        self._cmd_pos = True
         if self._subst_opaque:
             return
         if len(self._subst_stack) >= _MAX_SUBST_NEST:
@@ -644,32 +696,106 @@ class StreamingRedactor:
             return
         self._subst_stack.append(closer)
 
+    def _flush_subst_word(self) -> None:
+        word = self._subst_word.lower()
+        self._subst_word = ""
+        if not word:
+            return
+        if self._cmd_pos and word == "case":
+            if self._case_depth < _MAX_CASE_NEST:
+                self._case_depth += 1
+            else:
+                self._subst_opaque = True
+            self._case_arm = "word"
+            self._cmd_pos = False
+            return
+        if self._case_depth and self._cmd_pos and word == "esac":
+            self._case_depth -= 1
+            self._case_arm = "" if not self._case_depth else self._case_arm
+            self._cmd_pos = False
+            return
+        if self._case_arm == "word":
+            self._case_arm = "in"
+            self._cmd_pos = False
+            return
+        if self._case_arm == "in" and word == "in":
+            self._case_arm = "pattern"
+            self._cmd_pos = False
+            return
+        self._cmd_pos = False
+
     def _note_subst_char(self, char: str) -> None:
         if char.isalnum() or char == "_":
             if len(self._subst_word) < 8:
                 self._subst_word += char
             return
-        word = self._subst_word.lower()
-        self._subst_word = ""
-        if word == "case":
-            if self._case_depth < _MAX_CASE_NEST:
-                self._case_depth += 1
+        self._flush_subst_word()
+        if char == ";":
+            if self._semi:
+                self._semi = False
+                self._cmd_pos = True
+                if self._case_depth:
+                    self._case_arm = "pattern"
             else:
-                self._subst_opaque = True
-        elif word == "esac" and self._case_depth:
-            self._case_depth -= 1
+                self._semi = True
+                self._cmd_pos = True
+            return
+        self._semi = False
+        if char in "|&\r\n":
+            self._cmd_pos = True
+        elif char == "(":
+            self._cmd_pos = True
+
+    def _append_heredoc_tag(self, char: str) -> None:
+        if len(self._heredoc_tag) >= _MAX_HEREDOC_TAG:
+            self._subst_opaque = True
+            return
+        self._heredoc_tag += char
+
+    def _finish_heredoc_word(self) -> None:
+        if not self._heredoc_tag:
+            return
+        if len(self._heredoc_queue) >= _MAX_HEREDOC_QUEUE:
+            self._subst_opaque = True
+            self._heredoc_tag = ""
+            return
+        self._heredoc_queue.append(self._heredoc_tag)
+        self._heredoc_tag = ""
+
+    def _begin_heredoc_body(self) -> None:
+        self._finish_heredoc_word()
+        self._heredoc_quote = ""
+        self._heredoc_escape = False
+        if self._heredoc_queue:
+            self._heredoc_tag = self._heredoc_queue.pop(0)
+            self._heredoc = "body"
+            self._heredoc_line = ""
+            return
+        self._heredoc = ""
+        self._heredoc_tag = ""
+        self._heredoc_line = ""
 
     def _step_heredoc_tag(self, char: str) -> str:
+        if self._heredoc_escape:
+            self._heredoc_escape = False
+            if char in "\r\n":
+                self._begin_heredoc_body()
+                return ""
+            self._append_heredoc_tag(char)
+            return ""
+        if char == "\\" and self._heredoc_quote != "'":
+            self._heredoc_escape = True
+            return ""
         if self._heredoc_quote:
             if char == self._heredoc_quote:
                 self._heredoc_quote = ""
                 return ""
-            if len(self._heredoc_tag) >= _MAX_HEREDOC_TAG:
-                self._subst_opaque = True
-                return ""
-            self._heredoc_tag += char
+            self._append_heredoc_tag(char)
             return ""
         if char in " \t":
+            if self._heredoc_tag or self._heredoc_queue:
+                self._finish_heredoc_word()
+                self._heredoc = "rest"
             return ""
         if char == "-" and not self._heredoc_tag:
             self._heredoc_strip = True
@@ -678,32 +804,53 @@ class StreamingRedactor:
             self._heredoc_quote = char
             return ""
         if char in "\r\n":
-            self._heredoc = "body"
-            self._heredoc_line = ""
+            self._begin_heredoc_body()
             return ""
-        if len(self._heredoc_tag) >= _MAX_HEREDOC_TAG:
-            self._subst_opaque = True
+        self._append_heredoc_tag(char)
+        return ""
+
+    def _step_heredoc_rest(self, char: str) -> str:
+        if self._lt:
+            self._lt = False
+            if char == "<":
+                self._heredoc = "tag"
+                return ""
             return ""
-        self._heredoc_tag += char
+        if char == "<":
+            self._lt = True
+            return ""
+        if char in "\r\n":
+            self._begin_heredoc_body()
+            return ""
         return ""
 
     def _step_heredoc_body(self, char: str) -> str:
         if char in "\r\n":
             line = self._heredoc_line.lstrip("\t") if self._heredoc_strip else self._heredoc_line
             if line == self._heredoc_tag:
-                self._heredoc = ""
-                self._heredoc_tag = ""
-                self._heredoc_line = ""
-                self._heredoc_quote = ""
-                self._heredoc_strip = False
+                if self._heredoc_queue:
+                    self._heredoc_tag = self._heredoc_queue.pop(0)
+                    self._heredoc_line = ""
+                else:
+                    self._heredoc = ""
+                    self._heredoc_tag = ""
+                    self._heredoc_line = ""
+                    self._heredoc_quote = ""
+                    self._heredoc_strip = False
             else:
                 self._heredoc_line = ""
             return ""
-        if len(self._heredoc_line) < 256:
+        if len(self._heredoc_line) < _MAX_HEREDOC_LINE:
             self._heredoc_line += char
         return ""
 
     def _step_unquoted_value(self, char: str) -> str:
+        if self._heredoc == "tag":
+            return self._step_heredoc_tag(char)
+        if self._heredoc == "rest":
+            return self._step_heredoc_rest(char)
+        if self._heredoc == "body":
+            return self._step_heredoc_body(char)
         if self._escape:
             self._escape = False
             self._dollar = False
@@ -716,10 +863,6 @@ class StreamingRedactor:
             self._lt = False
             self._gt = False
             return ""
-        if self._heredoc == "tag":
-            return self._step_heredoc_tag(char)
-        if self._heredoc == "body":
-            return self._step_heredoc_body(char)
         if self._shell_comment:
             if char in "\r\n":
                 self._shell_comment = False
@@ -742,6 +885,7 @@ class StreamingRedactor:
                 self._heredoc_line = ""
                 self._heredoc_quote = ""
                 self._heredoc_strip = False
+                self._heredoc_escape = False
                 return ""
         elif self._gt:
             self._gt = False
@@ -775,8 +919,13 @@ class StreamingRedactor:
             self._allow_compound = False
             self._note_subst_char(char)
             return ""
+        if self._subst_stack and not (char.isalnum() or char == "_"):
+            self._flush_subst_word()
         if self._subst_stack and char == self._subst_stack[-1]:
             if char == ")" and self._case_depth and len(self._subst_stack) == 1:
+                if self._case_arm == "pattern":
+                    self._case_arm = "body"
+                self._cmd_pos = True
                 self._note_subst_char(char)
                 return ""
             self._subst_stack.pop()
