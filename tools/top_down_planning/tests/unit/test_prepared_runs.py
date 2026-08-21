@@ -13,25 +13,10 @@ from top_down_planning.domain.run_kind import (
     resolve_run_kind,
 )
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
-from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PLANNING
-from top_down_planning.package.builder import ExecutionPackageBuilder
-from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
-from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, whole_plan_approval_record
-from tests.unit.test_execution_package import _approved_parent_plan, _planning_run_at_validated
-
-
-def _built_package(tmp_path: Path) -> tuple[FileRunStore, str, ExecutionPackageLoader]:
-    store = FileRunStore(tmp_path / "runs")
-    run_id = "run-20260101T000901-000901"
-    _planning_run_at_validated(store, tmp_path, run_id)
-    built = ExecutionPackageBuilder().build_from_planning_run(
-        store,
-        run_id,
-        output_dir=tmp_path / "execution",
-    )
-    loaded = ExecutionPackageLoader().load(built.manifest_path.parent, verify_workspace=False)
-    return store, run_id, loaded
+from top_down_planning.orchestrator.phases import PLAN_VALIDATED
+from top_down_planning.package.loader import ExecutionPackageError
+from tests.helpers import create_run_kwargs
+from tests.support.run_builders import _built_package
 
 
 def test_prepared_run_rejects_config_drift_from_package(tmp_path: Path) -> None:

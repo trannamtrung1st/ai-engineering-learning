@@ -16,62 +16,8 @@ from top_down_planning.persistence.sub_tdp_state import (
 from top_down_planning.package.lineage import accepted_result_digest, accepted_result_record
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, create_run_kwargs
-from tests.unit.test_prepared_runs import _built_package
+from tests.support.run_builders import _built_package, _parent_with_orchestration
 from tests.unit.test_sub_tdp_defect_pass import _build_package as _dependent_build_package
-
-
-def _parent_with_orchestration(tmp_path: Path):
-    store, _, package = _built_package(tmp_path)
-    config = create_run_kwargs(tmp_path)["resolved_config"]
-    parent_id = PreparedRunFactory().create_parent_run(
-        store,
-        package,
-        resolved_config=config,
-        invocation={"command": "execute", "observability": {}},
-    )
-    run = store.load_run(parent_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected + 1
-    run["phase"] = SUB_TDPS
-    run["status"] = "paused"
-    run["stop"] = {
-        "code": "sub_tdps_awaiting_children",
-        "category": "operational",
-        "phase": SUB_TDPS,
-        "message": "waiting for children",
-        "role": None,
-        "details": {},
-    }
-    store.save_run(parent_id, run, expected)
-
-    from top_down_planning.domain.sub_tdp_units import SubTdpUnit
-
-    units = [
-        SubTdpUnit(
-            plan_item_id=unit.unit_id,
-            title=unit.title,
-            outcome="",
-            directory=unit.plan_file.parent.name,
-            ordinal=unit.ordinal,
-        )
-        for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
-    ]
-    production = store.load_production(parent_id)
-    parent_binding = store.load_run(parent_id).get("package_binding") or {}
-    state = initial_sub_tdp_state_from_package(
-        package.manifest,
-        manifest_path=str(
-            parent_binding.get("manifest_path") or package.manifest_path
-        ),
-        units=units,
-        package_units=package.units,
-    )
-    merged = merge_sub_tdp_state_into_production(production, state)
-    expected_revision = int(production["revision"])
-    merged["revision"] = expected_revision + 1
-    store.save_production(parent_id, merged, expected_revision)
-    return store, parent_id, package, config
 
 
 def test_sub_tdp_attach_updates_orchestration(tmp_path: Path) -> None:

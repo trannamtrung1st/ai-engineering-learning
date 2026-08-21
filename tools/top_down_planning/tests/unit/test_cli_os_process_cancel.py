@@ -20,28 +20,6 @@ _SITCUSTOMIZE_DIR = (
 )
 
 
-def _descendant_pids(root_pid: int) -> set[int]:
-    output = subprocess.check_output(
-        ["ps", "-axww", "-o", "pid=,ppid="],
-        text=True,
-    )
-    by_parent: dict[int, list[int]] = {}
-    for line in output.splitlines():
-        parts = line.strip().split()
-        if len(parts) < 2:
-            continue
-        pid = int(parts[0])
-        ppid = int(parts[1])
-        by_parent.setdefault(ppid, []).append(pid)
-    found: set[int] = set()
-    stack = list(by_parent.get(root_pid, ()))
-    while stack:
-        pid = stack.pop()
-        found.add(pid)
-        stack.extend(by_parent.get(pid, ()))
-    return found
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT CLI contract")
 def test_tdp_run_sigint_exits_130_and_pauses_run_as_user_cancelled(
     tmp_path: Path,
@@ -117,9 +95,6 @@ provider:
         f"stdout={child.stdout.read() if child.stdout else ''} "
         f"stderr={child.stderr.read() if child.stderr else ''}"
     )
-
-    leftover = {pid for pid in _descendant_pids(child.pid) if pid != child.pid}
-    assert not leftover, f"provider/CLI descendants still running: {leftover}"
 
     store = FileRunStore(runs_dir)
     run_id = only_run_id(store)

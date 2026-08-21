@@ -174,3 +174,9 @@ jobs:
           cd tools/top_down_planning
           python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_slice5_rereview_27bf8d7_fixes.py
+
+      - name: TDP Darwin real CLI cancellation
+        run: |
+          cd tools/top_down_planning
+          python -m pytest -p no:xdist -o addopts='' --tb=short \
+            tests/unit/test_cli_os_process_cancel.py

@@ -20,8 +20,9 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_slice7_rereview_cli_schema import (
+from tests.support.cli_fakes import _assert_operational_error, _minimal_run_yaml
+from tests.support.run_builders import (
+    _built_package,
     _create_planning_run,
     _pause_run,
     _wipe_txn_dirs,
@@ -36,25 +37,6 @@ def _assert_config_error(result, *, structured: bool) -> None:
         payload = json.loads(result.stdout)
         assert payload["ok"] is False
         assert payload["error"]["code"] == "config_error"
-
-
-def _assert_operational_error(result, *, structured: bool) -> None:
-    assert result.exit_code == 1
-    assert "Traceback" not in result.stderr
-    assert "Traceback" not in result.stdout
-    if structured:
-        payload = json.loads(result.stdout)
-        assert payload["ok"] is False
-        assert payload["error"]["code"] == "operational_error"
-
-
-def _minimal_run_yaml(workspace: Path, extra: str = "") -> str:
-    return (
-        "run:\n  output_goal: Goal.\n"
-        f"project:\n  workspace: {workspace}\n"
-        "provider:\n  name: stub\n"
-        f"{extra}"
-    )
 
 
 @pytest.mark.parametrize(

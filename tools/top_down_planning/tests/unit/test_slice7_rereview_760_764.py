@@ -24,6 +24,7 @@ from top_down_planning.persistence.snapshot_bindings import (
 )
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, write_config
+from tests.support.cli_fakes import _engine_patches
 from tests.unit.test_slice7_rereview_739_747 import (
     _assert_operational_without_traceback,
     _dependent_build_package,
@@ -171,37 +172,6 @@ def _skip_drive():
         return PreparedChildResult.from_run(child_store.load_run(child_run_id), ok=True)
 
     return patch.object(PreparedUnitExecutor, "drive_child_run", drive)
-
-
-def _engine_patches(tmp_path: Path):
-    engine = MagicMock()
-    engine.continue_run.return_value = RunContinuationResult(
-        ok=True,
-        run_id="run-placeholder",
-        phase="planning",
-        status="running",
-        outcome=None,
-        reason=None,
-        cancelled=False,
-        target_reached=True,
-    )
-    return [
-        patch("top_down_planning.cli.user._build_run_engine", return_value=engine),
-        patch("top_down_planning.cli.prepare._build_run_engine", return_value=engine),
-        patch(
-            "top_down_planning.cli.prepare.ExecutionPackageBuilder.build_from_planning_run",
-            return_value=SimpleNamespace(
-                package_id="pkg-x",
-                manifest_path=tmp_path / "pkg" / "manifest.json",
-                manifest={
-                    "planning_run": {
-                        "approved_plan_revision": 0,
-                        "approved_plan_digest": "a" * 64,
-                    }
-                },
-            ),
-        ),
-    ]
 
 
 def _assert_lineage_not_rejected(result) -> None:

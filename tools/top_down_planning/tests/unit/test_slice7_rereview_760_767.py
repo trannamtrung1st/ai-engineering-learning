@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
-from dataclasses import replace
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +15,7 @@ from top_down_planning.package.loader import ExecutionPackageError, ExecutionPac
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, write_config
+from tests.support.cli_fakes import _engine_patches, _patch_prepare_plan_validated
 from tests.unit.test_slice7_rereview_739_747 import (
     _assert_operational_without_traceback,
     _dependent_build_package,
@@ -25,32 +25,8 @@ from tests.unit.test_slice7_rereview_751_754 import _assert_no_traceback, _resum
 from tests.unit.test_slice7_rereview_755_758 import _assert_structured_error, _stdout_json
 from tests.unit.test_slice7_rereview_760_764 import (
     _bump_after_first_child_load,
-    _engine_patches,
     _pause_child_for_resume,
 )
-
-
-@contextmanager
-def _patch_prepare_plan_validated():
-    real_load = FileRunStore.load_run
-    real_snapshot = FileRunStore.load_canonical_snapshot
-
-    def load_as_validated(self, rid, *args, **kwargs):
-        run = dict(real_load(self, rid, *args, **kwargs))
-        run["phase"] = "plan_validated"
-        return run
-
-    def snapshot_as_validated(self, rid, *args, **kwargs):
-        snapshot = real_snapshot(self, rid, *args, **kwargs)
-        run = dict(snapshot.run)
-        run["phase"] = "plan_validated"
-        return replace(snapshot, run=run)
-
-    with (
-        patch.object(FileRunStore, "load_run", load_as_validated),
-        patch.object(FileRunStore, "load_canonical_snapshot", snapshot_as_validated),
-    ):
-        yield
 
 
 def _load_dependent_package(tmp_path: Path):

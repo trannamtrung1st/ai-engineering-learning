@@ -14,61 +14,7 @@ from top_down_planning.package.builder import ExecutionPackageBuilder
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, whole_plan_approval_record
-
-
-def _approved_parent_plan(run_id: str) -> Plan:
-    root = PlanItem(
-        id=PLAN_ROOT_ITEM_ID,
-        parent_id=None,
-        order_key="0000000000",
-        title="Deliver",
-        outcome="Deliver the output.",
-        kind="aggregate",
-    )
-    foundation = PlanItem(
-        id="item-foundation",
-        parent_id=PLAN_ROOT_ITEM_ID,
-        order_key="0000000000",
-        title="Foundation",
-        outcome="Persist state reliably.",
-        kind="work",
-        scope=Scope(includes=["storage"]),
-    )
-    storage = PlanItem(
-        id="item-storage",
-        parent_id="item-foundation",
-        order_key="0000000001",
-        title="Storage layer",
-        outcome="Implement storage.",
-        kind="work",
-        scope=Scope(includes=["db"]),
-    )
-    return Plan(
-        id=f"plan-{run_id}",
-        revision=0,
-        output_goal="Ship the product.",
-        input_refs=["docs/spec.md"],
-        items={
-            PLAN_ROOT_ITEM_ID: root,
-            "item-foundation": foundation,
-            "item-storage": storage,
-        },
-    )
-
-
-def _planning_run_at_validated(store: FileRunStore, workspace: Path, run_id: str) -> None:
-    from top_down_planning.domain.run_kind import RUN_KIND_PLANNING
-
-    config = create_run_kwargs(workspace)["resolved_config"]
-    kwargs = create_run_kwargs(workspace, resolved_config=config)
-    store.create_run(
-        run_id,
-        plan=_approved_parent_plan(run_id),
-        phase="plan_validated",
-        run_extras={"run_kind": RUN_KIND_PLANNING},
-        **kwargs,
-    )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+from tests.support.run_builders import _approved_parent_plan, _planning_run_at_validated
 
 
 def test_package_builder_materializes_manifest_and_unit_subtrees(tmp_path: Path) -> None:

@@ -26,26 +26,26 @@ from top_down_planning.persistence.digests import (
 from tests.conftest import run_cli
 from tests.fixtures.commit_concurrency_worker import pause_after_run_json_replace_worker
 from tests.helpers import create_run_kwargs, minimal_resolved_config, write_config
-from tests.unit.test_commit_crash_recovery import (
+from tests.support.cli_fakes import (
+    _assert_operational_error,
+    _engine_patches,
+    _minimal_run_yaml,
+    _patch_prepare_plan_validated,
+)
+from tests.support.persistence import (
     _crash_after_dest_replace_count,
     _crash_before_appending_events,
     _crash_before_dest_replace_count,
     _crash_on_appending_events_journal_write,
     _multi_file_commit,
 )
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_slice7_rereview_cli_schema import (
+from tests.support.run_builders import (
+    _built_package,
     _create_planning_run,
+    _parent_with_orchestration,
     _pause_run,
     _wipe_txn_dirs,
 )
-from tests.unit.test_slice7_rereview_config_ops import (
-    _assert_operational_error,
-    _minimal_run_yaml,
-)
-from tests.unit.test_slice7_rereview_760_764 import _engine_patches
-from tests.unit.test_slice7_rereview_760_767 import _patch_prepare_plan_validated
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
 
 
 def _assert_both_modes(argv: list[str], *, code: str, exit_code: int) -> None:

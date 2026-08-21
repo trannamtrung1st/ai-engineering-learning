@@ -5,17 +5,22 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from core_tools.persistence import atomic_write_json, digest_file
+from core_tools.persistence import digest_file
 
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.commit import CommitSpec
 from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config, recovery_journal_events
+from tests.support.persistence import (
+    _crash_after_dest_replace_count,
+    _crash_before_appending_events,
+    _crash_before_dest_replace_count,
+    _crash_on_appending_events_journal_write,
+    _multi_file_commit,
+)
 
 
 def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601") -> None:
@@ -42,96 +47,10 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601")
     )
 
 
-def _multi_file_commit(store: FileRunStore, run_id: str) -> None:
-    from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_plan_update
-
-    run = store.load_run(run_id)
-    plan = store.load_plan(run_id)
-    run_expected = int(run["revision"])
-    plan_expected = int(plan["revision"])
-    plan = dict(plan)
-    plan["revision"] = plan_expected + 1
-    run = bind_run_digests_for_plan_update(
-        {**dict(run), "revision": run_expected + 1},
-        plan,
-    )
-    store.commit(
-        run_id,
-        CommitSpec(
-            run=run,
-            run_expected_revision=run_expected,
-            plan=plan,
-            plan_expected_revision=plan_expected,
-            events=[{"type": "test_commit", "run_id": run_id}],
-        ),
-    )
-
-
 def _find_txn_dir(store: FileRunStore, run_id: str) -> Path | None:
     run_dir = store.run_dir(run_id)
     txn_dirs = sorted(run_dir.glob(".txn-*"))
     return txn_dirs[0] if txn_dirs else None
-
-
-def _crash_before_dest_replace_count(replace_count: int) -> Any:
-    original_replace = Path.replace
-    calls = 0
-
-    def patched_replace(self: Path, target: Path) -> Path:
-        nonlocal calls
-        self_parts = self.parts
-        target_parts = target.parts
-        if any(part.startswith(".txn-") for part in self_parts) and not any(
-            part.startswith(".txn-") for part in target_parts
-        ):
-            calls += 1
-            if calls == replace_count:
-                raise OSError("simulated crash")
-        return original_replace(self, target)
-
-    return patched_replace
-
-
-def _crash_after_dest_replace_count(replace_count: int) -> Any:
-    original_replace = Path.replace
-    calls = 0
-
-    def patched_replace(self: Path, target: Path) -> Path:
-        nonlocal calls
-        result = original_replace(self, target)
-        self_parts = self.parts
-        target_parts = target.parts
-        if any(part.startswith(".txn-") for part in self_parts) and not any(
-            part.startswith(".txn-") for part in target_parts
-        ):
-            calls += 1
-            if calls == replace_count:
-                raise OSError("simulated crash")
-        return result
-
-    return patched_replace
-
-
-def _crash_before_appending_events() -> Any:
-    original_write = atomic_write_json
-
-    def patched_write(path: Path, payload: dict[str, Any]) -> None:
-        original_write(path, payload)
-        if path.name == "journal.json" and payload.get("status") == "appending_events":
-            raise OSError("simulated crash")
-
-    return patched_write
-
-
-def _crash_on_appending_events_journal_write() -> Any:
-    original_write = atomic_write_json
-
-    def patched_write(path: Path, payload: dict[str, Any]) -> None:
-        if path.name == "journal.json" and payload.get("status") == "appending_events":
-            raise OSError("simulated crash")
-        original_write(path, payload)
-
-    return patched_write
 
 
 def test_crash_during_replace_restores_prior_state(tmp_path: Path) -> None:

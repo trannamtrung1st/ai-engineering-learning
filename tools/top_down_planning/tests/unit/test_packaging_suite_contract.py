@@ -37,7 +37,7 @@ def test_packaging_smoke_tests_use_packaging_marker_not_integration() -> None:
         assert "integration" not in names
 
 
-def test_default_addopts_exclude_packaging_from_unit_and_review_suites() -> None:
+def test_default_addopts_exclude_packaging_from_unit_suite() -> None:
     data = tomllib.loads((_PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     addopts = data["tool"]["pytest"]["ini_options"]["addopts"]
     joined = " ".join(addopts) if isinstance(addopts, list) else str(addopts)
@@ -49,6 +49,9 @@ def test_default_addopts_exclude_packaging_from_unit_and_review_suites() -> None
 
 def test_review_plan_no_addopts_packaging_smoke_skips_without_wheelhouse_and_does_not_build() -> None:
     env = {key: value for key, value in os.environ.items() if key != "TDP_PACKAGING_WHEELHOUSE"}
+    env["PIP_NO_INDEX"] = "1"
+    env["PIP_NO_CACHE_DIR"] = "1"
+    env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
     result = subprocess.run(
         [
             sys.executable,
@@ -58,7 +61,8 @@ def test_review_plan_no_addopts_packaging_smoke_skips_without_wheelhouse_and_doe
             "addopts=",
             "-p",
             "no:xdist",
-            "-q",
+            "-rs",
+            "-v",
             "tests/integration/test_packaging_smoke.py",
         ],
         cwd=_PROJECT_ROOT,
@@ -70,7 +74,16 @@ def test_review_plan_no_addopts_packaging_smoke_skips_without_wheelhouse_and_doe
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
     assert "failed" not in output.lower()
-    assert "skipped" in output.lower()
+    assert "TDP_PACKAGING_WHEELHOUSE" in output
+    expected = {fn.__name__ for fn in _packaging_smoke_tests()}
+    skipped_nodes = [
+        line
+        for line in output.splitlines()
+        if "SKIPPED" in line and any(name in line for name in expected)
+    ]
+    for name in expected:
+        assert any(name in line for line in skipped_nodes), output
+    assert len(skipped_nodes) >= len(expected), output
 
 
 def test_review_plan_no_addopts_full_suite_collects_packaging_without_wheelhouse_env() -> None:

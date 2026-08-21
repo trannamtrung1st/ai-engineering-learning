@@ -13,49 +13,21 @@ import pytest
 from top_down_planning.cli.execute import _resolved_config_for_execute
 from top_down_planning.config import ConfigError, resolve_config
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.package.digests import digest_plan_file
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import CliResult, run_cli
 from tests.helpers import create_run_kwargs, minimal_resolved_config, write_config
-from tests.unit.test_prepared_runs import _built_package
-from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
+from tests.support.run_builders import (
+    _built_package,
+    _create_planning_run,
+    _parent_with_orchestration,
+    _pause_run,
+    _wipe_txn_dirs,
+)
 
 
 def _stdout_json(result: CliResult) -> dict:
     return json.loads(result.stdout)
-
-
-def _wipe_txn_dirs(run_dir: Path) -> None:
-    for child in list(run_dir.iterdir()):
-        if child.name.startswith("."):
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
-
-
-def _create_planning_run(store: FileRunStore, run_id: str) -> str:
-    store.create_run(
-        run_id,
-        plan=Plan(
-            id="plan-slice7",
-            revision=0,
-            output_goal="Goal.",
-            items={
-                "item-root": PlanItem(
-                    id="item-root",
-                    parent_id=None,
-                    order_key="0000000000",
-                    title="Root",
-                    kind="aggregate",
-                )
-            },
-        ),
-        phase=PLANNING,
-        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
-    )
-    return run_id
 
 
 def test_create_run_kwargs_partial_config_reloads_as_schema_valid_snapshot(
@@ -473,23 +445,6 @@ def test_resolve_config_rejects_schema_invalid_types(
     overrides = [set_override] if set_override else None
     with pytest.raises(ConfigError):
         resolve_config(path, overrides)
-
-
-def _pause_run(store: FileRunStore, run_id: str) -> None:
-    run = store.load_run(run_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected + 1
-    run["status"] = "paused"
-    run["stop"] = {
-        "code": "limit_exhausted",
-        "category": "operational",
-        "phase": PLANNING,
-        "message": "paused for tests",
-        "role": None,
-        "details": {},
-    }
-    store.save_run(run_id, run, expected)
 
 
 def _assert_corrupt_run(result: CliResult) -> None:
