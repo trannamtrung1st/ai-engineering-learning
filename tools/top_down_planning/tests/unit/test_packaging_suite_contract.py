@@ -47,6 +47,32 @@ def test_default_addopts_exclude_packaging_from_unit_and_review_suites() -> None
     assert any(str(marker).startswith("packaging:") for marker in markers)
 
 
+def test_review_plan_no_addopts_packaging_smoke_skips_without_wheelhouse_and_does_not_build() -> None:
+    env = {key: value for key, value in os.environ.items() if key != "TDP_PACKAGING_WHEELHOUSE"}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-o",
+            "addopts=",
+            "-p",
+            "no:xdist",
+            "-q",
+            "tests/integration/test_packaging_smoke.py",
+        ],
+        cwd=_PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "failed" not in output.lower()
+    assert "skipped" in output.lower()
+
+
 def test_review_plan_no_addopts_full_suite_collects_packaging_without_wheelhouse_env() -> None:
     env = {key: value for key, value in os.environ.items() if key != "TDP_PACKAGING_WHEELHOUSE"}
     result = subprocess.run(
@@ -72,9 +98,9 @@ def test_review_plan_no_addopts_full_suite_collects_packaging_without_wheelhouse
     assert "test_documented_editable_install_smoke" in result.stdout
 
 
-def test_packaging_session_fixture_uses_ensure_when_wheelhouse_env_is_unset() -> None:
-    import inspect
-
-    source = inspect.getsource(packaging_smoke.packaging_wheelhouse)
-    assert "ensure_packaging_wheelhouse" in source
-    assert "resolve_packaging_wheelhouse" not in source
+def test_packaging_marker_documents_prepared_wheelhouse_reuse() -> None:
+    data = tomllib.loads((_PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    markers = data["tool"]["pytest"]["ini_options"]["markers"]
+    packaging = next(str(marker) for marker in markers if str(marker).startswith("packaging:"))
+    assert "TDP_PACKAGING_WHEELHOUSE" in packaging
+    assert "requires TDP_PACKAGING_WHEELHOUSE." not in packaging

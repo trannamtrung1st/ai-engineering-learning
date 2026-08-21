@@ -43,5 +43,5 @@ pythonpath = ["src"]
 addopts = ["-m", "not integration and not packaging", "-n", "auto", "--dist", "worksteal"]
 markers = [
   "integration: stub-provider e2e and multi-layer smoke tests.",
-  "packaging: offline wheelhouse install smoke; requires TDP_PACKAGING_WHEELHOUSE.",
+  "packaging: offline installed-artifact smoke; reuses TDP_PACKAGING_WHEELHOUSE when provided.",
 ]

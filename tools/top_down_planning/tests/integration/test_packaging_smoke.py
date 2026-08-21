@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import venv
 from pathlib import Path
 
 import pytest
 
-from tests.packaging_wheelhouse import PackagingWheelhouseError, ensure_packaging_wheelhouse
+from tests.packaging_wheelhouse import PackagingWheelhouseError, resolve_packaging_wheelhouse
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -142,14 +143,20 @@ def _install_all_wheels_offline(python: Path | str, wheelhouse: Path) -> None:
 
 @pytest.fixture(scope="session")
 def packaging_wheelhouse() -> Path:
-    """Return a packaging wheelhouse, building one when the env var is unset.
+    """Reuse a prepared local wheelhouse from ``TDP_PACKAGING_WHEELHOUSE``.
 
-    This keeps the review-plan command ``python -m pytest -o addopts='' tests``
-    self-contained. Set ``TDP_PACKAGING_WHEELHOUSE`` to reuse a pre-built house.
+    Packaging smoke never builds or downloads wheels. When the env var is unset,
+    tests skip so ``python -m pytest -o addopts='' tests`` stays hermetic.
+    Prepare the house with ``scripts/build_packaging_wheelhouse.py`` first.
     """
 
+    if not os.environ.get("TDP_PACKAGING_WHEELHOUSE"):
+        pytest.skip(
+            "packaging smoke requires a prepared TDP_PACKAGING_WHEELHOUSE; "
+            "run scripts/build_packaging_wheelhouse.py"
+        )
     try:
-        return ensure_packaging_wheelhouse()
+        return resolve_packaging_wheelhouse()
     except PackagingWheelhouseError as exc:
         pytest.fail(str(exc))
 
