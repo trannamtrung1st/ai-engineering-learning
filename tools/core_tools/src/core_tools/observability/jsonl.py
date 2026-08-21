@@ -83,7 +83,10 @@ class JsonlEventSink:
                 buffered.event = event
             return
 
-        self._flush_key(key)
+        if event.session_id is None:
+            self.flush_stream()
+        else:
+            self._flush_key(key)
         self._write_event(event)
 
     def flush_stream(self, session_id: str | None = None) -> None:

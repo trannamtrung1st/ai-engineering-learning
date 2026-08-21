@@ -194,6 +194,9 @@ class StreamingRedactor:
         self._case_depth = 0
         self._case_arm = ""
         self._cmd_pos = False
+        self._cmd_qualified = False
+        self._case_class = False
+        self._case_class_first = False
         self._semi = False
         self._shell_comment = False
         self._heredoc = ""
@@ -202,6 +205,7 @@ class StreamingRedactor:
         self._heredoc_quote = ""
         self._heredoc_strip = False
         self._heredoc_escape = False
+        self._heredoc_crlf = False
         self._heredoc_queue: list[tuple[str, bool]] = []
         self._heredoc_body_strip = False
         self._pending_redact = False
@@ -271,7 +275,10 @@ class StreamingRedactor:
             + int(self._allow_compound)
             + min(len(self._subst_word), 8)
             + self._case_depth
+            + int(self._cmd_qualified)
+            + int(self._case_class)
             + int(self._shell_comment)
+            + int(self._heredoc_crlf)
             + len(self._heredoc_tag)
             + len(self._heredoc_line)
             + sum(len(tag) for tag, _strip in self._heredoc_queue)
@@ -298,6 +305,9 @@ class StreamingRedactor:
         self._case_depth = 0
         self._case_arm = ""
         self._cmd_pos = False
+        self._cmd_qualified = False
+        self._case_class = False
+        self._case_class_first = False
         self._semi = False
         self._shell_comment = False
         self._heredoc = ""
@@ -306,6 +316,7 @@ class StreamingRedactor:
         self._heredoc_quote = ""
         self._heredoc_strip = False
         self._heredoc_escape = False
+        self._heredoc_crlf = False
         self._heredoc_queue = []
         self._heredoc_body_strip = False
 
@@ -704,56 +715,85 @@ class StreamingRedactor:
         self._subst_word = ""
         if not word:
             return
-        if self._cmd_pos and word == "case":
+        if self._cmd_pos and not self._cmd_qualified and word == "case":
             if self._case_depth < _MAX_CASE_NEST:
                 self._case_depth += 1
             else:
                 self._subst_opaque = True
             self._case_arm = "word"
             self._cmd_pos = False
+            self._cmd_qualified = False
             return
-        if self._case_depth and self._cmd_pos and word == "esac":
+        if self._case_depth and self._cmd_pos and not self._cmd_qualified and word == "esac":
             self._case_depth -= 1
             self._case_arm = "" if not self._case_depth else self._case_arm
             self._cmd_pos = False
+            self._cmd_qualified = False
             return
         if self._case_arm == "word":
             self._case_arm = "in"
             self._cmd_pos = False
+            self._cmd_qualified = False
             return
         if self._case_arm == "in" and word == "in":
             self._case_arm = "pattern"
             self._cmd_pos = False
+            self._cmd_qualified = False
             return
         self._cmd_pos = False
+        self._cmd_qualified = False
 
     def _note_subst_char(self, char: str) -> None:
-        if char.isalnum() or char == "_":
+        if char.isalnum() or char in "_./":
+            if char in "./":
+                self._cmd_qualified = True
             if len(self._subst_word) < 8:
                 self._subst_word += char
             return
+        if self._case_arm == "pattern":
+            if char == "[":
+                self._flush_subst_word()
+                self._case_class = True
+                self._case_class_first = True
+                return
+            if self._case_class:
+                if self._case_class_first:
+                    self._case_class_first = False
+                    return
+                if char == "]":
+                    self._case_class = False
+                return
         self._flush_subst_word()
         if char == ";":
             if self._semi:
                 self._semi = False
                 self._cmd_pos = True
+                self._cmd_qualified = False
                 if self._case_depth:
                     self._case_arm = "pattern"
+                    self._case_class = False
+                    self._case_class_first = False
             else:
                 self._semi = True
                 self._cmd_pos = True
+                self._cmd_qualified = False
             return
         if char == "&" and self._semi:
             self._semi = False
             self._cmd_pos = True
+            self._cmd_qualified = False
             if self._case_depth:
                 self._case_arm = "pattern"
+                self._case_class = False
+                self._case_class_first = False
             return
         self._semi = False
         if char in "|&\r\n":
             self._cmd_pos = True
+            self._cmd_qualified = False
         elif char == "(":
             self._cmd_pos = True
+            self._cmd_qualified = False
 
     def _append_heredoc_tag(self, char: str) -> None:
         if len(self._heredoc_tag) >= _MAX_HEREDOC_TAG:
@@ -792,10 +832,16 @@ class StreamingRedactor:
         self._heredoc_body_strip = False
 
     def _step_heredoc_tag(self, char: str) -> str:
+        if self._heredoc_crlf:
+            self._heredoc_crlf = False
+            if char == "\n":
+                return ""
         if self._heredoc_escape:
             self._heredoc_escape = False
-            if char in "\r\n":
-                self._begin_heredoc_body()
+            if char == "\n":
+                return ""
+            if char == "\r":
+                self._heredoc_crlf = True
                 return ""
             self._append_heredoc_tag(char)
             return ""
@@ -941,9 +987,15 @@ class StreamingRedactor:
             self._flush_subst_word()
         if self._subst_stack and char == self._subst_stack[-1]:
             if char == ")" and self._case_depth and len(self._subst_stack) == 1:
+                if self._case_arm == "pattern" and self._case_class:
+                    self._note_subst_char(char)
+                    return ""
                 if self._case_arm == "pattern":
                     self._case_arm = "body"
+                    self._case_class = False
+                    self._case_class_first = False
                 self._cmd_pos = True
+                self._cmd_qualified = False
                 self._note_subst_char(char)
                 return ""
             self._subst_stack.pop()

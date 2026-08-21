@@ -92,8 +92,11 @@ class ColorizedConsoleSink:
             self._emit_stream_delta(event)
             return
 
-        self._flush_session_blocks(_session_key(event.session_id), close_line=True)
-        self._close_display_line()
+        if event.session_id is None:
+            self.flush_stream()
+        else:
+            self._flush_session_blocks(_session_key(event.session_id), close_line=True)
+            self._close_display_line()
         safe = redact_event(event, policy=RedactionPolicy())
         tag = category_tag(safe.category)
         body = truncate_text(

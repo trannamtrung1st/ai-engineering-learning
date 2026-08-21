@@ -537,11 +537,40 @@ def test_console_sink_flushes_stream_between_same_category_turns() -> None:
 def test_console_sink_ends_open_stream_before_cancel() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")
-    sink.emit(ConsoleEvent(category="response", message="partial reply"))
+    sink.emit(
+        ConsoleEvent(
+            category="response",
+            message="partial reply",
+            session_id="provider-session",
+        )
+    )
     sink.emit(ConsoleEvent(category="session:cancel", message="cancelled by user"))
     lines = [line for line in stderr.getvalue().splitlines() if line]
     assert lines[0].startswith("[response] partial reply")
     assert lines[1].startswith("[session:cancel] cancelled by user")
+    before_close = stderr.getvalue()
+    sink.flush_stream()
+    assert stderr.getvalue() == before_close
+
+
+def test_jsonl_sink_flushes_provider_session_before_global_cancel(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(
+        ConsoleEvent(
+            category="response",
+            message="partial-before-cancel",
+            session_id="provider-session",
+        )
+    )
+    assert path.read_text(encoding="utf-8") == ""
+    sink.emit(ConsoleEvent(category="session:cancel", message="cancelled by user"))
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    assert [item["category"] for item in records] == ["response", "session:cancel"]
+    assert records[0]["message"] == "partial-before-cancel"
+    before_close = path.read_text(encoding="utf-8")
+    sink.close()
+    assert path.read_text(encoding="utf-8") == before_close
 
 
 _SPLIT_SECRET_FORMS = (
@@ -634,6 +663,15 @@ _SPLIT_SECRET_FORMS = (
         "password=$(case x in a) case y in z) echo inner ;& w) echo NESTED_SEMIAMP_SECRET ;; esac ;; esac)",
         "NESTED_SEMIAMP_SECRET",
     ),
+    ("password=$(case x in [)]) echo CASE_BRACKET_SECRET ;; esac)", "CASE_BRACKET_SECRET"),
+    ("password=$(case x in [\\)]) echo CASE_ESCAPED_PAREN_SECRET ;; esac)", "CASE_ESCAPED_PAREN_SECRET"),
+    (
+        "password=$(case x in a) case y in [)]) echo NESTED_BRACKET_SECRET ;; esac ;; esac)",
+        "NESTED_BRACKET_SECRET",
+    ),
+    ("password=$(case x in a) ./esac\n)\nQUALIFIED_ESAC_SECRET\nesac)", "QUALIFIED_ESAC_SECRET"),
+    ("password=$(cat <<EO\\\nF\nEO\n)\nCONTINUED_HEREDOC_SECRET\nEOF\n)", "CONTINUED_HEREDOC_SECRET"),
+    ("password=$(cat <<EO\\\r\nF\nEO\n)\nCONTINUED_CRLF_SECRET\nEOF\n)", "CONTINUED_CRLF_SECRET"),
 )
 
 
@@ -896,6 +934,9 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
         "password=[REDACTED] --output report.json"
     )
     assert redact_value("password=$(case x in a) echo safe ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in a) ./esac; echo x ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )
 

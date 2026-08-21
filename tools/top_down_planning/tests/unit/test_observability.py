@@ -983,14 +983,22 @@ def test_cancel_event_closes_open_response_stream() -> None:
             options=ObservabilityOptions(color="never"),
             run_id="run-20260101T001015-001015",
         )
-        context.emit(ConsoleEvent(category="response", message="still streaming"))
+        context.emit(
+            ConsoleEvent(
+                category="response",
+                message="still streaming",
+                session_id="provider-session",
+            )
+        )
         from top_down_planning.observability import cancel_console_event
 
         context.emit(cancel_console_event(run_id="run-20260101T001015-001015", phase="planning"))
+        before_close = stderr.getvalue()
         context.close()
     lines = [line for line in stderr.getvalue().splitlines() if line]
     assert lines[0].startswith("[response] still streaming")
     assert lines[1].startswith("[session:cancel]")
+    assert stderr.getvalue() == before_close
 
 
 def test_build_observability_context_truncates_response_when_configured(tmp_path: Path) -> None:
