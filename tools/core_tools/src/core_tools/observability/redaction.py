@@ -119,6 +119,7 @@ _HOLD_ATOMS = (
 )
 _MAX_ATOM = max(len(atom) for atom in _HOLD_ATOMS)
 _MAX_CAP_HOLD = 128
+_MAX_SUBST_NEST = 8
 _SIMPLE_ESCAPES = {
     '"': '"',
     "'": "'",
@@ -158,6 +159,8 @@ class StreamingRedactor:
         self._bare_credential = False
         self._auth_key = False
         self._key_quote = ""
+        self._wrap_quote = ""
+        self._inner_quote = ""
         self._quote = ""
         self._cap_held = ""
         self._cap_raw = ""
@@ -169,8 +172,14 @@ class StreamingRedactor:
         self._value_quote = ""
         self._value_kind = "shell"
         self._json_key = False
+        self._json_ctx = False
         self._dollar = False
+        self._lt = False
+        self._gt = False
         self._subst_stack: list[str] = []
+        self._subst_seen = False
+        self._subst_opaque = False
+        self._pending_redact = False
         self._escape = False
         self._unicode_hex: str | None = None
         self._content_emitted = 0
@@ -195,6 +204,8 @@ class StreamingRedactor:
         self._bare_credential = False
         self._auth_key = False
         self._key_quote = ""
+        self._wrap_quote = ""
+        self._inner_quote = ""
         self._quote = ""
         self._cap_held = ""
         self._cap_raw = ""
@@ -206,8 +217,14 @@ class StreamingRedactor:
         self._value_quote = ""
         self._value_kind = "shell"
         self._json_key = False
+        self._json_ctx = False
         self._dollar = False
+        self._lt = False
+        self._gt = False
         self._subst_stack = []
+        self._subst_seen = False
+        self._subst_opaque = False
+        self._pending_redact = False
         self._escape = False
         self._unicode_hex = None
         self._content_emitted = 0
@@ -223,8 +240,15 @@ class StreamingRedactor:
             + len(self._cap_raw)
             + len(self._trunc_hold)
             + unicode_len
+            + len(self._subst_stack)
             + int(self._dash)
             + int(self._escape)
+            + int(self._dollar)
+            + int(self._lt)
+            + int(self._gt)
+            + int(self._subst_seen)
+            + int(self._subst_opaque)
+            + int(self._pending_redact)
         )
 
     def _lex(self, incoming: str, *, flush: bool) -> str:
@@ -270,6 +294,7 @@ class StreamingRedactor:
             self._begin_ident(cli=False)
             self._state = "quoted_key"
             self._key_quote = char
+            self._wrap_quote = char
             return char
         if char.isalpha():
             self._begin_ident(cli=False)
@@ -284,7 +309,10 @@ class StreamingRedactor:
         self._bare_credential = False
         self._auth_key = False
         self._key_quote = ""
+        self._wrap_quote = ""
+        self._inner_quote = ""
         self._json_key = False
+        self._json_ctx = False
         self._cli = cli
         self._auth = False
         self._unicode_hex = None
@@ -329,8 +357,7 @@ class StreamingRedactor:
             return f"{outgoing}{char}"
         if char in "=:":
             if self._sensitive:
-                kind = "json" if char == ":" and self._json_key else "shell"
-                return outgoing + self._open_value(char, kind=kind)
+                return outgoing + self._open_value(char, kind=self._value_kind_for_separator(char))
             self._reset_ident()
             return f"{outgoing}{char}"
         self._reset_ident()
@@ -444,22 +471,39 @@ class StreamingRedactor:
                 self._state = "after_ident"
                 self._json_key = True
                 self._key_quote = ""
+                self._wrap_quote = ""
                 return char
             self._reset_ident()
+            return char
+        if char in "\"'" and char != self._key_quote:
+            self._apply_component_sensitivity()
+            self._start_component()
+            if self._inner_quote:
+                if char == self._inner_quote:
+                    if self._sensitive:
+                        self._json_key = True
+                        self._json_ctx = True
+                        self._state = "after_ident"
+                    self._inner_quote = ""
+                return char
+            self._inner_quote = char
+            return char
+        if char in "{[":
+            self._json_ctx = True
+            self._apply_component_sensitivity()
+            self._start_component()
             return char
         if char in "=:":
             self._apply_component_sensitivity()
             self._start_component()
             if self._sensitive:
-                if char == ":" and not self._auth_key:
-                    return self._open_value(char, kind="json")
-                return self._open_value(char, outer_quote=self._key_quote, kind="shell")
+                return self._open_value(char, kind=self._value_kind_for_separator(char))
             return char
         if char in " \t":
             self._apply_component_sensitivity()
             self._start_component()
             if self._sensitive and (self._cli or self._bare_credential):
-                return self._open_value(char, outer_quote=self._key_quote, kind="shell")
+                return self._open_value(char, kind="shell")
             if self._sensitive:
                 self._state = "after_ident"
                 return char
@@ -501,28 +545,33 @@ class StreamingRedactor:
         if char in " \t":
             return char
         if char in "=:":
-            kind = "json" if char == ":" and self._json_key else "shell"
-            return self._open_value(char, kind=kind)
+            return self._open_value(char, kind=self._value_kind_for_separator(char))
         self._reset_ident()
         return self._step_normal(char)
 
     def _step_value_start(self, char: str) -> str:
+        if self._pending_redact and char in " \t":
+            return char
+        prefix = ""
+        if self._pending_redact:
+            self._pending_redact = False
+            prefix = _REDACTED
         if char in " \t":
-            return ""
+            return prefix
         if char in "\"'":
             self._state = "quoted_value"
             self._value_quote = char
             self._escape = False
-            return ""
+            return prefix
         if char == "\\":
             self._state = "unquoted_value"
             self._escape = True
-            return ""
+            return prefix
         if self._auth:
             self._state = "line_value"
-            return self._step_line_value(char)
+            return prefix + self._step_line_value(char)
         self._state = "unquoted_value"
-        return self._step_unquoted_value(char)
+        return prefix + self._step_unquoted_value(char)
 
     def _step_quoted_value(self, char: str) -> str:
         if self._escape:
@@ -537,28 +586,66 @@ class StreamingRedactor:
             return ""
         return ""
 
+    def _value_kind_for_separator(self, separator: str) -> str:
+        if separator == ":" and not self._auth_key and (self._json_key or self._json_ctx):
+            return "json"
+        return "shell"
+
+    def _push_subst(self, closer: str) -> None:
+        self._subst_seen = True
+        if self._subst_opaque:
+            return
+        if len(self._subst_stack) >= _MAX_SUBST_NEST:
+            self._subst_opaque = True
+            self._subst_stack.clear()
+            return
+        self._subst_stack.append(closer)
+
     def _step_unquoted_value(self, char: str) -> str:
         if self._escape:
             self._escape = False
             self._dollar = False
+            self._lt = False
+            self._gt = False
             return ""
         if char == "\\":
             self._escape = True
             self._dollar = False
+            self._lt = False
+            self._gt = False
             return ""
         if self._dollar:
             self._dollar = False
             if char in "({":
-                self._subst_stack.append(")" if char == "(" else "}")
+                self._push_subst(")" if char == "(" else "}")
+                return ""
+        elif self._lt:
+            self._lt = False
+            if char == "(":
+                self._push_subst(")")
+                return ""
+        elif self._gt:
+            self._gt = False
+            if char == "(":
+                self._push_subst(")")
                 return ""
         elif char == "$" and self._value_kind == "shell":
             self._dollar = True
+            return ""
+        elif char == "<" and self._value_kind == "shell":
+            self._lt = True
+            return ""
+        elif char == ">" and self._value_kind == "shell":
+            self._gt = True
             return ""
         if char == "`" and self._value_kind == "shell":
             if self._subst_stack and self._subst_stack[-1] == "`":
                 self._subst_stack.pop()
             else:
-                self._subst_stack.append("`")
+                self._push_subst("`")
+            return ""
+        if char == "(" and self._subst_stack:
+            self._push_subst(")")
             return ""
         if self._subst_stack and char == self._subst_stack[-1]:
             self._subst_stack.pop()
@@ -572,6 +659,8 @@ class StreamingRedactor:
         if self._quote:
             if char == self._quote:
                 return self._end_value(char)
+            return ""
+        if self._subst_opaque or self._subst_seen:
             return ""
         if self._value_kind == "json":
             if char.isspace() or char in ",;}]":
@@ -588,8 +677,14 @@ class StreamingRedactor:
         self._quote = ""
         self._value_kind = "shell"
         self._dollar = False
+        self._lt = False
+        self._gt = False
         self._subst_stack = []
+        self._subst_seen = False
+        self._subst_opaque = False
         self._json_key = False
+        self._json_ctx = False
+        self._wrap_quote = ""
         return char
 
     def _step_line_value(self, char: str) -> str:
@@ -688,16 +783,27 @@ class StreamingRedactor:
         self._reset_ident()
         return self._step(char)
 
-    def _open_value(self, separator: str, *, outer_quote: str = "", kind: str = "shell") -> str:
+    def _open_value(self, separator: str, *, outer_quote: str | None = None, kind: str = "shell") -> str:
         rest = "" if self._key_quote else self._component[self._emitted :]
-        emitted = f"{rest}{separator}{_REDACTED}"
+        pending = kind == "json"
+        emitted = f"{rest}{separator}"
+        if not pending:
+            emitted += _REDACTED
         auth = self._auth_key
+        wrap = self._wrap_quote if outer_quote is None else outer_quote
+        if kind != "shell":
+            wrap = ""
         self._reset_ident()
-        self._quote = outer_quote
+        self._quote = wrap
         self._auth = auth
         self._value_kind = kind
+        self._pending_redact = pending
         self._dollar = False
+        self._lt = False
+        self._gt = False
         self._subst_stack = []
+        self._subst_seen = False
+        self._subst_opaque = False
         self._state = "value_start"
         return emitted
 
@@ -709,18 +815,29 @@ class StreamingRedactor:
         self._bare_credential = False
         self._auth_key = False
         self._key_quote = ""
+        self._wrap_quote = ""
+        self._inner_quote = ""
         self._quote = ""
         self._quote_dash = False
         self._cli = False
         self._auth = False
         self._json_key = False
+        self._json_ctx = False
         self._value_kind = "shell"
         self._dollar = False
+        self._lt = False
+        self._gt = False
         self._subst_stack = []
+        self._subst_seen = False
+        self._subst_opaque = False
+        self._pending_redact = False
         self._unicode_hex = None
         self._escape = False
 
     def _flush_state(self) -> str:
+        if self._pending_redact:
+            self._pending_redact = False
+            return _REDACTED
         if self._dash:
             self._dash = False
             return "-"

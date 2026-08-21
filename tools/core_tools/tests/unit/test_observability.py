@@ -587,6 +587,15 @@ _SPLIT_SECRET_FORMS = (
     ("token=${VALUE:-fallback expand-shell-secret}", "expand-shell-secret"),
     ("password=$(echo $(printf '%s' nested-subst-secret))", "nested-subst-secret"),
     ("password=`printf '%s' backtick-shell-secret`", "backtick-shell-secret"),
+    ("'password: first SECOND_SECRET'", "SECOND_SECRET"),
+    ('"accessToken: first SECOND_SECRET"', "SECOND_SECRET"),
+    ("'password = first SECOND_SECRET'", "SECOND_SECRET"),
+    ("'password : first SECOND_SECRET'", "SECOND_SECRET"),
+    ("password=$( (echo safe); echo SUPER_SECRET )", "SUPER_SECRET"),
+    ("password=$((1 + (2 * 3) + ARITH_SECRET))", "ARITH_SECRET"),
+    ("password=<(printf '%s' PROCESS_SECRET)", "PROCESS_SECRET"),
+    ("password=$(case x in x) echo CASE_SECRET;; esac)", "CASE_SECRET"),
+    ("password=>(printf '%s' OUTPUT_SECRET)", "OUTPUT_SECRET"),
 )
 
 
@@ -811,6 +820,20 @@ def test_redaction_preserves_raw_unicode_secret_key_spelling() -> None:
 def test_redaction_preserves_sibling_fields_in_shell_quoted_json() -> None:
     text = """curl -d '{"password":"json-pass-secret","user":"alice"}'"""
     assert redact_value(text) == """curl -d '{"password":[REDACTED],"user":"alice"}'"""
+    spaced = """curl -d '{"password" : "json-pass-secret","user":"alice"}'"""
+    assert redact_value(spaced) == """curl -d '{"password" : [REDACTED],"user":"alice"}'"""
+
+
+def test_streaming_redactor_bounds_nested_substitution_state() -> None:
+    redactor = StreamingRedactor()
+    output = redactor.ingest("password=")
+    for _ in range(4000):
+        output += redactor.ingest("$(")
+        assert redactor.pending_span() <= 64
+    output += redactor.ingest("deep-nest-secret") + redactor.flush()
+    assert "deep-nest-secret" not in output
+    assert "[REDACTED]" in output
+    assert redactor.pending_span() <= 64
 
 
 def test_streaming_redactor_flush_does_not_duplicate_quoted_backslash() -> None:
