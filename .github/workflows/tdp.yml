@@ -57,9 +57,11 @@ jobs:
 
       - name: Review-plan full no-addopts gate
         if: matrix.python-version == '3.13'
+        env:
+          TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
         run: |
           cd tools/top_down_planning
-          python -m pytest -o addopts='' -m 'not packaging' tests
+          python -m pytest -o addopts='' tests
 
       - name: Packaging install smoke
         env:

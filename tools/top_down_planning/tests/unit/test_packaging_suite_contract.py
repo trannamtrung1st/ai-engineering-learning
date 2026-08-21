@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -42,3 +45,36 @@ def test_default_addopts_exclude_packaging_from_unit_and_review_suites() -> None
     assert "not packaging" in joined
     markers = data["tool"]["pytest"]["ini_options"]["markers"]
     assert any(str(marker).startswith("packaging:") for marker in markers)
+
+
+def test_review_plan_no_addopts_full_suite_collects_packaging_without_wheelhouse_env() -> None:
+    env = {key: value for key, value in os.environ.items() if key != "TDP_PACKAGING_WHEELHOUSE"}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-o",
+            "addopts=",
+            "--collect-only",
+            "-q",
+            "tests",
+        ],
+        cwd=_PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "test_installed_wheel_smoke" in result.stdout
+    assert "test_documented_editable_install_smoke" in result.stdout
+
+
+def test_packaging_session_fixture_uses_ensure_when_wheelhouse_env_is_unset() -> None:
+    import inspect
+
+    source = inspect.getsource(packaging_smoke.packaging_wheelhouse)
+    assert "ensure_packaging_wheelhouse" in source
+    assert "resolve_packaging_wheelhouse" not in source

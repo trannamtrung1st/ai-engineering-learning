@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.packaging_wheelhouse import PackagingWheelhouseError, resolve_packaging_wheelhouse
+from tests.packaging_wheelhouse import (
+    PackagingWheelhouseError,
+    ensure_packaging_wheelhouse,
+    resolve_packaging_wheelhouse,
+)
 
 
 def _write_product_wheels(directory: Path) -> None:
@@ -85,6 +89,44 @@ def test_resolve_packaging_wheelhouse_accepts_valid_wheelhouse(
 
     assert resolved == wheelhouse.resolve()
     assert os.environ["TDP_PACKAGING_WHEELHOUSE"] == str(wheelhouse)
+
+
+def test_ensure_packaging_wheelhouse_builds_when_environment_variable_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("TDP_PACKAGING_WHEELHOUSE", raising=False)
+    destination = tmp_path / "built-wheelhouse"
+    built: list[Path] = []
+
+    def _build(path: Path) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        _write_product_wheels(path)
+        built.append(path)
+        return path.resolve()
+
+    resolved = ensure_packaging_wheelhouse(destination=destination, build=_build)
+
+    assert built == [destination]
+    assert resolved == destination.resolve()
+    assert os.environ["TDP_PACKAGING_WHEELHOUSE"] == str(resolved)
+
+
+def test_ensure_packaging_wheelhouse_reuses_configured_wheelhouse_without_building(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wheelhouse = tmp_path / "wheelhouse"
+    wheelhouse.mkdir()
+    _write_product_wheels(wheelhouse)
+    monkeypatch.setenv("TDP_PACKAGING_WHEELHOUSE", str(wheelhouse))
+
+    def _forbidden_build(path: Path) -> Path:
+        raise AssertionError(f"must not build when env is set: {path}")
+
+    resolved = ensure_packaging_wheelhouse(build=_forbidden_build)
+
+    assert resolved == wheelhouse.resolve()
 
 
 def test_resolve_packaging_wheelhouse_does_not_launch_subprocess(

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.packaging_wheelhouse import PackagingWheelhouseError, resolve_packaging_wheelhouse
+from tests.packaging_wheelhouse import PackagingWheelhouseError, ensure_packaging_wheelhouse
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -142,14 +142,14 @@ def _install_all_wheels_offline(python: Path | str, wheelhouse: Path) -> None:
 
 @pytest.fixture(scope="session")
 def packaging_wheelhouse() -> Path:
-    """Require a pre-built offline wheelhouse from TDP_PACKAGING_WHEELHOUSE.
+    """Return a packaging wheelhouse, building one when the env var is unset.
 
-    Packaging smoke is an explicit ``-m packaging`` gate. Generic ``-m integration``
-    and ``-m 'not packaging'`` review-plan commands must not require this env.
+    This keeps the review-plan command ``python -m pytest -o addopts='' tests``
+    self-contained. Set ``TDP_PACKAGING_WHEELHOUSE`` to reuse a pre-built house.
     """
 
     try:
-        return resolve_packaging_wheelhouse()
+        return ensure_packaging_wheelhouse()
     except PackagingWheelhouseError as exc:
         pytest.fail(str(exc))
 

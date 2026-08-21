@@ -511,7 +511,7 @@ tdp --help
 python -m pytest                  # parallel unit tests (excludes integration and packaging)
 python -m pytest -n 0             # serial unit tests for debugging
 python -m pytest -m integration   # stub-provider e2e; no wheelhouse required
-python -m pytest -o addopts='' -m 'not packaging' tests  # review-plan full suite
+python -m pytest -o addopts='' tests  # review-plan full suite (builds a wheelhouse if unset)
 export TDP_PACKAGING_WHEELHOUSE=$(python scripts/build_packaging_wheelhouse.py)
-python -m pytest -m packaging     # offline install smoke (separate packaging gate)
+python -m pytest -m packaging     # offline install smoke using a pre-built wheelhouse
 ```
