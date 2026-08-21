@@ -167,6 +167,10 @@ class StreamingRedactor:
         self._auth = False
         self._dash = False
         self._value_quote = ""
+        self._value_kind = "shell"
+        self._json_key = False
+        self._dollar = False
+        self._subst_stack: list[str] = []
         self._escape = False
         self._unicode_hex: str | None = None
         self._content_emitted = 0
@@ -200,6 +204,10 @@ class StreamingRedactor:
         self._auth = False
         self._dash = False
         self._value_quote = ""
+        self._value_kind = "shell"
+        self._json_key = False
+        self._dollar = False
+        self._subst_stack = []
         self._escape = False
         self._unicode_hex = None
         self._content_emitted = 0
@@ -276,6 +284,7 @@ class StreamingRedactor:
         self._bare_credential = False
         self._auth_key = False
         self._key_quote = ""
+        self._json_key = False
         self._cli = cli
         self._auth = False
         self._unicode_hex = None
@@ -295,11 +304,12 @@ class StreamingRedactor:
         )
 
     def _begin_cap_candidate(self) -> str:
+        quoted = bool(self._key_quote or self._quote)
         prefix = f"{self._component}-"
         self._start_component()
         self._state = "cap_candidate"
         self._cap_held = "cap-"
-        self._cap_raw = prefix
+        self._cap_raw = "-" if quoted else prefix
         self._cap_seen_dot = False
         return ""
 
@@ -311,7 +321,7 @@ class StreamingRedactor:
         outgoing = self._complete_component()
         if char in " \t":
             if self._sensitive and (self._cli or self._bare_credential):
-                return outgoing + self._open_value(char)
+                return outgoing + self._open_value(char, kind="shell")
             if self._sensitive:
                 self._state = "after_ident"
                 return f"{outgoing}{char}"
@@ -319,7 +329,8 @@ class StreamingRedactor:
             return f"{outgoing}{char}"
         if char in "=:":
             if self._sensitive:
-                return outgoing + self._open_value(char)
+                kind = "json" if char == ":" and self._json_key else "shell"
+                return outgoing + self._open_value(char, kind=kind)
             self._reset_ident()
             return f"{outgoing}{char}"
         self._reset_ident()
@@ -431,6 +442,7 @@ class StreamingRedactor:
             self._start_component()
             if self._sensitive:
                 self._state = "after_ident"
+                self._json_key = True
                 self._key_quote = ""
                 return char
             self._reset_ident()
@@ -439,13 +451,15 @@ class StreamingRedactor:
             self._apply_component_sensitivity()
             self._start_component()
             if self._sensitive:
-                return self._open_value(char, outer_quote=self._key_quote)
+                if char == ":" and not self._auth_key:
+                    return self._open_value(char, kind="json")
+                return self._open_value(char, outer_quote=self._key_quote, kind="shell")
             return char
         if char in " \t":
             self._apply_component_sensitivity()
             self._start_component()
             if self._sensitive and (self._cli or self._bare_credential):
-                return self._open_value(char, outer_quote=self._key_quote)
+                return self._open_value(char, outer_quote=self._key_quote, kind="shell")
             if self._sensitive:
                 self._state = "after_ident"
                 return char
@@ -487,7 +501,8 @@ class StreamingRedactor:
         if char in " \t":
             return char
         if char in "=:":
-            return self._open_value(char)
+            kind = "json" if char == ":" and self._json_key else "shell"
+            return self._open_value(char, kind=kind)
         self._reset_ident()
         return self._step_normal(char)
 
@@ -525,28 +540,57 @@ class StreamingRedactor:
     def _step_unquoted_value(self, char: str) -> str:
         if self._escape:
             self._escape = False
+            self._dollar = False
             return ""
         if char == "\\":
             self._escape = True
+            self._dollar = False
+            return ""
+        if self._dollar:
+            self._dollar = False
+            if char in "({":
+                self._subst_stack.append(")" if char == "(" else "}")
+                return ""
+        elif char == "$" and self._value_kind == "shell":
+            self._dollar = True
+            return ""
+        if char == "`" and self._value_kind == "shell":
+            if self._subst_stack and self._subst_stack[-1] == "`":
+                self._subst_stack.pop()
+            else:
+                self._subst_stack.append("`")
+            return ""
+        if self._subst_stack and char == self._subst_stack[-1]:
+            self._subst_stack.pop()
             return ""
         if char in "\"'":
             if self._quote and char == self._quote:
-                self._state = "normal"
-                self._quote = ""
-                return char
+                return self._end_value(char)
             self._state = "quoted_value"
             self._value_quote = char
             return ""
         if self._quote:
             if char == self._quote:
-                self._state = "normal"
-                self._quote = ""
-                return char
+                return self._end_value(char)
             return ""
-        if char.isspace() or char in ",;}]":
-            self._state = "normal"
-            return char
+        if self._value_kind == "json":
+            if char.isspace() or char in ",;}]":
+                return self._end_value(char)
+            return ""
+        if self._subst_stack:
+            return ""
+        if char.isspace() or char in ";|&\r\n":
+            return self._end_value(char)
         return ""
+
+    def _end_value(self, char: str) -> str:
+        self._state = "normal"
+        self._quote = ""
+        self._value_kind = "shell"
+        self._dollar = False
+        self._subst_stack = []
+        self._json_key = False
+        return char
 
     def _step_line_value(self, char: str) -> str:
         if self._escape:
@@ -617,30 +661,43 @@ class StreamingRedactor:
                 return outgoing
             return ""
         outgoing = self._cap_raw or self._cap_held
+        closer = self._key_quote or self._quote
         self._cap_held = ""
         self._cap_raw = ""
         self._cap_seen_dot = False
-        self._state = "normal"
-        return outgoing + self._step(raw or decoded)
+        decoded_char = raw or decoded
+        if closer and decoded_char == closer:
+            self._reset_ident()
+            return outgoing + decoded_char
+        if closer:
+            self._state = "quoted_key"
+            return outgoing + self._step_quoted_key(decoded_char)
+        self._reset_ident()
+        return outgoing + self._step(decoded_char)
 
     def _step_cap(self, char: str) -> str:
         if char.isalnum() or char in "._-":
             return ""
         quote = self._key_quote or self._quote
-        self._state = "normal"
         if quote and char == quote:
             self._reset_ident()
             return char
+        if quote:
+            self._state = "quoted_key"
+            return self._step_quoted_key(char)
         self._reset_ident()
         return self._step(char)
 
-    def _open_value(self, separator: str, *, outer_quote: str = "") -> str:
+    def _open_value(self, separator: str, *, outer_quote: str = "", kind: str = "shell") -> str:
         rest = "" if self._key_quote else self._component[self._emitted :]
         emitted = f"{rest}{separator}{_REDACTED}"
         auth = self._auth_key
         self._reset_ident()
         self._quote = outer_quote
         self._auth = auth
+        self._value_kind = kind
+        self._dollar = False
+        self._subst_stack = []
         self._state = "value_start"
         return emitted
 
@@ -656,6 +713,10 @@ class StreamingRedactor:
         self._quote_dash = False
         self._cli = False
         self._auth = False
+        self._json_key = False
+        self._value_kind = "shell"
+        self._dollar = False
+        self._subst_stack = []
         self._unicode_hex = None
         self._escape = False
 
@@ -665,9 +726,10 @@ class StreamingRedactor:
             return "-"
         if self._escape:
             self._escape = False
-            held = self._complete_component() if self._state in {"ident", "quoted_key"} else ""
             if self._state == "quoted_key":
                 self._reset_ident()
+                return "\\"
+            held = self._complete_component() if self._state == "ident" else ""
             return f"{held}\\"
         if self._state == "cap_candidate":
             outgoing = self._cap_raw or self._cap_held

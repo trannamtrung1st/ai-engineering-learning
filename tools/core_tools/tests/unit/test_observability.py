@@ -292,6 +292,17 @@ def test_redaction_preserves_benign_cap_prefix_casing() -> None:
     assert "[REDACTED]" not in safe
 
 
+def test_redaction_preserves_quoted_benign_cap_words_exactly() -> None:
+    cases = (
+        '"cap-table"',
+        "'CAP-rate'",
+        '"prefix cap-file suffix"',
+    )
+    for text in cases:
+        assert redact_value(text) == text
+        assert "[REDACTED]" not in redact_value(text)
+
+
 def test_redaction_keeps_benign_assignment_identifiers() -> None:
     text = "tokenizer=bert-base secretary=Alice notsecret=value"
     safe = redact_value(text)
@@ -567,6 +578,15 @@ _SPLIT_SECRET_FORMS = (
     ('password=""empty-quote-secret', "empty-quote-secret"),
     ('password="foo"\'bar-mix-secret\'', "bar-mix-secret"),
     ('curl -H "Authorization: Bearer foo"bar-word-secret', "bar-word-secret"),
+    ("password=abc,comma-shell-secret", "comma-shell-secret"),
+    ("password=abc]bracket-shell-secret", "bracket-shell-secret"),
+    ("password=abc}brace-shell-secret", "brace-shell-secret"),
+    ("--password abc,cli-comma-secret", "cli-comma-secret"),
+    ("password=$(printf '%s' subst-shell-secret)", "subst-shell-secret"),
+    ("--password $(cat cli-subst-secret)", "cli-subst-secret"),
+    ("token=${VALUE:-fallback expand-shell-secret}", "expand-shell-secret"),
+    ("password=$(echo $(printf '%s' nested-subst-secret))", "nested-subst-secret"),
+    ("password=`printf '%s' backtick-shell-secret`", "backtick-shell-secret"),
 )
 
 
@@ -786,6 +806,20 @@ def test_redaction_preserves_raw_unicode_secret_key_spelling() -> None:
     safe = redact_value(text)
     assert safe == r'{"pass\u0077ord":[REDACTED]}'
     assert "unicode-json-split-secret" not in safe
+
+
+def test_redaction_preserves_sibling_fields_in_shell_quoted_json() -> None:
+    text = """curl -d '{"password":"json-pass-secret","user":"alice"}'"""
+    assert redact_value(text) == """curl -d '{"password":[REDACTED],"user":"alice"}'"""
+
+
+def test_streaming_redactor_flush_does_not_duplicate_quoted_backslash() -> None:
+    text = '"abc\\'
+    redactor = StreamingRedactor()
+    output = "".join(redactor.ingest(char) for char in text) + redactor.flush()
+    assert output == text
+    split = StreamingRedactor()
+    assert split.ingest('"ab') + split.ingest("c\\") + split.flush() == text
 
 
 def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
