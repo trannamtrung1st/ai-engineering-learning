@@ -125,6 +125,7 @@ _MAX_HEREDOC_TAG = 64
 _MAX_HEREDOC_LINE = 256
 _MAX_HEREDOC_QUEUE = 8
 _MAX_JSON_NEST = 8
+_SHELL_WORD_BREAK = frozenset(" \t;|&(){}\r\n<>")
 _SIMPLE_ESCAPES = {
     '"': '"',
     "'": "'",
@@ -186,9 +187,10 @@ class StreamingRedactor:
         self._dollar = False
         self._lt = False
         self._gt = False
-        self._subst_stack: list[str] = []
+        self._subst_stack: list[tuple[str, str, bool]] = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._arith_maybe = False
         self._allow_compound = False
         self._subst_word = ""
         self._case_depth = 0
@@ -273,6 +275,7 @@ class StreamingRedactor:
             + int(self._gt)
             + int(self._subst_seen)
             + int(self._subst_opaque)
+            + int(self._arith_maybe)
             + int(self._allow_compound)
             + min(len(self._subst_word), 8)
             + self._case_depth
@@ -302,6 +305,7 @@ class StreamingRedactor:
         self._subst_stack = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._arith_maybe = False
         self._allow_compound = False
         self._subst_word = ""
         self._case_depth = 0
@@ -672,6 +676,10 @@ class StreamingRedactor:
     def _step_quoted_value(self, char: str) -> str:
         if self._escape:
             self._escape = False
+            if self._case_class:
+                self._step_case_class(char)
+            elif self._subst_stack:
+                self._cmd_qualified = True
             return ""
         if char == "\\":
             self._escape = True
@@ -679,7 +687,13 @@ class StreamingRedactor:
         if char == self._value_quote:
             self._state = "unquoted_value"
             self._value_quote = ""
+            if self._subst_stack:
+                self._cmd_qualified = True
             return ""
+        if self._case_class:
+            self._step_case_class(char)
+        elif self._subst_stack:
+            self._cmd_qualified = True
         return ""
 
     def _value_kind_for_separator(self, separator: str) -> str:
@@ -702,23 +716,53 @@ class StreamingRedactor:
         self._json_stack = []
         self._inner_is_json_key = False
 
-    def _push_subst(self, closer: str) -> None:
+    def _push_subst(self, closer: str, kind: str = "cmd") -> None:
         self._subst_seen = True
-        self._cmd_pos = True
+        saved_cmd = self._cmd_pos
+        self._cmd_pos = kind == "cmd"
         if self._subst_opaque:
             return
         if len(self._subst_stack) >= _MAX_SUBST_NEST:
             self._subst_opaque = True
             self._subst_stack.clear()
             return
-        self._subst_stack.append(closer)
+        self._subst_stack.append((closer, kind, saved_cmd))
+
+    def _pop_subst(self) -> None:
+        _closer, _kind, saved_cmd = self._subst_stack.pop()
+        self._cmd_pos = saved_cmd
+        if not self._subst_stack and not self._subst_opaque:
+            self._subst_seen = False
+
+    def _subst_closer(self) -> str:
+        return self._subst_stack[-1][0] if self._subst_stack else ""
+
+    def _subst_kind(self) -> str:
+        return self._subst_stack[-1][1] if self._subst_stack else ""
+
+    def _in_cmd_grammar(self) -> bool:
+        return bool(
+            self._cmd_pos
+            and not self._cmd_qualified
+            and self._subst_stack
+            and self._subst_stack[-1][1] == "cmd"
+        )
+
+    def _extend_shell_word(self, char: str) -> None:
+        if char.isalnum() or char == "_":
+            if len(self._subst_word) < 8:
+                self._subst_word += char
+            return
+        self._cmd_qualified = True
+        if char in "./" and len(self._subst_word) < 8:
+            self._subst_word += char
 
     def _flush_subst_word(self) -> None:
         word = self._subst_word.lower()
         self._subst_word = ""
         if not word:
             return
-        if self._cmd_pos and not self._cmd_qualified and word == "case":
+        if self._in_cmd_grammar() and word == "case":
             if self._case_depth < _MAX_CASE_NEST:
                 self._case_depth += 1
             else:
@@ -727,7 +771,7 @@ class StreamingRedactor:
             self._cmd_pos = False
             self._cmd_qualified = False
             return
-        if self._case_depth and self._cmd_pos and not self._cmd_qualified and word == "esac":
+        if self._case_depth and self._in_cmd_grammar() and word == "esac":
             self._case_depth -= 1
             self._case_arm = "" if not self._case_depth else self._case_arm
             self._cmd_pos = False
@@ -809,7 +853,7 @@ class StreamingRedactor:
                 self._case_posix = char
                 return
             self._case_posix = ""
-        elif self._case_posix in ":.=":
+        elif self._case_posix in (":", ".", "="):
             if char == self._case_posix:
                 self._case_posix = "end"
             return
@@ -964,28 +1008,44 @@ class StreamingRedactor:
             self._dollar = False
             self._lt = False
             self._gt = False
+            self._arith_maybe = False
+            if self._case_class:
+                self._step_case_class(char)
+            elif self._subst_stack:
+                self._cmd_qualified = True
             return ""
         if char == "\\":
             self._escape = True
             self._dollar = False
             self._lt = False
             self._gt = False
+            self._arith_maybe = False
             return ""
         if self._shell_comment:
             if char in "\r\n":
                 self._shell_comment = False
+                if self._subst_stack:
+                    self._flush_subst_word()
+                    self._cmd_pos = True
+                    self._cmd_qualified = False
             return ""
         dollar_consumed = False
         if self._dollar:
             self._dollar = False
             dollar_consumed = True
+            self._arith_maybe = False
             if char in "({":
-                self._push_subst(")" if char == "(" else "}")
+                if char == "(":
+                    self._push_subst(")", "cmd")
+                    self._arith_maybe = True
+                else:
+                    self._push_subst("}", "param")
                 return ""
         elif self._lt:
             self._lt = False
+            self._arith_maybe = False
             if char == "(":
-                self._push_subst(")")
+                self._push_subst(")", "cmd")
                 return ""
             if char == "<":
                 self._heredoc = "tag"
@@ -995,61 +1055,71 @@ class StreamingRedactor:
                 self._heredoc_strip = False
                 self._heredoc_escape = False
                 return ""
+            self._cmd_pos = False
+            self._cmd_qualified = False
         elif self._gt:
             self._gt = False
+            self._arith_maybe = False
             if char == "(":
-                self._push_subst(")")
+                self._push_subst(")", "cmd")
                 return ""
+            self._cmd_pos = False
+            self._cmd_qualified = False
         elif char == "$" and self._value_kind == "shell":
+            self._arith_maybe = False
             self._dollar = True
             return ""
         elif char == "<" and self._value_kind == "shell":
+            self._arith_maybe = False
+            if self._subst_stack:
+                self._flush_subst_word()
             self._lt = True
             return ""
         elif char == ">" and self._value_kind == "shell":
+            self._arith_maybe = False
+            if self._subst_stack:
+                self._flush_subst_word()
             self._gt = True
             return ""
+        elif self._arith_maybe and char != "(":
+            self._arith_maybe = False
         if char == "#" and self._subst_stack and self._value_kind == "shell" and not dollar_consumed:
+            if self._subst_word or self._cmd_qualified:
+                self._cmd_qualified = True
+                return ""
             self._shell_comment = True
             return ""
         if char == "`" and self._value_kind == "shell":
-            if self._subst_stack and self._subst_stack[-1] == "`":
-                self._subst_stack.pop()
+            self._flush_subst_word()
+            if self._subst_stack and self._subst_closer() == "`":
+                self._pop_subst()
             else:
-                self._push_subst("`")
+                self._push_subst("`", "cmd")
             return ""
         if (
             char == "("
             and self._value_kind == "shell"
             and (self._subst_stack or self._allow_compound)
         ):
-            self._push_subst(")")
-            self._allow_compound = False
-            self._note_subst_char(char)
-            return ""
-        if self._subst_stack and not (char.isalnum() or char in "_./"):
             self._flush_subst_word()
-        if self._subst_stack and char == self._subst_stack[-1]:
-            if char == ")" and self._case_depth and len(self._subst_stack) == 1:
-                if self._case_arm == "pattern" and self._case_class:
-                    self._note_subst_char(char)
-                    return ""
-                if self._case_arm == "pattern":
-                    self._case_arm = "body"
-                    self._case_class = False
-                    self._case_class_first = False
-                    self._case_posix = ""
-                self._cmd_pos = True
-                self._cmd_qualified = False
+            if self._arith_maybe:
+                self._arith_maybe = False
+                if self._subst_stack:
+                    closer, _kind, saved = self._subst_stack[-1]
+                    self._subst_stack[-1] = (closer, "arith", saved)
+                    self._cmd_pos = False
+                self._push_subst(")", "arith")
+            elif self._subst_kind() == "arith":
+                self._push_subst(")", "arith")
+            else:
+                self._push_subst(")", "cmd")
                 self._note_subst_char(char)
-                return ""
-            self._subst_stack.pop()
-            if not self._subst_stack and not self._subst_opaque:
-                self._subst_seen = False
-            self._note_subst_char(char)
+            self._allow_compound = False
             return ""
         if char in "\"'":
             if self._subst_stack:
+                if self._subst_word:
+                    self._cmd_qualified = True
                 self._state = "quoted_value"
                 self._value_quote = char
                 return ""
@@ -1057,6 +1127,38 @@ class StreamingRedactor:
                 return self._end_value(char)
             self._state = "quoted_value"
             self._value_quote = char
+            return ""
+        if self._subst_stack:
+            if self._case_class:
+                self._step_case_class(char)
+                return ""
+            if (
+                self._case_arm == "pattern"
+                and char == "["
+                and not self._subst_word
+                and not self._cmd_qualified
+            ):
+                self._enter_case_class()
+                return ""
+            if char not in _SHELL_WORD_BREAK:
+                self._extend_shell_word(char)
+                return ""
+            self._flush_subst_word()
+            if char == self._subst_closer():
+                if char == ")" and self._case_depth and len(self._subst_stack) == 1:
+                    if self._case_arm == "pattern":
+                        self._case_arm = "body"
+                        self._case_class = False
+                        self._case_class_first = False
+                        self._case_posix = ""
+                    self._cmd_pos = True
+                    self._cmd_qualified = False
+                    self._note_subst_char(char)
+                    return ""
+                self._pop_subst()
+                self._note_subst_char(char)
+                return ""
+            self._note_subst_char(char)
             return ""
         if self._quote and not self._subst_stack:
             if char == self._quote:
@@ -1067,9 +1169,6 @@ class StreamingRedactor:
         if self._value_kind == "json":
             if char.isspace() or char in ",;}]":
                 return self._end_value(char)
-            return ""
-        if self._subst_stack:
-            self._note_subst_char(char)
             return ""
         self._allow_compound = False
         if char.isspace() or char in ";|&\r\n":

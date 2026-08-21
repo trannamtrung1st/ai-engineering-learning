@@ -688,6 +688,22 @@ _SPLIT_SECRET_FORMS = (
         "password=$(case x in a) case y in [[:alpha:])esac] ) echo NESTED_POSIX_SECRET ;; esac ;; esac)",
         "NESTED_POSIX_SECRET",
     ),
+    ("password=$(case x in a) esac-tool ;; b) echo HYPHEN_SECRET ;; esac)", "HYPHEN_SECRET"),
+    ("password=$(case x in a) esac:tool ;; b) echo COLON_SECRET ;; esac)", "COLON_SECRET"),
+    ('password=$(case x in a) esac"tool" ;; b) echo QUOTE_SECRET ;; esac)', "QUOTE_SECRET"),
+    ("password=$(case x in a) esac\\ tool ;; b) echo ESCAPE_SECRET ;; esac)", "ESCAPE_SECRET"),
+    ("password=$(case x in a) case-tool ;; b) echo CASE_HYPHEN_SECRET ;; esac)", "CASE_HYPHEN_SECRET"),
+    ("password=$(case x in a) case:tool ;; b) echo CASE_COLON_SECRET ;; esac)", "CASE_COLON_SECRET"),
+    ('password=$(case x in a) case"tool" ;; b) echo CASE_QUOTE_SECRET ;; esac)', "CASE_QUOTE_SECRET"),
+    ("password=$(case x in a) case\\ tool ;; b) echo CASE_ESCAPE_SECRET ;; esac)", "CASE_ESCAPE_SECRET"),
+    ("password=$(case x in ${esac}) echo PARAM_SECRET ;; esac)", "PARAM_SECRET"),
+    ("password=$(case x in $((esac))) echo ARITH_SECRET ;; esac)", "ARITH_SECRET"),
+    ("password=$(case x in a) >esac echo hi ;; b) echo REDIR_SECRET ;; esac)", "REDIR_SECRET"),
+    ("password=$(case x in a) <esac cat ;; b) echo REDIR_IN_SECRET ;; esac)", "REDIR_IN_SECRET"),
+    ("password=$(case x in a) esac#not-comment\n;; b) echo HASH_SECRET ;; esac)", "HASH_SECRET"),
+    ("password=$(case x in a) case#not-comment\n;; b) echo CASE_HASH_SECRET ;; esac)", "CASE_HASH_SECRET"),
+    ("password=$(echo foo#bar HASH_WORD_SECRET)", "HASH_WORD_SECRET"),
+    ("password=$(case x in [\\]]) echo BRACKET_ESC_SECRET ;; esac)", "BRACKET_ESC_SECRET"),
 )
 
 
@@ -956,6 +972,33 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
         "password=[REDACTED] --output report.json"
     )
     assert redact_value("password=$(case x in a) esac.sh; echo x ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in a) esac-tool ;; b) echo HYPHEN_SECRET ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value('password=$(case x in a) esac"tool" ;; b) echo QUOTE_SECRET ;; esac) --output report.json') == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in ${esac}) echo PARAM_SECRET ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in $((esac))) echo ARITH_SECRET ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in a) >esac echo hi ;; b) echo REDIR_SECRET ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(echo ok # real comment\n) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(echo foo#bar) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in [\\]]) echo safe ;; b) echo other ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in [)]) echo safe ;; esac) --output report.json") == (
         "password=[REDACTED] --output report.json"
     )
 
