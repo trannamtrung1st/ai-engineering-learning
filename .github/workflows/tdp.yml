@@ -51,19 +51,22 @@ jobs:
           python -m pytest
 
       - name: Integration tests
-        env:
-          TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
         run: |
           cd tools/top_down_planning
           python -m pytest -m integration
 
       - name: Review-plan full no-addopts gate
         if: matrix.python-version == '3.13'
+        run: |
+          cd tools/top_down_planning
+          python -m pytest -o addopts='' -m 'not packaging' tests
+
+      - name: Packaging install smoke
         env:
           TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
         run: |
           cd tools/top_down_planning
-          python -m pytest -o addopts='' tests
+          python -m pytest -o addopts='' -m packaging
 
       - name: Wheel build gate
         run: python -m build --wheel tools/top_down_planning

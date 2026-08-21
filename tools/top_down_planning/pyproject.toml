@@ -40,7 +40,8 @@ packages = ["src/top_down_planning"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = ["-m", "not integration", "-n", "auto", "--dist", "worksteal"]
+addopts = ["-m", "not integration and not packaging", "-n", "auto", "--dist", "worksteal"]
 markers = [
   "integration: stub-provider e2e and multi-layer smoke tests.",
+  "packaging: offline wheelhouse install smoke; requires TDP_PACKAGING_WHEELHOUSE.",
 ]

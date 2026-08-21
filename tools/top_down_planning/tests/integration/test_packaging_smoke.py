@@ -142,7 +142,11 @@ def _install_all_wheels_offline(python: Path | str, wheelhouse: Path) -> None:
 
 @pytest.fixture(scope="session")
 def packaging_wheelhouse() -> Path:
-    """Require a pre-built offline wheelhouse from TDP_PACKAGING_WHEELHOUSE."""
+    """Require a pre-built offline wheelhouse from TDP_PACKAGING_WHEELHOUSE.
+
+    Packaging smoke is an explicit ``-m packaging`` gate. Generic ``-m integration``
+    and ``-m 'not packaging'`` review-plan commands must not require this env.
+    """
 
     try:
         return resolve_packaging_wheelhouse()
@@ -177,7 +181,7 @@ def _install_documented_editable_offline(
         cwd=project_root,
     )
 
-@pytest.mark.integration
+@pytest.mark.packaging
 def test_documented_editable_install_smoke(
     packaging_wheelhouse: Path,
     tmp_path: Path,
@@ -192,7 +196,7 @@ def test_documented_editable_install_smoke(
     _assert_planner_protocol_renders(python)
 
 
-@pytest.mark.integration
+@pytest.mark.packaging
 def test_installed_wheel_smoke(
     packaging_wheelhouse: Path,
     tmp_path: Path,
