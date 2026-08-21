@@ -596,6 +596,14 @@ _SPLIT_SECRET_FORMS = (
     ("password=<(printf '%s' PROCESS_SECRET)", "PROCESS_SECRET"),
     ("password=$(case x in x) echo CASE_SECRET;; esac)", "CASE_SECRET"),
     ("password=>(printf '%s' OUTPUT_SECRET)", "OUTPUT_SECRET"),
+    ('"password=$(printf "%s" WRAPPED_SECRET)"', "WRAPPED_SECRET"),
+    ('"token=$(echo "INNER_TOKEN")"', "INNER_TOKEN"),
+    ("PASSWORD=(first ARRAY_SECRET)", "ARRAY_SECRET"),
+    ("TOKEN=(one two ARRAY_TOKEN)", "ARRAY_TOKEN"),
+    ("PASSWORD=([primary]=foo [backup]=BACKUP_SECRET)", "BACKUP_SECRET"),
+    ("'payload { password: first SECOND_SECRET }'", "SECOND_SECRET"),
+    ("'config [ token: first TOKEN_SUFFIX ]'", "TOKEN_SUFFIX"),
+    ("'object { accessToken: part1 PART2 }'", "PART2"),
 )
 
 
@@ -848,6 +856,12 @@ def test_streaming_redactor_flush_does_not_duplicate_quoted_backslash() -> None:
 def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
     assert redact_value('password="secret" visible-tail') == "password=[REDACTED] visible-tail"
     assert redact_value("--password foo visible-tail") == "--password [REDACTED] visible-tail"
+    assert redact_value("password=$(get_secret) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    split = StreamingRedactor()
+    output = split.ingest("password=$(get_secret)") + split.ingest(" --output report.json") + split.flush()
+    assert output == "password=[REDACTED] --output report.json"
 
 
 def test_redaction_does_not_treat_later_words_as_cli_secrets() -> None:

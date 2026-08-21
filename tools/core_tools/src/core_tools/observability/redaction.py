@@ -179,6 +179,9 @@ class StreamingRedactor:
         self._subst_stack: list[str] = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._allow_compound = False
+        self._subst_word = ""
+        self._case_in = False
         self._pending_redact = False
         self._escape = False
         self._unicode_hex: str | None = None
@@ -224,6 +227,9 @@ class StreamingRedactor:
         self._subst_stack = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._allow_compound = False
+        self._subst_word = ""
+        self._case_in = False
         self._pending_redact = False
         self._escape = False
         self._unicode_hex = None
@@ -248,6 +254,9 @@ class StreamingRedactor:
             + int(self._gt)
             + int(self._subst_seen)
             + int(self._subst_opaque)
+            + int(self._allow_compound)
+            + min(len(self._subst_word), 8)
+            + int(self._case_in)
             + int(self._pending_redact)
         )
 
@@ -488,11 +497,6 @@ class StreamingRedactor:
                 return char
             self._inner_quote = char
             return char
-        if char in "{[":
-            self._json_ctx = True
-            self._apply_component_sensitivity()
-            self._start_component()
-            return char
         if char in "=:":
             self._apply_component_sensitivity()
             self._start_component()
@@ -601,6 +605,18 @@ class StreamingRedactor:
             return
         self._subst_stack.append(closer)
 
+    def _note_subst_char(self, char: str) -> None:
+        if char.isalnum() or char == "_":
+            if len(self._subst_word) < 8:
+                self._subst_word += char
+            return
+        word = self._subst_word.lower()
+        self._subst_word = ""
+        if word == "in":
+            self._case_in = True
+        elif word == "esac":
+            self._case_in = False
+
     def _step_unquoted_value(self, char: str) -> str:
         if self._escape:
             self._escape = False
@@ -644,30 +660,49 @@ class StreamingRedactor:
             else:
                 self._push_subst("`")
             return ""
-        if char == "(" and self._subst_stack:
+        if (
+            char == "("
+            and self._value_kind == "shell"
+            and (self._subst_stack or self._allow_compound)
+        ):
             self._push_subst(")")
+            self._allow_compound = False
+            self._note_subst_char(char)
             return ""
         if self._subst_stack and char == self._subst_stack[-1]:
+            if char == ")" and self._case_in:
+                self._case_in = False
+                self._note_subst_char(char)
+                return ""
             self._subst_stack.pop()
+            if not self._subst_stack and not self._subst_opaque:
+                self._subst_seen = False
+            self._note_subst_char(char)
             return ""
         if char in "\"'":
+            if self._subst_stack:
+                self._state = "quoted_value"
+                self._value_quote = char
+                return ""
             if self._quote and char == self._quote:
                 return self._end_value(char)
             self._state = "quoted_value"
             self._value_quote = char
             return ""
-        if self._quote:
+        if self._quote and not self._subst_stack:
             if char == self._quote:
                 return self._end_value(char)
             return ""
-        if self._subst_opaque or self._subst_seen:
+        if self._subst_opaque:
             return ""
         if self._value_kind == "json":
             if char.isspace() or char in ",;}]":
                 return self._end_value(char)
             return ""
         if self._subst_stack:
+            self._note_subst_char(char)
             return ""
+        self._allow_compound = False
         if char.isspace() or char in ";|&\r\n":
             return self._end_value(char)
         return ""
@@ -682,6 +717,9 @@ class StreamingRedactor:
         self._subst_stack = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._allow_compound = False
+        self._subst_word = ""
+        self._case_in = False
         self._json_key = False
         self._json_ctx = False
         self._wrap_quote = ""
@@ -804,6 +842,9 @@ class StreamingRedactor:
         self._subst_stack = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._allow_compound = kind == "shell"
+        self._subst_word = ""
+        self._case_in = False
         self._state = "value_start"
         return emitted
 
@@ -830,6 +871,9 @@ class StreamingRedactor:
         self._subst_stack = []
         self._subst_seen = False
         self._subst_opaque = False
+        self._allow_compound = False
+        self._subst_word = ""
+        self._case_in = False
         self._pending_redact = False
         self._unicode_hex = None
         self._escape = False
