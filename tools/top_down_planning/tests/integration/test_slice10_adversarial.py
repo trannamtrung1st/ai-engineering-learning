@@ -10,8 +10,9 @@ import pytest
 
 from top_down_planning.domain.session_lineage import REASON_PROVIDER_SESSION_NOT_FOUND
 from top_down_planning.domain.session_lineage import REASON_PROVIDER_TURN_STALLED
-from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.digests import compute_config_contract_digest
 from top_down_planning.persistence.session_bindings import primary_provider_session_id
 from tests.conftest import run_cli
 from tests.helpers import (
@@ -70,30 +71,56 @@ def _pause_for_resume(store: FileRunStore, run_id: str) -> None:
 
 
 @pytest.mark.integration
-def test_resume_accepts_presentation_config_change(tmp_path: Path) -> None:
-    store = FileRunStore(tmp_path / "runs")
-    run_id = _create_planning_run(store, "run-20260101T010001-010001")
-    _pause_for_resume(store, run_id)
+def test_resume_applies_presentation_config_and_continues(
+    tmp_path: Path,
+    patch_provider: E2EStubProvider,
+) -> None:
+    config_path = write_e2e_config(tmp_path / "run.yaml")
+    runs_dir = tmp_path / "runs"
+    store = FileRunStore(runs_dir)
+    queue_turn(patch_provider, planning_single_leaf_script(store))
+    run_id = run_cli(
+        [
+            "run",
+            "--config",
+            str(config_path),
+            "--runs-dir",
+            str(runs_dir),
+            "--until",
+            "plan",
+            "--stream-json",
+        ]
+    ).json()["run_id"]
+    assert store.load_run(run_id)["phase"] == WHOLE_PLAN_REVIEW
+    stored_config = store.load_resolved_config(run_id)
+    contract_digest = compute_config_contract_digest(stored_config)
+    plan_before = store.load_plan(run_id)
+    leaf_ids = root_child_item_ids(store, run_id)
 
+    script_whole_plan_review(patch_provider, store, run_id, decision="approved")
     result = run_cli(
         [
             "resume",
             "--run",
             run_id,
             "--runs-dir",
-            str(store.root),
+            str(runs_dir),
             "--set",
             "observability.log_level=trace",
-            "--check",
+            "--until",
+            "validated",
             "--stream-json",
         ]
     )
     assert result.exit_code == 0, result.stderr
     payload = result.json()
     assert payload["ok"] is True
-    changes = payload.get("config_changes") or payload.get("resume_plan", {}).get("config_changes")
-    assert changes
-    assert "observability.log_level" in str(changes)
+    assert payload["phase"] == PLAN_VALIDATED
+    after = store.load_resolved_config(run_id)
+    assert after["observability"]["log_level"] == "trace"
+    assert compute_config_contract_digest(after) == contract_digest
+    assert int(store.load_plan(run_id)["revision"]) == int(plan_before["revision"])
+    assert root_child_item_ids(store, run_id) == leaf_ids
 
 
 @pytest.mark.integration

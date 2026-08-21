@@ -13,6 +13,26 @@ import uuid
 from pathlib import Path
 
 _SCRIPT = os.environ.get("TDP_SLICE10_SCRIPT")
+_CAS_READY = os.environ.get("TDP_SLICE10_CAS_READY")
+_CAS_GO = os.environ.get("TDP_SLICE10_CAS_GO")
+
+if _CAS_READY and _CAS_GO:
+    from top_down_planning.persistence import FileRunStore
+
+    _orig_commit = FileRunStore.commit
+
+    def _barrier_commit(self, run_id, spec):  # type: ignore[no-untyped-def]
+        plan = getattr(spec, "plan", None)
+        if plan is not None:
+            Path(_CAS_READY).write_text("ready\n", encoding="utf-8")
+            deadline = time.monotonic() + 15
+            while not Path(_CAS_GO).is_file():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("timed out waiting for Slice 10 CAS go signal")
+                time.sleep(0.01)
+        return _orig_commit(self, run_id, spec)
+
+    FileRunStore.commit = _barrier_commit  # type: ignore[method-assign]
 
 if _SCRIPT:
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})

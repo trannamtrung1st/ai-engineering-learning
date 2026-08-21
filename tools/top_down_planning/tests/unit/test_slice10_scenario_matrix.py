@@ -16,12 +16,20 @@ _WORKFLOW = Path(__file__).resolve().parents[4] / ".github" / "workflows" / "tdp
 
 def test_slice10_matrix_covers_all_twenty_review_plan_scenarios() -> None:
     assert set(SLICE10_SCENARIO_EVIDENCE) == set(range(1, 21))
-    for number, (relative, test_name) in SLICE10_SCENARIO_EVIDENCE.items():
+    for number, (relative, test_name, must_contain) in SLICE10_SCENARIO_EVIDENCE.items():
         path = _PACKAGE_ROOT / relative
         assert path.is_file(), f"scenario {number} evidence file missing: {relative}"
         source = path.read_text(encoding="utf-8")
-        assert f"def {test_name}(" in source, (
+        marker = f"def {test_name}("
+        assert marker in source, (
             f"scenario {number} has no executable test {test_name} in {relative}"
+        )
+        start = source.index(marker)
+        nxt = source.find("\ndef test_", start + 1)
+        body = source[start:] if nxt < 0 else source[start:nxt]
+        assert must_contain in body, (
+            f"scenario {number} evidence {test_name} does not prove "
+            f"{must_contain!r}"
         )
 
 
