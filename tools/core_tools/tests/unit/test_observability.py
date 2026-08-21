@@ -604,6 +604,11 @@ _SPLIT_SECRET_FORMS = (
     ("'payload { password: first SECOND_SECRET }'", "SECOND_SECRET"),
     ("'config [ token: first TOKEN_SUFFIX ]'", "TOKEN_SUFFIX"),
     ("'object { accessToken: part1 PART2 }'", "PART2"),
+    ("'note \"password\": first SECOND_SECRET'", "SECOND_SECRET"),
+    ("'text \"token\" : first TOKEN_SUFFIX'", "TOKEN_SUFFIX"),
+    ("password=$(case x in a) echo safe ;; b) echo SECOND_CASE_SECRET ;; esac)", "SECOND_CASE_SECRET"),
+    ("password=$(echo safe # )\necho COMMENT_SECRET\n)", "COMMENT_SECRET"),
+    ("password=$(cat <<'EOF'\n)\nHEREDOC_SECRET\nEOF\n)", "HEREDOC_SECRET"),
 )
 
 
@@ -862,6 +867,9 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
     split = StreamingRedactor()
     output = split.ingest("password=$(get_secret)") + split.ingest(" --output report.json") + split.flush()
     assert output == "password=[REDACTED] --output report.json"
+    assert redact_value("password=$(for item in a b; do echo x; done) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
 
 
 def test_redaction_does_not_treat_later_words_as_cli_secrets() -> None:
