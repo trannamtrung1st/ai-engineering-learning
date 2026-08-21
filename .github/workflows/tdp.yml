@@ -66,9 +66,12 @@ jobs:
       - name: Packaging install smoke
         env:
           TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
+          TDP_SLICE10_FREEZE: "1"
         run: |
           cd tools/top_down_planning
-          python -m pytest -o addopts='' -m packaging
+          python -m pytest -o addopts='' -m packaging --tb=short
+          python -m pytest -o addopts='' -p no:xdist \
+            tests/unit/test_slice10_scenario_matrix.py::test_slice10_installed_artifact_gate_executes
 
       - name: Wheel build gate
         run: python -m build --wheel tools/top_down_planning

@@ -151,6 +151,11 @@ def packaging_wheelhouse() -> Path:
     """
 
     if not os.environ.get("TDP_PACKAGING_WHEELHOUSE"):
+        if os.environ.get("TDP_SLICE10_FREEZE") == "1":
+            pytest.fail(
+                "Slice 10 freeze requires a prepared TDP_PACKAGING_WHEELHOUSE; "
+                "run scripts/build_packaging_wheelhouse.py before packaging smoke"
+            )
         pytest.skip(
             "packaging smoke requires a prepared TDP_PACKAGING_WHEELHOUSE; "
             "run scripts/build_packaging_wheelhouse.py"
