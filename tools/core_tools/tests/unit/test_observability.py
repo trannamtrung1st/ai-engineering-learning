@@ -730,6 +730,15 @@ _SPLIT_SECRET_FORMS = (
     ("password=$(if false; then x; elif true; then case x in a) echo ELIF_LEAK_123 ;; esac; fi)", "ELIF_LEAK_123"),
     ("password=$(time case x in a) echo TIME_LEAK_123 ;; esac)", "TIME_LEAK_123"),
     ("password=$(cat <<EOF\nx\nEOF\ncase x in a) echo HEREDOC_CASE_LEAK_123 ;; esac)", "HEREDOC_CASE_LEAK_123"),
+    ("password=$(echo $(case x in a) echo inner ;; esac) NESTED_CASE_LEAK_123)", "NESTED_CASE_LEAK_123"),
+    ("password=$( (case x in a) echo inner ;; esac); echo SUBSHELL_CASE_LEAK_123 )", "SUBSHELL_CASE_LEAK_123"),
+    ("password=$(echo <(case x in a) echo inner ;; esac) PROCESS_CASE_LEAK_123)", "PROCESS_CASE_LEAK_123"),
+    ('password=$(case x in [a"]")|esac)]) echo QUOTED_CLASS_LEAK_123 ;; esac)', "QUOTED_CLASS_LEAK_123"),
+    ("password=$(case x in [a']')|esac)]) echo SQUOTE_CLASS_LEAK_123 ;; esac)", "SQUOTE_CLASS_LEAK_123"),
+    ("password=$(f() case x in a) echo FUNC_CASE_LEAK_123 ;; esac; f)", "FUNC_CASE_LEAK_123"),
+    ("password=$(f() ( case x in a) echo X ;; esac ); echo FUNCTION_TAIL_LEAK_123)", "FUNCTION_TAIL_LEAK_123"),
+    ("password=$(coproc case x in a) echo COPROC_CASE_LEAK_123 ;; esac)", "COPROC_CASE_LEAK_123"),
+    ("password=$(coproc foo case x in a) echo COPROC_NAME_LEAK_123 ;; esac)", "COPROC_NAME_LEAK_123"),
 )
 
 
@@ -757,6 +766,33 @@ def test_console_sink_redacts_secrets_split_across_stream_deltas(
         assert form not in output
         assert secret not in output, f"leaked at split {split_at}"
         assert "[REDACTED]" in output
+
+
+_BOUNDARY_SPLIT_FORMS = (
+    ("password=$(echo $(case x in a) echo inner ;; esac) NESTED_CASE_LEAK_123)", "NESTED_CASE_LEAK_123"),
+    ("password=$( (case x in a) echo inner ;; esac); echo SUBSHELL_CASE_LEAK_123 )", "SUBSHELL_CASE_LEAK_123"),
+    ("password=$(echo <(case x in a) echo inner ;; esac) PROCESS_CASE_LEAK_123)", "PROCESS_CASE_LEAK_123"),
+    ('password=$(case x in [a"]")|esac)]) echo QUOTED_CLASS_LEAK_123 ;; esac)', "QUOTED_CLASS_LEAK_123"),
+    ("password=$(f() case x in a) echo FUNC_CASE_LEAK_123 ;; esac; f)", "FUNC_CASE_LEAK_123"),
+    ("password=$(coproc case x in a) echo COPROC_CASE_LEAK_123 ;; esac)", "COPROC_CASE_LEAK_123"),
+    ("password=$(while true; do case x in a) echo DO_LEAK_123 ;; esac; break; done)", "DO_LEAK_123"),
+    ("password=$(time case x in a) echo TIME_LEAK_123 ;; esac)", "TIME_LEAK_123"),
+    ("password=$(case x in [#]) echo safe ;; esac)", None),
+    ("password=$(printf '%s' 'foo\\')", None),
+    ("password=$(cat <<EOF; echo x\nbody\nEOF\n)", None),
+)
+
+
+@pytest.mark.parametrize(("form", "secret"), _BOUNDARY_SPLIT_FORMS)
+def test_streaming_redactor_preserves_benign_tail_at_every_split(form: str, secret: str | None) -> None:
+    text = f"{form} --output report.json"
+    expected = "password=[REDACTED] --output report.json"
+    for split_at in range(1, len(text)):
+        redactor = StreamingRedactor()
+        output = redactor.ingest(text[:split_at]) + redactor.ingest(text[split_at:]) + redactor.flush()
+        if secret:
+            assert secret not in output, f"leaked at split {split_at}"
+        assert output == expected, f"tail lost at split {split_at}: {output!r}"
 
 
 def test_console_sink_keeps_secret_context_across_other_session() -> None:
@@ -1071,6 +1107,36 @@ def test_redaction_stops_secret_word_at_real_shell_delimiter() -> None:
         "password=[REDACTED] --output report.json"
     )
     assert redact_value("PASSWORD=(case) --output report.json") == "PASSWORD=[REDACTED] --output report.json"
+    assert redact_value("password=$(echo $(case x in a) echo inner ;; esac) NESTED_CASE_LEAK_123) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$( (case x in a) echo inner ;; esac); echo SUBSHELL_CASE_LEAK_123 ) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(echo <(case x in a) echo inner ;; esac) PROCESS_CASE_LEAK_123) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value('password=$(case x in [a"]")|esac)]) echo QUOTED_CLASS_LEAK_123 ;; esac) --output report.json') == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(f() case x in a) echo FUNC_CASE_LEAK_123 ;; esac; f) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(coproc case x in a) echo COPROC_CASE_LEAK_123 ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in [#]) echo safe ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(case x in [a#]) echo safe ;; esac) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(printf '%s' 'foo\\') --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
+    assert redact_value("password=$(cat <<EOF; echo x\nbody\nEOF\n) --output report.json") == (
+        "password=[REDACTED] --output report.json"
+    )
 
 
 def test_redaction_does_not_treat_later_words_as_cli_secrets() -> None:
