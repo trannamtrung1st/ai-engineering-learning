@@ -391,6 +391,18 @@ def test_jsonl_sink_joins_many_stream_chunks_exactly_once(tmp_path) -> None:
     assert payload["message"] == expected
 
 
+def test_jsonl_sink_buffers_unlimited_stream_until_flush(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(ConsoleEvent(category="response", message="alpha"))
+    sink.emit(ConsoleEvent(category="response", message="beta-secret-chunk"))
+    assert path.read_text(encoding="utf-8") == ""
+    sink.flush_stream()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["message"] == "alphabeta-secret-chunk"
+    sink.close()
+
+
 def test_jsonl_sink_bounds_stream_buffer_when_message_cap_is_set(tmp_path) -> None:
     path = tmp_path / "events.jsonl"
     sink = JsonlEventSink(path, policy=RedactionPolicy(max_message_length=10))
@@ -614,6 +626,14 @@ _SPLIT_SECRET_FORMS = (
     ("password=$(case x in a) echo esac ;; b) echo SECOND_CASE_SECRET ;; esac)", "SECOND_CASE_SECRET"),
     ("password=$(cat <<EOF extra\nEOFextra\n)\nHEREDOC_SECRET\nEOF\n)", "HEREDOC_SECRET"),
     ("password=$(cat <<\\EOF\n\\EOF\n)\nESCAPED_HEREDOC_SECRET\nEOF\n)", "ESCAPED_HEREDOC_SECRET"),
+    ("password=$(cat <<-A <<B\nA\n\tB\n)\nSECRET_AFTER_FALSE_B\nB\n)", "SECRET_AFTER_FALSE_B"),
+    ("password=$(cat <<A <<-B\n\tA\n\tB\n)\nSECRET_AFTER_FALSE_A\nA\n\tB\n)", "SECRET_AFTER_FALSE_A"),
+    ("password=$(case x in a) echo first ;& b) echo SECRET_AFTER_PATTERN ;; esac)", "SECRET_AFTER_PATTERN"),
+    ("password=$(case x in a) echo 1 ;& b) echo 2 ;& c) echo MULTI_SEMIAMP_SECRET ;; esac)", "MULTI_SEMIAMP_SECRET"),
+    (
+        "password=$(case x in a) case y in z) echo inner ;& w) echo NESTED_SEMIAMP_SECRET ;; esac ;; esac)",
+        "NESTED_SEMIAMP_SECRET",
+    ),
 )
 
 

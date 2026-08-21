@@ -202,7 +202,8 @@ class StreamingRedactor:
         self._heredoc_quote = ""
         self._heredoc_strip = False
         self._heredoc_escape = False
-        self._heredoc_queue: list[str] = []
+        self._heredoc_queue: list[tuple[str, bool]] = []
+        self._heredoc_body_strip = False
         self._pending_redact = False
         self._escape = False
         self._unicode_hex: str | None = None
@@ -273,7 +274,8 @@ class StreamingRedactor:
             + int(self._shell_comment)
             + len(self._heredoc_tag)
             + len(self._heredoc_line)
-            + sum(len(tag) for tag in self._heredoc_queue)
+            + sum(len(tag) for tag, _strip in self._heredoc_queue)
+            + int(self._heredoc_body_strip)
             + int(bool(self._heredoc))
             + len(self._json_stack)
             + int(self._pending_redact)
@@ -305,6 +307,7 @@ class StreamingRedactor:
         self._heredoc_strip = False
         self._heredoc_escape = False
         self._heredoc_queue = []
+        self._heredoc_body_strip = False
 
     def _lex(self, incoming: str, *, flush: bool) -> str:
         outgoing = [self._step(char) for char in incoming]
@@ -740,6 +743,12 @@ class StreamingRedactor:
                 self._semi = True
                 self._cmd_pos = True
             return
+        if char == "&" and self._semi:
+            self._semi = False
+            self._cmd_pos = True
+            if self._case_depth:
+                self._case_arm = "pattern"
+            return
         self._semi = False
         if char in "|&\r\n":
             self._cmd_pos = True
@@ -759,21 +768,28 @@ class StreamingRedactor:
             self._subst_opaque = True
             self._heredoc_tag = ""
             return
-        self._heredoc_queue.append(self._heredoc_tag)
+        self._heredoc_queue.append((self._heredoc_tag, self._heredoc_strip))
         self._heredoc_tag = ""
+        self._heredoc_strip = False
+
+    def _activate_heredoc(self, tag: str, strip: bool) -> None:
+        self._heredoc_tag = tag
+        self._heredoc_body_strip = strip
+        self._heredoc = "body"
+        self._heredoc_line = ""
 
     def _begin_heredoc_body(self) -> None:
         self._finish_heredoc_word()
         self._heredoc_quote = ""
         self._heredoc_escape = False
         if self._heredoc_queue:
-            self._heredoc_tag = self._heredoc_queue.pop(0)
-            self._heredoc = "body"
-            self._heredoc_line = ""
+            tag, strip = self._heredoc_queue.pop(0)
+            self._activate_heredoc(tag, strip)
             return
         self._heredoc = ""
         self._heredoc_tag = ""
         self._heredoc_line = ""
+        self._heredoc_body_strip = False
 
     def _step_heredoc_tag(self, char: str) -> str:
         if self._heredoc_escape:
@@ -814,6 +830,7 @@ class StreamingRedactor:
             self._lt = False
             if char == "<":
                 self._heredoc = "tag"
+                self._heredoc_strip = False
                 return ""
             return ""
         if char == "<":
@@ -826,17 +843,18 @@ class StreamingRedactor:
 
     def _step_heredoc_body(self, char: str) -> str:
         if char in "\r\n":
-            line = self._heredoc_line.lstrip("\t") if self._heredoc_strip else self._heredoc_line
+            line = self._heredoc_line.lstrip("\t") if self._heredoc_body_strip else self._heredoc_line
             if line == self._heredoc_tag:
                 if self._heredoc_queue:
-                    self._heredoc_tag = self._heredoc_queue.pop(0)
-                    self._heredoc_line = ""
+                    tag, strip = self._heredoc_queue.pop(0)
+                    self._activate_heredoc(tag, strip)
                 else:
                     self._heredoc = ""
                     self._heredoc_tag = ""
                     self._heredoc_line = ""
                     self._heredoc_quote = ""
                     self._heredoc_strip = False
+                    self._heredoc_body_strip = False
             else:
                 self._heredoc_line = ""
             return ""

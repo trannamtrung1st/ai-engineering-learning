@@ -27,7 +27,14 @@ class _StreamBuffer:
 
 
 class JsonlEventSink:
-    """Write redacted events as one JSON object per line."""
+    """Write redacted events as one JSON object per line.
+
+    Thinking/response deltas are buffered in memory and written as one record
+    at a stream boundary or ``flush_stream()``. With the default
+    ``max_message_length=None`` that buffer is unbounded; a crash before flush
+    drops the in-flight logical message. Operators who need a finite cap set
+    ``RedactionPolicy.max_message_length``.
+    """
 
     def __init__(
         self,
