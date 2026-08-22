@@ -255,18 +255,75 @@ def test_second_record_is_rejected_after_valid_prefix_on_exit_drain(
     tmp_path: Path,
 ) -> None:
     cap = MAX_STREAM_JSON_RECORD_BYTES
-    payload = b"{}\n" + (b"x" * (2 * 1024 * 1024)) + b"\n"
+    payload = b"{}\n" + (b"x" * (512 * 1024)) + b"\n"
     iterator = _SubprocessStdoutIterator(
         _write_payload_argv(tmp_path, payload),
         tmp_path,
         max_record_bytes=cap,
     )
     try:
+        real_poll = iterator._proc.poll
         iterator._proc.poll = lambda *args, **kwargs: 0
+        try:
+            assert next(iterator) == "{}"
+            with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+                next(iterator)
+        finally:
+            iterator._proc.poll = real_poll
+        assert len(iterator._stdout_buf) <= cap + 65536
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+def _wait_until_exited(proc, timeout: float = 0.1) -> bool:
+    """Use the raw Popen poll; the janitor wrapper stays None until status arrives."""
+
+    raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
+    deadline = time.monotonic() + timeout
+    while raw_poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return raw_poll() is not None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_rejected_oversized_flood_does_not_leave_a_blocked_writer(
+    tmp_path: Path,
+) -> None:
+    """Closing the reader must unblock a flood so the child can exit."""
+
+    record = (b"x" * (512 * 1024)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", _write_record_script(record, hold=True)],
+        tmp_path,
+        max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
+    )
+    try:
+        with pytest.raises(
+            ProviderStreamRecordTooLargeError,
+            match=str(MAX_STREAM_JSON_RECORD_BYTES),
+        ):
+            next(iterator)
+        assert _wait_until_exited(iterator._proc)
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_rejected_second_record_does_not_leave_a_blocked_writer(
+    tmp_path: Path,
+) -> None:
+    cap = MAX_STREAM_JSON_RECORD_BYTES
+    payload = b"{}\n" + (b"x" * (512 * 1024)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        _write_payload_argv(tmp_path, payload),
+        tmp_path,
+        max_record_bytes=cap,
+    )
+    try:
         assert next(iterator) == "{}"
         with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
             next(iterator)
-        assert len(iterator._stdout_buf) <= cap + 65536
+        assert _wait_until_exited(iterator._proc)
     finally:
         close_and_reap_iterator(iterator)
 

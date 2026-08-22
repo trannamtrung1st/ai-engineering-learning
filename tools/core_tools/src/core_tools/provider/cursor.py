@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import select
+import signal
 import shutil
 import subprocess
 import sys
@@ -421,7 +422,10 @@ class _SubprocessStdoutIterator(Iterator[str]):
             return
         try:
             while True:
-                chunk = self._proc.stderr.buffer.read(8192)
+                try:
+                    chunk = self._proc.stderr.buffer.read(8192)
+                except (OSError, ValueError):
+                    break
                 if not chunk:
                     break
                 self._append_stderr_bytes(chunk)
@@ -442,6 +446,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             return None
         assembled = idx + 1
         if assembled > self._max_record_bytes:
+            self._abandon_stdout_after_record_cap()
             raise ProviderStreamRecordTooLargeError(
                 f"stream-json record exceeded {self._max_record_bytes} bytes"
             )
@@ -494,6 +499,32 @@ class _SubprocessStdoutIterator(Iterator[str]):
         start = self._incomplete_tail_start()
         return (len(self._stdout_buf) - start) >= self._max_record_bytes
 
+    def _abandon_stdout_after_record_cap(self) -> None:
+        """Stop reading and kill the writer so a flood cannot pin the session."""
+
+        self._stdout_eof = True
+        stdout = getattr(self._proc, "stdout", None)
+        if stdout is not None:
+            try:
+                stdout.close()
+            except (OSError, ValueError):
+                pass
+        proc = getattr(self, "_proc", None)
+        if proc is None or sys.platform == "win32":
+            return
+        pgid = getattr(proc, "_core_tools_session_pgid", None)
+        if pgid is None and proc.pid:
+            try:
+                pgid = os.getpgid(proc.pid)
+            except OSError:
+                pgid = proc.pid
+        if pgid is None:
+            return
+        try:
+            os.killpg(int(pgid), signal.SIGKILL)
+        except OSError:
+            pass
+
     def _raise_if_current_record_too_large(self) -> None:
         """Refuse the record currently being assembled if it exceeds the cap.
 
@@ -503,6 +534,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         """
 
         if self._incomplete_tail_over_cap():
+            self._abandon_stdout_after_record_cap()
             raise ProviderStreamRecordTooLargeError(
                 f"stream-json record exceeded {self._max_record_bytes} bytes"
             )
@@ -529,6 +561,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         try:
             while True:
                 if self._incomplete_tail_over_cap():
+                    self._abandon_stdout_after_record_cap()
                     return
                 try:
                     chunk = os.read(fd, 65536)
