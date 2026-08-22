@@ -29,14 +29,15 @@ from top_down_planning.persistence.snapshot_bindings import (
 )
 from tests.helpers import (
     create_run_kwargs,
+    ensure_plan_work_scope_contracts,
     make_review_loop,
     minimal_resolved_config,
+    plan_root_item,
     save_review_payload,
     whole_output_approval_record,
     whole_plan_approval_record,
     write_config,
 )
-from tests.unit.test_whole_output_review import _create_run_at_whole_output_review
 
 
 def _sample_plan() -> Plan:
@@ -536,6 +537,120 @@ def test_prepare_resume_blocks_provider_turn_failed_without_phase_action_id(
     stored = store.load_resolved_config(run_id)
     with pytest.raises(PrepareResumeBlockedError, match="phase_action_id"):
         prepare_resume(store, run_id, stored)
+
+
+def _create_run_at_whole_output_review(
+    store: FileRunStore,
+    run_id: str,
+) -> None:
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
+    )
+    leaf = PlanItem(
+        id="item-leaf",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="Leaf",
+        outcome="Leaf outcome.",
+        kind="work",
+    )
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
+            id=f"plan-{run_id}",
+            revision=0,
+            output_goal="Deliver the feature.",
+            items={"item-root": root, "item-leaf": leaf},
+        )
+    )
+    config = {
+        "run": {
+            "output_goal": "Deliver the feature.",
+            "input_refs": ["README.md"],
+        },
+        "planning": {
+            "stop_hint": "Stop when ready.",
+            "max_depth": 4,
+            "max_expansion_per_item": 7,
+        },
+        "limits": {
+            "whole_output_review": {
+                "max_revision_cycles": 5,
+            }
+        },
+    }
+    production = {
+        "revision": 2,
+        "output_revision": 1,
+        "batches": [
+            {
+                "id": "batch-01",
+                "plan_items": ["item-leaf"],
+                "status": "completed",
+                "result": {
+                    "outputs": [],
+                    "contributions": [],
+                    "dispositions": {"item-leaf": {"disposition": "completed"}},
+                    "summary": "done",
+                    "empty_output": False,
+                    "goal_assessment": "",
+                },
+            }
+        ],
+        "dispositions": {"item-leaf": "completed"},
+        "output_evidence": [],
+        "completion_claim": {
+            "goal_assessment": "Output goal is fully met.",
+            "goal_met": True,
+            "summary": "All items complete.",
+            "plan_revision": 0,
+            "output_revision": 1,
+            "all_applicable_items_processed": True,
+        },
+    }
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=config),
+        phase=WHOLE_OUTPUT_REVIEW,
+        production=production,
+    )
+    save_review_payload(
+        store,
+        run_id,
+        whole_plan_approval_record(
+            store,
+            run_id,
+            id="review-whole-plan-01",
+            reviewer_session_id="stub-session-plan-reviewer",
+        ),
+    )
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    digests = dict(run.get("digests") or {})
+    digests["output"] = compute_output_digest(production)
+    run["digests"] = digests
+    store.save_run(run_id, run, expected_revision)
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": "review-whole-output-01",
+            "type": "whole_output",
+            "revise_at": "blocker",
+            "target_revision": int(production["output_revision"]),
+            "scope": {"kind": "whole_output"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "scope_review_rounds": 0,
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        },
+    )
 
 
 def _pause_whole_output_review(
