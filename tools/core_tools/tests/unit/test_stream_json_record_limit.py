@@ -101,6 +101,21 @@ def test_configured_record_limit_accepts_line_under_cap(tmp_path: Path) -> None:
         close_and_reap_iterator(iterator)
 
 
+def _write_payload_argv(tmp_path: Path, payload: bytes) -> list[str]:
+    """Run a file-backed writer so large records are not passed on argv."""
+
+    blob = tmp_path / "records.bin"
+    blob.write_bytes(payload)
+    script = tmp_path / "write_records.py"
+    script.write_text(
+        "import sys\n"
+        f"sys.stdout.buffer.write(open({str(blob)!r}, 'rb').read())\n"
+        "sys.stdout.buffer.flush()\n",
+        encoding="utf-8",
+    )
+    return [sys.executable, str(script)]
+
+
 def _write_record_script(payload: bytes, *, chunk_size: int | None = None, hold: bool = False) -> str:
     """Emit one NDJSON record; optional write chunking and a hold so the child stays alive."""
 
@@ -229,6 +244,67 @@ def test_record_limit_rejection_does_not_depend_on_write_chunk_size(
         max_record_bytes=cap,
     )
     try:
+        with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+            next(iterator)
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_second_record_is_rejected_after_valid_prefix_on_exit_drain(
+    tmp_path: Path,
+) -> None:
+    cap = MAX_STREAM_JSON_RECORD_BYTES
+    payload = b"{}\n" + (b"x" * (2 * 1024 * 1024)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        _write_payload_argv(tmp_path, payload),
+        tmp_path,
+        max_record_bytes=cap,
+    )
+    try:
+        iterator._proc.poll = lambda *args, **kwargs: 0
+        assert next(iterator) == "{}"
+        with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+            next(iterator)
+        assert len(iterator._stdout_buf) <= cap + 65536
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_second_complete_record_in_one_read_is_rejected(
+    tmp_path: Path,
+) -> None:
+    cap = 64
+    payload = b"hi\n" + (b"y" * 200) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", _write_record_script(payload)],
+        tmp_path,
+        max_record_bytes=cap,
+    )
+    try:
+        assert next(iterator) == "hi"
+        with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+            next(iterator)
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_oversized_record_after_several_valid_records_is_rejected(
+    tmp_path: Path,
+) -> None:
+    cap = 32
+    payload = b"a\n" + b"b\n" + b"c\n" + (b"z" * (cap + 10)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", _write_record_script(payload)],
+        tmp_path,
+        max_record_bytes=cap,
+    )
+    try:
+        assert next(iterator) == "a"
+        assert next(iterator) == "b"
+        assert next(iterator) == "c"
         with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
             next(iterator)
     finally:

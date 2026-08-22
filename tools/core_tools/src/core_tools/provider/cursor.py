@@ -440,6 +440,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
         idx = self._stdout_buf.find(b"\n")
         if idx < 0:
             return None
+        assembled = idx + 1
+        if assembled > self._max_record_bytes:
+            raise ProviderStreamRecordTooLargeError(
+                f"stream-json record exceeded {self._max_record_bytes} bytes"
+            )
         raw = bytes(self._stdout_buf[:idx])
         del self._stdout_buf[: idx + 1]
         if raw.endswith(b"\r"):
@@ -479,24 +484,27 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stdout_buf.extend(chunk)
         return True
 
-    def _raise_if_current_record_too_large(self) -> None:
-        """Refuse an assembled stream-json record larger than the configured cap.
+    def _incomplete_tail_start(self) -> int:
+        last_newline = self._stdout_buf.rfind(b"\n")
+        return 0 if last_newline < 0 else last_newline + 1
 
-        The cap includes the terminating newline. A buffer that has reached the
-        cap without a newline is already too large, because the delimiter would
-        make the assembled record ``cap + 1`` bytes.
+    def _incomplete_tail_over_cap(self) -> bool:
+        """True when the record after the last complete line is already too large."""
+
+        start = self._incomplete_tail_start()
+        return (len(self._stdout_buf) - start) >= self._max_record_bytes
+
+    def _raise_if_current_record_too_large(self) -> None:
+        """Refuse the record currently being assembled if it exceeds the cap.
+
+        Complete records still waiting at the front of the buffer are checked
+        when they are popped. The cap includes the terminating newline; an
+        incomplete tail that has already reached the cap is too large.
         """
 
-        newline = self._stdout_buf.find(b"\n")
-        assembled = newline + 1 if newline >= 0 else len(self._stdout_buf)
-        limit = self._max_record_bytes
-        if newline >= 0:
-            too_large = assembled > limit
-        else:
-            too_large = assembled >= limit
-        if too_large:
+        if self._incomplete_tail_over_cap():
             raise ProviderStreamRecordTooLargeError(
-                f"stream-json record exceeded {limit} bytes"
+                f"stream-json record exceeded {self._max_record_bytes} bytes"
             )
 
     def _finish_unterminated_record(self) -> None:
@@ -520,7 +528,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 restore_flags = None
         try:
             while True:
-                self._raise_if_current_record_too_large()
+                if self._incomplete_tail_over_cap():
+                    return
                 try:
                     chunk = os.read(fd, 65536)
                 except BlockingIOError:
@@ -530,11 +539,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     continue
                 except (OSError, ValueError):
                     self._stdout_eof = True
-                    self._raise_if_current_record_too_large()
                     return
                 if not chunk:
                     self._stdout_eof = True
-                    self._raise_if_current_record_too_large()
                     return
                 self._stdout_buf.extend(chunk)
         finally:
@@ -549,32 +556,38 @@ class _SubprocessStdoutIterator(Iterator[str]):
     def _wait_for_complete_line(self, timeout: float | None) -> bool:
         if self._finished:
             return True
-        self._raise_if_current_record_too_large()
         if b"\n" in self._stdout_buf:
             return True
+        self._raise_if_current_record_too_large()
         if self._stdout_eof:
             self._finish_unterminated_record()
             return True
         if self._proc.poll() is not None:
             self._drain_stdout_to_eof()
+            if b"\n" in self._stdout_buf:
+                return True
             self._finish_unterminated_record()
             return bool(self._stdout_buf) or self._stdout_eof
         idle_window = None if timeout is None else max(0.0, timeout)
         idle_deadline = None if idle_window is None else time.monotonic() + idle_window
         while True:
-            self._raise_if_current_record_too_large()
             if b"\n" in self._stdout_buf:
                 return True
+            self._raise_if_current_record_too_large()
             remaining = (
                 None if idle_deadline is None else max(0.0, idle_deadline - time.monotonic())
             )
             before = len(self._stdout_buf)
             got = self._fill_stdout_buffer(remaining)
             if got:
+                if b"\n" in self._stdout_buf:
+                    return True
                 self._raise_if_current_record_too_large()
                 if self._proc.poll() is not None and not self._stdout_eof:
                     self._drain_stdout_to_eof()
                 if self._stdout_eof or self._proc.poll() is not None:
+                    if b"\n" in self._stdout_buf:
+                        return True
                     self._finish_unterminated_record()
                     return True
                 if (
@@ -600,6 +613,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 if stripped:
                     return stripped
                 continue
+            self._raise_if_current_record_too_large()
             if self._stdout_eof or self._finished:
                 self._finalize()
                 raise StopIteration
@@ -622,6 +636,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 return None
             line = self._pop_complete_line()
             if line is None:
+                self._raise_if_current_record_too_large()
                 if self._stdout_eof:
                     self._finalize()
                     raise StopIteration
