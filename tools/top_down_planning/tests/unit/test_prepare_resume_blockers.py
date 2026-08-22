@@ -10,19 +10,33 @@ import pytest
 
 from top_down_planning.config import resolve_config
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.phases import (
+    PLANNING,
+    PRODUCTION,
+    WHOLE_OUTPUT_REVIEW,
+    WHOLE_PLAN_REVIEW,
+)
 from top_down_planning.orchestrator.prepare_resume import (
     PrepareResumeBlockedError,
     prepare_resume,
 )
 from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.commit import CommitSpec
+from top_down_planning.persistence.digests import compute_output_digest
+from top_down_planning.persistence.snapshot_bindings import (
+    bind_run_digests_for_plan_update,
+    bind_run_digests_for_production_update,
+)
 from tests.helpers import (
     create_run_kwargs,
     make_review_loop,
     minimal_resolved_config,
+    save_review_payload,
+    whole_output_approval_record,
     whole_plan_approval_record,
     write_config,
 )
+from tests.unit.test_whole_output_review import _create_run_at_whole_output_review
 
 
 def _sample_plan() -> Plan:
@@ -522,3 +536,236 @@ def test_prepare_resume_blocks_provider_turn_failed_without_phase_action_id(
     stored = store.load_resolved_config(run_id)
     with pytest.raises(PrepareResumeBlockedError, match="phase_action_id"):
         prepare_resume(store, run_id, stored)
+
+
+def _pause_whole_output_review(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    stop_code: str = "provider_turn_failed",
+    message: str = "turn failed",
+    extra_stop_details: dict | None = None,
+) -> None:
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["outcome"] = None
+    run["phase"] = WHOLE_OUTPUT_REVIEW
+    run["phase_action_id"] = "action-wor-01"
+    details = dict(extra_stop_details or {})
+    run["stop"] = {
+        "code": stop_code,
+        "category": "operational",
+        "phase": WHOLE_OUTPUT_REVIEW,
+        "message": message,
+        "details": details,
+    }
+    store.save_run(run_id, run, expected_revision)
+
+
+def _pending_whole_output_review(
+    *,
+    target_revision: int,
+    loop_id: str = "review-whole-output-pending",
+) -> dict:
+    return {
+        "id": loop_id,
+        "type": "whole_output",
+        "revise_at": "blocker",
+        "target_revision": target_revision,
+        "scope": {"kind": "whole_output"},
+        "status": "pending",
+        "findings": [],
+        "revision_cycles": 0,
+        "lifecycle_status": "review_pending",
+        "scope_review_rounds": 0,
+        "review_record_schema_version": 2,
+        "review_contract_version": 2,
+    }
+
+
+def test_prepare_resume_allows_pending_whole_output_after_provider_turn_failed(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000901-000901"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    _pause_whole_output_review(store, run_id)
+
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored)
+
+    assert plan.already_completed is not True
+    assert plan.state_transition is not None
+    assert plan.state_transition.from_status == "paused"
+    assert plan.validation.approval_binding_valid is True
+
+
+def test_prepare_resume_rejects_pending_whole_output_when_plan_digest_drifts(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    _pause_whole_output_review(store, run_id)
+    plan = dict(store.load_plan(run_id))
+    expected_plan = int(plan["revision"])
+    plan["revision"] = expected_plan + 1
+    items = list(plan.get("items") or [])
+    updated = []
+    for item in items:
+        payload = dict(item)
+        if payload.get("id") == "item-leaf":
+            payload["title"] = "Leaf after plan-side drift"
+        updated.append(payload)
+    plan["items"] = updated
+    production = dict(store.load_production(run_id))
+    expected_production = int(production["revision"])
+    production["revision"] = expected_production + 1
+    claim = dict(production.get("completion_claim") or {})
+    claim["plan_revision"] = int(plan["revision"])
+    production["completion_claim"] = claim
+    run = dict(store.load_run(run_id))
+    expected_revision = int(run["revision"])
+    run["revision"] = expected_revision + 1
+    run = bind_run_digests_for_plan_update(run, plan)
+    run = bind_run_digests_for_production_update(run, production)
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=expected_revision,
+            plan=plan,
+            plan_expected_revision=expected_plan,
+            production=production,
+            production_expected_revision=expected_production,
+        ),
+    )
+    approval = dict(store.load_review(run_id, "review-whole-plan-01"))
+    approval["target_revision"] = int(plan["revision"])
+    save_review_payload(store, run_id, approval)
+
+    stored = store.load_resolved_config(run_id)
+    with pytest.raises(PrepareResumeBlockedError, match="approval binding"):
+        prepare_resume(store, run_id, stored)
+
+
+def test_prepare_resume_allows_current_output_revision_when_output_approval_matches(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000903-000903"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
+    _pause_whole_output_review(store, run_id)
+
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored)
+
+    assert plan.validation.approval_binding_valid is True
+
+
+def test_prepare_resume_rejects_current_output_approval_when_output_digest_drifts(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000904-000904"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
+    _pause_whole_output_review(store, run_id)
+    production = dict(store.load_production(run_id))
+    expected_production = int(production["revision"])
+    production["revision"] = expected_production + 1
+    claim = dict(production.get("completion_claim") or {})
+    claim["summary"] = "Output changed after approval."
+    production["completion_claim"] = claim
+    run = dict(store.load_run(run_id))
+    expected_revision = int(run["revision"])
+    run["revision"] = expected_revision + 1
+    run = bind_run_digests_for_production_update(run, production)
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=expected_revision,
+            production=production,
+            production_expected_revision=expected_production,
+        ),
+    )
+
+    stored = store.load_resolved_config(run_id)
+    with pytest.raises(PrepareResumeBlockedError, match="approval binding"):
+        prepare_resume(store, run_id, stored)
+
+
+def test_prepare_resume_ignores_stale_output_approval_after_output_revision(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000905-000905"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
+    production = store.load_production(run_id)
+    expected_production = int(production["revision"])
+    production = dict(production)
+    production["revision"] = expected_production + 1
+    production["output_revision"] = 2
+    claim = dict(production.get("completion_claim") or {})
+    claim["output_revision"] = 2
+    production["completion_claim"] = claim
+    store.save_production(run_id, production, expected_production)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    digests = dict(run.get("digests") or {})
+    digests["output"] = compute_output_digest(production)
+    run["digests"] = digests
+    store.save_run(run_id, run, expected_revision)
+    save_review_payload(
+        store,
+        run_id,
+        _pending_whole_output_review(target_revision=2, loop_id="review-whole-output-02"),
+    )
+    _pause_whole_output_review(store, run_id)
+
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored)
+
+    assert plan.validation.approval_binding_valid is True
+
+
+@pytest.mark.parametrize(
+    ("stop_code", "message", "extra_stop_details"),
+    [
+        ("provider_turn_failed", "stream-json record exceeded 262144 bytes", {}),
+        ("user_cancelled", "cancelled", {"terminated_pids": []}),
+    ],
+)
+def test_prepare_resume_allows_unapproved_whole_output_after_operational_pause(
+    tmp_path: Path,
+    stop_code: str,
+    message: str,
+    extra_stop_details: dict,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = (
+        "run-20260101T000906-000906"
+        if stop_code == "provider_turn_failed"
+        else "run-20260101T000907-000907"
+    )
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    _pause_whole_output_review(
+        store,
+        run_id,
+        stop_code=stop_code,
+        message=message,
+        extra_stop_details=extra_stop_details,
+    )
+
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored)
+
+    assert plan.validation.approval_binding_valid is True

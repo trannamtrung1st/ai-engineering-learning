@@ -36,6 +36,7 @@ from top_down_planning.domain.resume_plan import (
 from top_down_planning.orchestrator.session_policy_execution import derive_session_policy
 from top_down_planning.domain.reviews import (
     find_conflicting_active_review_loops,
+    find_whole_output_approval,
     find_whole_plan_approval,
 )
 from top_down_planning.domain.run_lifecycle import validate_run_lifecycle_invariants
@@ -49,7 +50,6 @@ from top_down_planning.domain.run_ownership import (
 )
 from top_down_planning.orchestrator.errors import OrchestratorError
 from top_down_planning.orchestrator.phases import (
-    OUTPUT_VALIDATED,
     PLAN_AMENDMENT,
     PLAN_VALIDATED,
     PRODUCTION,
@@ -694,33 +694,52 @@ _APPROVAL_REQUIRED_PHASES = frozenset(
 )
 
 
+def _approval_digests_match(
+    approved: dict[str, Any],
+    run_digests: dict[str, str],
+    required_keys: frozenset[str],
+) -> bool:
+    try:
+        reject_legacy_approved_config_digest(approved)
+    except ValueError:
+        return False
+    return all(
+        str(approved.get(key) or "") == str(run_digests.get(key) or "")
+        for key in required_keys
+    )
+
+
 def _approval_binding_valid(
     reviews: list[dict[str, Any]],
     plan: dict[str, Any],
     run_digests: dict[str, str],
     *,
-    phase: str,
+    output_revision: int,
 ) -> bool:
     plan_revision = int(plan.get("revision") or 0)
-    approval = find_whole_plan_approval(reviews, plan_revision)
-    if approval is None:
+    plan_approval = find_whole_plan_approval(reviews, plan_revision)
+    if plan_approval is None:
         return False
-    approved = approval.get("approved_digests")
-    if not isinstance(approved, dict):
+    plan_approved = plan_approval.get("approved_digests")
+    if not isinstance(plan_approved, dict):
         return False
-    try:
-        reject_legacy_approved_config_digest(approved)
-    except ValueError:
-        return False
-    required_keys = PLAN_APPROVAL_DIGEST_KEYS
-    if phase in {OUTPUT_VALIDATED} or any(
-        payload.get("type") == "whole_output" for payload in reviews
+    if not _approval_digests_match(
+        plan_approved,
+        run_digests,
+        PLAN_APPROVAL_DIGEST_KEYS,
     ):
-        required_keys = OUTPUT_APPROVAL_DIGEST_KEYS
-    for key in required_keys:
-        if str(approved.get(key) or "") != str(run_digests.get(key) or ""):
-            return False
-    return True
+        return False
+    output_approval = find_whole_output_approval(reviews, output_revision)
+    if output_approval is None:
+        return True
+    output_approved = output_approval.get("approved_digests")
+    if not isinstance(output_approved, dict):
+        return False
+    return _approval_digests_match(
+        output_approved,
+        run_digests,
+        OUTPUT_APPROVAL_DIGEST_KEYS,
+    )
 
 
 def prepare_resume(
@@ -910,7 +929,7 @@ def prepare_resume(
         reviews,
         plan,
         run_digests,
-        phase=phase,
+        output_revision=int((production or {}).get("output_revision") or 0),
     )
     if not approval_binding_valid and phase in _APPROVAL_REQUIRED_PHASES:
         blockers.append("approval binding is invalid for current artifacts")
