@@ -17,8 +17,11 @@ from core_tools.provider.stub import StubProvider
 from top_down_planning.cli.doctor import handle_doctor_command
 from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator.agent_process_cleanup import (
+    PidRunAgentMatch,
+    classify_pid_run_agent,
     kill_orphan_agents,
     scan_orphan_agent_pids,
+    scan_orphan_agents,
     workspace_has_orphan_agents,
 )
 from top_down_planning.domain.models import Plan, PlanItem
@@ -63,6 +66,183 @@ def test_scan_orphan_agent_pids_uses_stop_details_and_env(tmp_path: Path) -> Non
                     read_pid_environ=fake_environ,
                 )
     assert orphans == [101, 202]
+
+
+def test_classify_host_process_without_run_env_is_not_this_run_agent() -> None:
+    with patch(
+        "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
+        return_value=True,
+    ):
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.default_read_pid_environ",
+            return_value={},
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                return_value="/sbin/launchd",
+            ):
+                assert (
+                    classify_pid_run_agent("run-20260822T072546-d8b8a8", 1)
+                    is PidRunAgentMatch.CONFIRMED_DIFFERENT
+                )
+
+
+def test_classify_agent_command_without_run_env_stays_unverifiable() -> None:
+    with patch(
+        "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
+        return_value=True,
+    ):
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.default_read_pid_environ",
+            return_value={},
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                return_value="agent --output-format stream-json --trust",
+            ):
+                assert (
+                    classify_pid_run_agent("run-orphan", 4242)
+                    is PidRunAgentMatch.UNVERIFIABLE
+                )
+
+
+def _use_real_orphan_scanners():
+    """Restore imported scanners so kill/engine tests are not no-op autouse stubs."""
+
+    return (
+        patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+            side_effect=scan_orphan_agent_pids,
+        ),
+        patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agents",
+            side_effect=scan_orphan_agents,
+        ),
+    )
+
+
+def test_kill_orphan_agents_does_not_fail_closed_on_host_system_pids(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260822T072546-d8b8a8"
+    _create_run(store, run_id=run_id, phase=PLANNING)
+    pids_patch, agents_patch = _use_real_orphan_scanners()
+
+    with pids_patch, agents_patch:
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
+            return_value=True,
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                return_value="/sbin/launchd",
+            ):
+                cleanup = kill_orphan_agents(
+                    store,
+                    run_id,
+                    list_live_pids=lambda: [1, 81, 83],
+                    read_pid_environ=lambda _pid: {},
+                )
+
+    assert cleanup.cleaned_pids == ()
+    assert cleanup.failed_pids == ()
+
+
+def test_kill_orphan_agents_ignores_unrelated_zombie_host_pids(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260822T072549-d8b8a8"
+    _create_run(store, run_id=run_id, phase=PLANNING)
+    pids_patch, agents_patch = _use_real_orphan_scanners()
+
+    with pids_patch, agents_patch:
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
+            return_value=False,
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup.is_pid_reaped",
+                return_value=False,
+            ):
+                with patch(
+                    "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                    return_value="<defunct>",
+                ):
+                    cleanup = kill_orphan_agents(
+                        store,
+                        run_id,
+                        list_live_pids=lambda: [13192],
+                        read_pid_environ=lambda _pid: {},
+                    )
+
+    assert cleanup.cleaned_pids == ()
+    assert cleanup.failed_pids == ()
+
+
+def test_kill_orphan_agents_fails_closed_when_agent_identity_is_unverifiable(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260822T072547-d8b8a8"
+    _create_run(store, run_id=run_id, phase=PLANNING)
+    pids_patch, agents_patch = _use_real_orphan_scanners()
+
+    with pids_patch, agents_patch:
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
+            return_value=True,
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup.is_pid_reaped",
+                return_value=False,
+            ):
+                with patch(
+                    "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                    return_value="agent --output-format stream-json --trust",
+                ):
+                    cleanup = kill_orphan_agents(
+                        store,
+                        run_id,
+                        list_live_pids=lambda: [4242],
+                        read_pid_environ=lambda _pid: {},
+                    )
+
+    assert cleanup.cleaned_pids == ()
+    assert cleanup.failed_pids == (4242,)
+
+
+def test_continue_run_preflight_ignores_unrelated_host_pids(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260822T072548-d8b8a8"
+    _create_run(store, run_id=run_id, phase=PLANNING)
+    provider = StubProvider()
+    provider.script_turn([{"type": "done", "subtype": "success", "text": "planning"}])
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+        observability=ObservabilityContext(run_id=run_id),
+    )
+    pids_patch, agents_patch = _use_real_orphan_scanners()
+
+    with pids_patch, agents_patch:
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup._default_list_live_pids",
+            return_value=[1, 81, 83],
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup.default_read_pid_environ",
+                return_value={},
+            ):
+                with patch(
+                    "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                    return_value="/sbin/launchd",
+                ):
+                    result = engine.continue_run(run_id, single_step=True)
+
+    run = store.load_run(run_id)
+    assert run["status"] != "failed"
+    assert (run.get("stop") or {}).get("code") != "orchestrator_invariant_failure"
+    assert "surviving agent processes" not in (result.reason or "")
 
 
 def test_scan_orphan_agent_pids_ignores_non_agent_command_with_matching_env() -> None:

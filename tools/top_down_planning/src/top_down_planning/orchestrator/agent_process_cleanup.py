@@ -219,14 +219,14 @@ def classify_pid_run_agent(
     read_env = read_environ or default_read_pid_environ
     if not is_pid_alive(pid) and is_pid_reaped(pid):
         return PidRunAgentMatch.CONFIRMED_DIFFERENT
+    command = _read_pid_cmdline(pid)
+    if not _looks_like_agent_command(command):
+        return PidRunAgentMatch.CONFIRMED_DIFFERENT
     environ = read_env(pid)
     env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
-    command = _read_pid_cmdline(pid)
-    if not env_run_id or not command:
+    if not env_run_id:
         return PidRunAgentMatch.UNVERIFIABLE
     if env_run_id != run_id:
-        return PidRunAgentMatch.CONFIRMED_DIFFERENT
-    if not _looks_like_agent_command(command):
         return PidRunAgentMatch.CONFIRMED_DIFFERENT
     if read_process_start_time(pid) is None:
         return PidRunAgentMatch.UNVERIFIABLE
@@ -291,10 +291,7 @@ def scan_orphan_agents(
         if pid in seen:
             return
         seen.add(pid)
-        if not is_pid_alive(pid):
-            if is_pid_reaped(pid):
-                return
-            unverifiable.append(pid)
+        if is_pid_reaped(pid):
             return
         match = classify_pid_run_agent(run_id, pid, read_environ=read_environ)
         if match == PidRunAgentMatch.UNVERIFIABLE:
