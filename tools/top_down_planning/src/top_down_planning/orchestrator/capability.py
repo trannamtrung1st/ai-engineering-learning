@@ -12,10 +12,12 @@ from top_down_planning.domain.capability_binding import (
 )
 from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.persistence.capabilities import (
+    capability_token_file_path,
     capability_token_value,
     clear_capability_token_file,
     ops_for_session,
     parse_capability_token,
+    read_capability_token_file,
     write_capability_token_file,
 )
 from top_down_planning.persistence.interface import RunStore
@@ -242,6 +244,53 @@ def bind_provider_capability(
         setter(token, token_file=token_file)
 
 
+def read_exported_live_capability_token(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    session_id: str,
+    session_kind: str,
+    loop_id: str | None = None,
+    session_instance_id: str | None = None,
+    generation: int | None = None,
+) -> str | None:
+    """Return the exported token when it is still live for the given binding."""
+
+    token = read_capability_token_file(capability_token_file_path(store, run_id))
+    if token is None:
+        return None
+    try:
+        token_id, _secret = parse_capability_token(token)
+    except ValueError:
+        return None
+    try:
+        record = store.load_capability(run_id, token_id)
+    except Exception:
+        return None
+    if record.get("revoked") is True:
+        return None
+    if str(record.get("role") or "") != role:
+        return None
+    if str(record.get("session_kind") or "") != session_kind:
+        return None
+    if str(record.get("session_id") or "").strip() != str(session_id).strip():
+        return None
+    if loop_id is not None and str(record.get("loop_id") or "").strip() != str(loop_id).strip():
+        return None
+    if (
+        session_instance_id is not None
+        and str(record.get("session_instance_id") or "").strip()
+        != str(session_instance_id).strip()
+    ):
+        return None
+    if generation is not None:
+        record_generation = record.get("generation")
+        if record_generation is None or int(record_generation) != int(generation):
+            return None
+    return token
+
+
 def rebind_primary_session_capability(
     store: RunStore,
     run_id: str,
@@ -260,15 +309,25 @@ def rebind_primary_session_capability(
     if not session_id or is_transient_provider_session_id(session_id):
         return None
 
-    token = issue_session_capability(
+    token = read_exported_live_capability_token(
         store,
         run_id,
         role=role,
-        phase=phase,
         session_id=session_id,
         session_kind="primary",
-        revoke_existing=True,
+        session_instance_id=binding.session_instance_id,
+        generation=binding.generation,
     )
+    if token is None:
+        token = issue_session_capability(
+            store,
+            run_id,
+            role=role,
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+            revoke_existing=True,
+        )
     bind_provider_capability(provider, token, store=store, run_id=run_id)
     return token
 
@@ -294,16 +353,27 @@ def rebind_reviewer_session_capability(
     if not session_id or is_transient_provider_session_id(session_id):
         return None
 
-    token = issue_session_capability(
+    token = read_exported_live_capability_token(
         store,
         run_id,
         role="reviewer",
-        phase=phase,
         session_id=session_id,
         session_kind="reviewer",
         loop_id=loop_id,
-        revoke_existing=True,
+        session_instance_id=binding.session_instance_id,
+        generation=binding.generation,
     )
+    if token is None:
+        token = issue_session_capability(
+            store,
+            run_id,
+            role="reviewer",
+            phase=phase,
+            session_id=session_id,
+            session_kind="reviewer",
+            loop_id=loop_id,
+            revoke_existing=True,
+        )
     bind_provider_capability(provider, token, store=store, run_id=run_id)
     return token
 
