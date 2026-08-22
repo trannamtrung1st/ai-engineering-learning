@@ -32,6 +32,7 @@ def test_resume_execution_allowlist_covers_all_limit_paths() -> None:
         path for path in ALLOWED_OVERRIDE_PATHS if path.startswith("limits.")
     }
     assert limit_paths == RESUME_EXECUTION_POLICY_ALLOWLIST
+    assert "limits.provider.max_stream_json_record_bytes" in RESUME_EXECUTION_POLICY_ALLOWLIST
 
 
 def test_resume_presentation_allowlist_matches_observability_notifications_and_runs_dir() -> None:
@@ -184,6 +185,14 @@ def test_resume_allows_provider_idle_timeout_override() -> None:
     comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
     assert comparison.ok
     assert candidate["limits"]["provider"]["turn_idle_timeout_seconds"] == 600
+
+
+def test_resume_allows_provider_stream_json_record_bytes_override() -> None:
+    stored = _base_config()
+    candidate = resolve_config(None, ["limits.provider.max_stream_json_record_bytes=2097152"])
+    comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
+    assert comparison.ok
+    assert candidate["limits"]["provider"]["max_stream_json_record_bytes"] == 2097152
 
 
 def test_resume_allows_presentation_change() -> None:

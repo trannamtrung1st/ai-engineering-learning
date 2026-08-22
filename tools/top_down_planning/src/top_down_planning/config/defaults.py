@@ -229,6 +229,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "provider": {
             "max_retries_per_call": 2,
             "turn_idle_timeout_seconds": 2.0,
+            "max_stream_json_record_bytes": 1048576,
         },
     },
 }
@@ -282,6 +283,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "limits.review.max_agent_turns_per_gate",
         "limits.provider.max_retries_per_call",
         "limits.provider.turn_idle_timeout_seconds",
+        "limits.provider.max_stream_json_record_bytes",
         "observability.log_level",
         "observability.log_format",
         "observability.color",

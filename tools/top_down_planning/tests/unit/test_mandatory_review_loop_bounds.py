@@ -58,6 +58,10 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
     provider_limits = DEFAULT_CONFIG["limits"]["provider"]
     assert provider_limits["max_retries_per_call"] == 2
     assert provider_limits["turn_idle_timeout_seconds"] == 2.0
+    assert provider_limits["max_stream_json_record_bytes"] == 1048576
+    assert (
+        "limits.provider.max_stream_json_record_bytes" in ALLOWED_OVERRIDE_PATHS
+    )
     assert plan_limits["max_revision_cycles"] == 5
     assert plan_limits["max_scope_review_rounds"] == 3
     assert "max_blocker_review_rounds" not in plan_limits
@@ -79,6 +83,15 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
 def test_config_schema_documents_review_gate_turn_limit() -> None:
     review_limits = show_schema("config")["properties"]["limits"]["properties"]["review"]
     assert "max_agent_turns_per_gate" in review_limits["properties"]
+
+
+def test_config_schema_documents_stream_json_record_limit() -> None:
+    provider = show_schema("config")["properties"]["limits"]["properties"]["provider"]
+    props = provider["properties"]
+    assert "max_stream_json_record_bytes" in props
+    assert props["max_stream_json_record_bytes"]["type"] == "integer"
+    assert props["max_stream_json_record_bytes"]["minimum"] == 1
+    assert props["max_stream_json_record_bytes"]["default"] == 1048576
 
 
 def test_config_schema_documents_scope_review_rounds() -> None:

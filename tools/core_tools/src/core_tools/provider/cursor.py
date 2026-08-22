@@ -84,6 +84,27 @@ MAX_STREAM_JSON_RECORD_BYTES = 256 * 1024
 _MAX_IDLE_RESCUE_BYTES = MAX_STREAM_JSON_RECORD_BYTES
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
+
+def max_stream_json_record_bytes(config: Mapping[str, Any] | None) -> int:
+    """Return the Cursor stream-json line cap from ``limits.provider``."""
+
+    if not isinstance(config, Mapping):
+        return MAX_STREAM_JSON_RECORD_BYTES
+    provider_limits = (config.get("limits") or {}).get("provider") or {}
+    if not isinstance(provider_limits, Mapping):
+        return MAX_STREAM_JSON_RECORD_BYTES
+    raw = provider_limits.get(
+        "max_stream_json_record_bytes",
+        MAX_STREAM_JSON_RECORD_BYTES,
+    )
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return MAX_STREAM_JSON_RECORD_BYTES
+    if value < 1:
+        return MAX_STREAM_JSON_RECORD_BYTES
+    return value
+
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 ProviderEventCallback = Callable[[dict[str, Any]], None]
 
@@ -190,6 +211,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         env: Mapping[str, str] | None = None,
         active_proc: list[subprocess.Popen[str] | None] | None = None,
         ready_timeout: float | None = None,
+        max_record_bytes: int | None = None,
     ) -> None:
         popen_kwargs: dict[str, Any] = {
             "cwd": str(cwd),
@@ -266,6 +288,17 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._finalized = False
         self._stdout_buf = bytearray()
         self._stdout_eof = False
+        try:
+            configured = (
+                MAX_STREAM_JSON_RECORD_BYTES
+                if max_record_bytes is None
+                else int(max_record_bytes)
+            )
+        except (TypeError, ValueError):
+            configured = MAX_STREAM_JSON_RECORD_BYTES
+        self._max_record_bytes = (
+            configured if configured >= 1 else MAX_STREAM_JSON_RECORD_BYTES
+        )
 
     def wait_agent_started(self, timeout: float | None = None) -> None:
         """Block until the janitor reports the real agent child was spawned."""
@@ -502,9 +535,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
         while True:
             if b"\n" in self._stdout_buf:
                 return True
-            if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
+            if len(self._stdout_buf) >= self._max_record_bytes:
                 raise ProviderStreamRecordTooLargeError(
-                    f"stream-json record exceeded {_MAX_IDLE_RESCUE_BYTES} bytes"
+                    f"stream-json record exceeded {self._max_record_bytes} bytes"
                 )
             remaining = (
                 None if idle_deadline is None else max(0.0, idle_deadline - time.monotonic())
@@ -528,9 +561,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
             if idle_deadline is None:
                 continue
             if remaining <= 0:
-                if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
+                if len(self._stdout_buf) >= self._max_record_bytes:
                     raise ProviderStreamRecordTooLargeError(
-                        f"stream-json record exceeded {_MAX_IDLE_RESCUE_BYTES} bytes"
+                        f"stream-json record exceeded {self._max_record_bytes} bytes"
                     )
                 return False
 
@@ -609,6 +642,7 @@ def default_process_runner(
     *,
     env: Mapping[str, str] | None = None,
     active_proc: list[subprocess.Popen[str] | None] | None = None,
+    max_record_bytes: int | None = None,
 ) -> Iterator[str]:
     """Run the Cursor CLI and yield stdout lines."""
 
@@ -617,6 +651,7 @@ def default_process_runner(
         cwd,
         env=env,
         active_proc=active_proc,
+        max_record_bytes=max_record_bytes,
     )
 
 
@@ -2484,6 +2519,7 @@ class CursorProvider:
                         env=turn_env,
                         active_proc=active_proc,
                         ready_timeout=self._agent_start_timeout_seconds(),
+                        max_record_bytes=max_stream_json_record_bytes(self._config),
                     )
                     stream = iterator
                 else:

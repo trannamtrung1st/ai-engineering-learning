@@ -1367,6 +1367,20 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "and is an explicit opt-out; the default is 2.0."
                                 ),
                             },
+                            "max_stream_json_record_bytes": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "default": 1048576,
+                                "description": (
+                                    "Maximum assembled Cursor stream-json line size "
+                                    "before the adapter fails the turn with "
+                                    "provider_turn_failed. TDP default 1048576 (1 MiB). "
+                                    "If the key is omitted from a raw CursorProvider "
+                                    "config, the adapter fallback is 262144 (256 KiB). "
+                                    "Values below 1 are ignored and the adapter fallback "
+                                    "is used."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -3212,8 +3226,9 @@ rejected — recreate the run; there is no migrator. Prefer snapshot excludes ov
 
 `digests.config_contract` binds approval-meaning configuration (input/output goal semantics,
 boundaries, acceptance, review policy, context declarations). `digests.config_execution`
-binds operational limits and execution budgets (including `limits.provider.max_retries_per_call`
-and `limits.provider.turn_idle_timeout_seconds` for Cursor stream idle detection).
+binds operational limits and execution budgets (including `limits.provider.max_retries_per_call`,
+`limits.provider.turn_idle_timeout_seconds` for Cursor stream idle detection, and
+`limits.provider.max_stream_json_record_bytes` for the assembled stream-json line cap).
 Approvals bind to `config_contract`, not
 `config_execution`. The monolithic `digests.config` field is not accepted on schema v3.
 

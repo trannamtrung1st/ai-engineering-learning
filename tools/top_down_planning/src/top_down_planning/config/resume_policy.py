@@ -58,6 +58,7 @@ RESUME_EXECUTION_POLICY_ALLOWLIST: frozenset[str] = frozenset(
     if path.startswith(_RESUME_LIMIT_PREFIXES)
     or path == "limits.provider.max_retries_per_call"
     or path == "limits.provider.turn_idle_timeout_seconds"
+    or path == "limits.provider.max_stream_json_record_bytes"
 )
 
 RESUME_PRESENTATION_ALLOWLIST: frozenset[str] = frozenset(

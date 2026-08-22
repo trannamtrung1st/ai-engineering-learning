@@ -68,7 +68,7 @@ Prefer **YAML + `--set path=value`**. Do not add dedicated `--param` flags that 
 
 `--set` is on `tdp run` and `tdp resume` only. Dedicated flags are for command routing (`--run`, `--until`, `--check`, `--allow-config-drift`), store bootstrap (`--runs-dir`), output mode (`--stream-json`), presentation toggles wired through `invocation.py` (`--log-level`, `--no-color`, `--no-notify`, `--agent-text`, …; see `cli/main.py` `_add_operational_flags`), or agent per-request args (`tdp agent … --depth`). Omitted presentation flags must not override YAML/`--set`.
 
-New config paths: `config/defaults.py` (`ALLOWED_OVERRIDE_PATHS`), `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; add `notifications.*` (and any other new presentation section) in `config/resume_policy.py`.
+New config paths: `config/defaults.py` (`ALLOWED_OVERRIDE_PATHS`), `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; add `notifications.*` (and any other new presentation section) in `config/resume_policy.py`. `limits.planning.*` and the other `_RESUME_LIMIT_PREFIXES` auto-join `RESUME_EXECUTION_POLICY_ALLOWLIST`; new `limits.provider.*` leaves need an explicit `or path == ...` there.
 
 ```bash
 tdp run --config cfg.yaml --set planning.max_depth=5

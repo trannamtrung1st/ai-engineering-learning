@@ -769,6 +769,11 @@ def test_config_package_all_exports_exist() -> None:
 
 def test_provider_idle_timeout_default_matches_documented_contract() -> None:
     assert DEFAULT_CONFIG["limits"]["provider"]["turn_idle_timeout_seconds"] == 2.0
+    assert DEFAULT_CONFIG["limits"]["provider"]["max_stream_json_record_bytes"] == 1048576
+    assert (
+        resolve_config(None)["limits"]["provider"]["max_stream_json_record_bytes"]
+        == 1048576
+    )
     readme = Path(__file__).resolve().parents[2] / "README.md"
     text = readme.read_text(encoding="utf-8")
     assert "default `0`, disabled" not in text
