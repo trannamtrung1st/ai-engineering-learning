@@ -10,6 +10,7 @@ import pytest
 
 from core_tools.provider.cursor import (
     MAX_STREAM_JSON_RECORD_BYTES,
+    _MAX_IDLE_RESCUE_BYTES,
     _SubprocessStdoutIterator,
     max_stream_json_record_bytes,
 )
@@ -143,6 +144,29 @@ def test_oversized_line_is_rejected_when_newline_crosses_the_cap(
     finally:
         terminate_process_tree(iterator._proc)
         iterator.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_exiting_oversized_flood_does_not_buffer_past_rescue_slack(
+    tmp_path: Path,
+) -> None:
+    """EOF drain must stop at the cap, not slurp the rest of a multi-chunk flood."""
+
+    record = (b"x" * (512 * 1024)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", _write_record_script(record)],
+        tmp_path,
+        max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
+    )
+    try:
+        # Janitor-bound poll() stays None until reap is allowed. Force the
+        # exit-drain path that Darwin CI hits once the janitor reports CLEAN.
+        iterator._proc.poll = lambda *args, **kwargs: 0
+        with pytest.raises(ProviderStreamRecordTooLargeError, match=str(MAX_STREAM_JSON_RECORD_BYTES)):
+            next(iterator)
+        assert len(iterator._stdout_buf) <= _MAX_IDLE_RESCUE_BYTES + 65536
+    finally:
+        close_and_reap_iterator(iterator)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")

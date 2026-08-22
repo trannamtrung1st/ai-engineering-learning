@@ -520,6 +520,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 restore_flags = None
         try:
             while True:
+                self._raise_if_current_record_too_large()
                 try:
                     chunk = os.read(fd, 65536)
                 except BlockingIOError:
@@ -529,9 +530,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     continue
                 except (OSError, ValueError):
                     self._stdout_eof = True
+                    self._raise_if_current_record_too_large()
                     return
                 if not chunk:
                     self._stdout_eof = True
+                    self._raise_if_current_record_too_large()
                     return
                 self._stdout_buf.extend(chunk)
         finally:
@@ -568,6 +571,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             before = len(self._stdout_buf)
             got = self._fill_stdout_buffer(remaining)
             if got:
+                self._raise_if_current_record_too_large()
                 if self._proc.poll() is not None and not self._stdout_eof:
                     self._drain_stdout_to_eof()
                 if self._stdout_eof or self._proc.poll() is not None:
