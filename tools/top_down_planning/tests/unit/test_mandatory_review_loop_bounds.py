@@ -92,6 +92,10 @@ def test_config_schema_documents_stream_json_record_limit() -> None:
     assert props["max_stream_json_record_bytes"]["type"] == "integer"
     assert props["max_stream_json_record_bytes"]["minimum"] == 1
     assert props["max_stream_json_record_bytes"]["default"] == 1048576
+    description = props["max_stream_json_record_bytes"]["description"]
+    assert "TDP configuration requires an integer >= 1" in description
+    assert "Raw CursorProvider" in description
+    assert "Values below 1 are ignored" not in description
 
 
 def test_config_schema_documents_scope_review_rounds() -> None:

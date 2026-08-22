@@ -1377,8 +1377,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "provider_turn_failed. TDP default 1048576 (1 MiB). "
                                     "If the key is omitted from a raw CursorProvider "
                                     "config, the adapter fallback is 262144 (256 KiB). "
-                                    "Values below 1 are ignored and the adapter fallback "
-                                    "is used."
+                                    "Raw CursorProvider configs with an invalid or "
+                                    "non-positive value fall back to 256 KiB; TDP "
+                                    "configuration requires an integer >= 1."
                                 ),
                             },
                         },
