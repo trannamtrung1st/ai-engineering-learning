@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core_tools.provider.process_cleanup import PidInspectState, inspect_pid_liveness
 from top_down_planning.cli.main import main
 from top_down_planning.orchestrator.agent_process_cleanup import OrphanScanResult
 
@@ -83,7 +84,13 @@ def _python_descendant_pids(root_pid: int) -> dict[int, str]:
     stack = list(by_parent.get(root_pid, ()))
     while stack:
         pid = stack.pop()
-        cmd = _process_command(pid) or commands.get(pid, "")
+        ps_cmd = commands.get(pid, "")
+        cmd = _process_command(pid) or ps_cmd
+        if "<defunct>" in ps_cmd.lower() or (
+            inspect_pid_liveness(pid) is PidInspectState.ZOMBIE
+        ):
+            stack.extend(by_parent.get(pid, ()))
+            continue
         if "python" in cmd.lower():
             found[pid] = cmd
         stack.extend(by_parent.get(pid, ()))
@@ -126,7 +133,10 @@ def assert_no_leftover_python_descendants():
         leftover = {
             pid: cmd
             for pid, cmd in _python_descendant_pids(parent).items()
-            if pid not in before and not _is_pytest_infrastructure(cmd)
+            if pid not in before
+            and not _is_pytest_infrastructure(cmd)
+            and inspect_pid_liveness(pid) is not PidInspectState.ZOMBIE
+            and "<defunct>" not in cmd.lower()
         }
         if not leftover or time.monotonic() >= deadline:
             break

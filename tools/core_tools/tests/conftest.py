@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from core_tools.provider.cursor import _TrackedTurnProc
+from core_tools.provider.process_cleanup import PidInspectState, inspect_pid_liveness
 from core_tools.provider.process_identity import ProcessIdentity
 
 
@@ -195,7 +196,11 @@ def _python_descendant_pids(root_pid: int) -> dict[int, str]:
     stack = list(by_parent.get(root_pid, ()))
     while stack:
         pid = stack.pop()
-        cmd = _process_command(pid) or commands.get(pid, "")
+        ps_cmd = commands.get(pid, "")
+        cmd = _process_command(pid) or ps_cmd
+        if _ignore_leftover_python_descendant(cmd, pid=pid) or "<defunct>" in ps_cmd.lower():
+            stack.extend(by_parent.get(pid, ()))
+            continue
         if "python" in cmd.lower():
             found[pid] = cmd
         stack.extend(by_parent.get(pid, ()))
@@ -227,11 +232,13 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
     )
 
 
-def _ignore_leftover_python_descendant(cmd: str) -> bool:
+def _ignore_leftover_python_descendant(cmd: str, pid: int | None = None) -> bool:
     """Ignore pytest helpers and already-dead zombies still visible in ``ps``."""
 
     lowered = cmd.lower()
     if "<defunct>" in lowered:
+        return True
+    if pid is not None and inspect_pid_liveness(pid) is PidInspectState.ZOMBIE:
         return True
     return _is_pytest_infrastructure(cmd)
 
@@ -337,7 +344,7 @@ def assert_no_leftover_python_descendants():
         leftover = {
             pid: cmd
             for pid, cmd in _python_descendant_pids(parent).items()
-            if pid not in before and not _ignore_leftover_python_descendant(cmd)
+            if pid not in before and not _ignore_leftover_python_descendant(cmd, pid=pid)
         }
         if not leftover or time.monotonic() >= deadline:
             break

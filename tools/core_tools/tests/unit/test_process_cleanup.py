@@ -24,6 +24,7 @@ from core_tools.provider.stub import StubProvider
 from tests.conftest import (
     _ignore_leftover_python_descendant,
     _is_pytest_infrastructure,
+    _python_descendant_pids,
     tracked_turn_proc,
     wait_published_pid,
 )
@@ -47,6 +48,41 @@ def test_leftover_scan_ignores_defunct_python_zombies() -> None:
     assert not _ignore_leftover_python_descendant(
         "python -c import time; time.sleep(60)"
     )
+
+
+def test_leftover_scan_ignores_zombie_pid_with_live_looking_cmdline(monkeypatch) -> None:
+    from core_tools.provider.process_cleanup import PidInspectState
+
+    monkeypatch.setattr(
+        "tests.conftest.inspect_pid_liveness",
+        lambda pid, timeout=None: PidInspectState.ZOMBIE,
+    )
+    assert _ignore_leftover_python_descendant(
+        "python -c import time; time.sleep(60)",
+        pid=4242,
+    )
+
+
+def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
+    from core_tools.provider.process_cleanup import PidInspectState
+
+    parent = 1000
+    zombie = 2000
+    monkeypatch.setattr(
+        "tests.conftest.subprocess.check_output",
+        lambda *_args, **_kwargs: (
+            f"{zombie} {parent} python -c import time; time.sleep(60)\n"
+        ),
+    )
+    monkeypatch.setattr(
+        "tests.conftest._process_command",
+        lambda _pid: "python -c import time; time.sleep(60)",
+    )
+    monkeypatch.setattr(
+        "tests.conftest.inspect_pid_liveness",
+        lambda pid, timeout=None: PidInspectState.ZOMBIE,
+    )
+    assert _python_descendant_pids(parent) == {}
 
 
 def test_wait_published_pid_ignores_empty_file_until_integer(tmp_path: Path) -> None:

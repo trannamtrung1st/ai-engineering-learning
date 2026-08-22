@@ -100,7 +100,7 @@ def test_stream_events_reaps_janitor_when_turn_completes(tmp_path: Path) -> None
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor wait")
 def test_fast_stream_events_loop_leaves_no_zombie_descendants(tmp_path: Path) -> None:
-    from tests.conftest import _is_pytest_infrastructure, _python_descendant_pids
+    from tests.conftest import _ignore_leftover_python_descendant, _python_descendant_pids
 
     parent = os.getpid()
     before = set(_python_descendant_pids(parent))
@@ -140,7 +140,8 @@ def test_fast_stream_events_loop_leaves_no_zombie_descendants(tmp_path: Path) ->
             leftover = {
                 pid: cmd
                 for pid, cmd in _python_descendant_pids(parent).items()
-                if pid not in before and not _is_pytest_infrastructure(cmd)
+                if pid not in before
+                and not _ignore_leftover_python_descendant(cmd, pid=pid)
             }
             assert leftover == {}, leftover
     assert len(spawned) == 20
