@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -275,14 +278,30 @@ def test_second_record_is_rejected_after_valid_prefix_on_exit_drain(
         close_and_reap_iterator(iterator)
 
 
-def _wait_until_exited(proc, timeout: float = 0.1) -> bool:
-    """Use the raw Popen poll; the janitor wrapper stays None until status arrives."""
+def _wait_until_exited(proc, timeout: float = 0.35) -> bool:
+    """Treat a reaped or zombie writer as gone; wrapped poll stays None until status."""
+
+    from core_tools.provider.process_cleanup import is_pid_alive
 
     raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
     deadline = time.monotonic() + timeout
-    while raw_poll() is None and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        if callable(raw_poll):
+            try:
+                if raw_poll() is not None:
+                    return True
+            except Exception:
+                pass
+        if proc.pid is not None and not is_pid_alive(proc.pid):
+            return True
         time.sleep(0.01)
-    return raw_poll() is not None
+    if callable(raw_poll):
+        try:
+            if raw_poll() is not None:
+                return True
+        except Exception:
+            pass
+    return bool(proc.pid is not None and not is_pid_alive(proc.pid))
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
@@ -326,6 +345,71 @@ def test_rejected_second_record_does_not_leave_a_blocked_writer(
         assert _wait_until_exited(iterator._proc)
     finally:
         close_and_reap_iterator(iterator)
+
+
+def _exited_iterator_with_buffered_record(
+    tmp_path: Path, record: bytes, *, cap: int
+) -> _SubprocessStdoutIterator:
+    """Buffer a complete record after the owned writer/janitor has been reaped."""
+
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        tmp_path,
+        max_record_bytes=cap,
+    )
+    iterator._stdout_buf.extend(record)
+    close_and_reap_iterator(iterator)
+    iterator._finished = False
+    iterator._stdout_eof = True
+    return iterator
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_exited_oversized_record_is_rejected_without_group_kill(
+    tmp_path: Path,
+) -> None:
+    cap = 64
+    record = (b"z" * (cap + 10)) + b"\n"
+    iterator = _exited_iterator_with_buffered_record(tmp_path, record, cap=cap)
+    try:
+        killpg_calls: list[tuple[int, int]] = []
+        with patch(
+            "core_tools.provider.cursor.os.killpg",
+            side_effect=lambda pgid, sig: killpg_calls.append((pgid, sig)),
+        ):
+            with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+                next(iterator)
+        assert killpg_calls == []
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_stale_cached_pgid_is_not_signaled_after_writer_exits(
+    tmp_path: Path,
+) -> None:
+    victim = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    cap = 64
+    record = (b"z" * (cap + 10)) + b"\n"
+    iterator = _exited_iterator_with_buffered_record(tmp_path, record, cap=cap)
+    try:
+        iterator._proc._core_tools_session_pgid = victim.pid
+        with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+            next(iterator)
+        assert victim.poll() is None
+    finally:
+        close_and_reap_iterator(iterator)
+        if victim.poll() is None:
+            try:
+                os.killpg(victim.pid, 9)
+            except OSError:
+                pass
+            victim.wait(timeout=1)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")

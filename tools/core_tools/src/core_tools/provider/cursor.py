@@ -6,7 +6,6 @@ import json
 import os
 import queue
 import select
-import signal
 import shutil
 import subprocess
 import sys
@@ -300,6 +299,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._max_record_bytes = (
             configured if configured >= 1 else MAX_STREAM_JSON_RECORD_BYTES
         )
+        self._leader_identity = (
+            read_process_identity(self._proc.pid)
+            if self._proc.pid is not None
+            else None
+        )
 
     def wait_agent_started(self, timeout: float | None = None) -> None:
         """Block until the janitor reports the real agent child was spawned."""
@@ -499,8 +503,33 @@ class _SubprocessStdoutIterator(Iterator[str]):
         start = self._incomplete_tail_start()
         return (len(self._stdout_buf) - start) >= self._max_record_bytes
 
+    def _writer_still_live(self) -> bool:
+        proc = getattr(self, "_proc", None)
+        if proc is None or proc.pid is None:
+            return False
+        raw_poll = getattr(proc, "_core_tools_raw_poll", None)
+        if callable(raw_poll):
+            try:
+                if raw_poll() is not None:
+                    return False
+            except Exception:
+                pass
+        return is_pid_alive(proc.pid)
+
+    def _reap_writer_if_exited(self) -> None:
+        proc = getattr(self, "_proc", None)
+        if proc is None:
+            return
+        raw_wait = getattr(proc, "_core_tools_raw_wait", None)
+        if not callable(raw_wait):
+            return
+        try:
+            raw_wait(timeout=0)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
     def _abandon_stdout_after_record_cap(self) -> None:
-        """Stop reading and kill the writer so a flood cannot pin the session."""
+        """Stop reading and terminate a still-owned live writer, never a stale PGID."""
 
         self._stdout_eof = True
         stdout = getattr(self._proc, "stdout", None)
@@ -512,18 +541,34 @@ class _SubprocessStdoutIterator(Iterator[str]):
         proc = getattr(self, "_proc", None)
         if proc is None or sys.platform == "win32":
             return
-        pgid = getattr(proc, "_core_tools_session_pgid", None)
-        if pgid is None and proc.pid:
-            try:
-                pgid = os.getpgid(proc.pid)
-            except OSError:
-                pgid = proc.pid
-        if pgid is None:
+        if not self._writer_still_live():
+            self._reap_writer_if_exited()
             return
-        try:
-            os.killpg(int(pgid), signal.SIGKILL)
-        except OSError:
-            pass
+        identity = self._leader_identity
+        if identity is None or identity.pid != proc.pid:
+            identity = read_process_identity(proc.pid, timeout=0.05)
+        if identity is None:
+            self._reap_writer_if_exited()
+            return
+        if inspect_process_identity(identity, timeout=0.05) is not (
+            IdentityInspectState.LIVE_MATCH
+        ):
+            self._reap_writer_if_exited()
+            return
+        live_pgid = read_process_group_id(identity.pid, timeout=0.05)
+        cached_pgid = getattr(proc, "_core_tools_session_pgid", None)
+        if live_pgid is None or live_pgid <= 0:
+            self._reap_writer_if_exited()
+            return
+        if isinstance(cached_pgid, int) and cached_pgid > 0 and live_pgid != cached_pgid:
+            return
+        terminate_verified_process_identity(
+            identity,
+            proc=proc,
+            pgid=live_pgid,
+            timeout=0.35,
+        )
+        self._reap_writer_if_exited()
 
     def _raise_if_current_record_too_large(self) -> None:
         """Refuse the record currently being assembled if it exceeds the cap.
