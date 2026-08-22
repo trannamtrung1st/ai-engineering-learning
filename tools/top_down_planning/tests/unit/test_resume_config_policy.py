@@ -195,6 +195,16 @@ def test_resume_allows_provider_stream_json_record_bytes_override() -> None:
     assert candidate["limits"]["provider"]["max_stream_json_record_bytes"] == 2097152
 
 
+def test_resume_allows_introducing_stream_json_record_limit_when_stored_omits_key() -> None:
+    stored = copy.deepcopy(_base_config())
+    del stored["limits"]["provider"]["max_stream_json_record_bytes"]
+    candidate = resolve_config(None)
+    comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
+    assert comparison.ok
+    assert comparison.execution_digest_changed is True
+    assert candidate["limits"]["provider"]["max_stream_json_record_bytes"] == 1048576
+
+
 def test_resume_allows_presentation_change() -> None:
     stored = _base_config()
     candidate = resolve_config(None, ["observability.log_level=verbose"])

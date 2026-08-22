@@ -291,7 +291,10 @@ def _validate_execution_change(
 ) -> str | None:
     stored = change.stored_value
     candidate = change.candidate_value
-    if not _is_numeric_limit_value(stored) or not _is_numeric_limit_value(candidate):
+    introducing_numeric_limit = stored is None and _is_numeric_limit_value(candidate)
+    if not introducing_numeric_limit and (
+        not _is_numeric_limit_value(stored) or not _is_numeric_limit_value(candidate)
+    ):
         return (
             f"resume config change for {change.path!r} requires numeric limits; "
             f"got stored={stored!r}, candidate={candidate!r}"

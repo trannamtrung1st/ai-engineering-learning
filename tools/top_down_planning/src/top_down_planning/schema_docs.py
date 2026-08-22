@@ -1373,13 +1373,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "default": 1048576,
                                 "description": (
                                     "Maximum assembled Cursor stream-json line size "
-                                    "before the adapter fails the turn with "
-                                    "provider_turn_failed. TDP default 1048576 (1 MiB). "
-                                    "If the key is omitted from a raw CursorProvider "
-                                    "config, the adapter fallback is 262144 (256 KiB). "
-                                    "Raw CursorProvider configs with an invalid or "
-                                    "non-positive value fall back to 256 KiB; TDP "
-                                    "configuration requires an integer >= 1."
+                                    "(including the terminating newline) before the "
+                                    "adapter fails the turn with provider_turn_failed. "
+                                    "TDP default 1048576 (1 MiB). If the key is omitted "
+                                    "from a raw CursorProvider config, or the value is "
+                                    "invalid or non-positive, the adapter fallback is "
+                                    "262144 (256 KiB). TDP configuration requires an "
+                                    "integer >= 1."
                                 ),
                             },
                         },
@@ -3229,7 +3229,7 @@ rejected — recreate the run; there is no migrator. Prefer snapshot excludes ov
 boundaries, acceptance, review policy, context declarations). `digests.config_execution`
 binds operational limits and execution budgets (including `limits.provider.max_retries_per_call`,
 `limits.provider.turn_idle_timeout_seconds` for Cursor stream idle detection, and
-`limits.provider.max_stream_json_record_bytes` for the assembled stream-json line cap).
+`limits.provider.max_stream_json_record_bytes` for the assembled stream-json line cap, including the terminating newline).
 Approvals bind to `config_contract`, not
 `config_execution`. The monolithic `digests.config` field is not accepted on schema v3.
 
