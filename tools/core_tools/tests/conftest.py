@@ -178,18 +178,23 @@ def reap_process_group(
 
 def _python_descendant_pids(root_pid: int) -> dict[int, str]:
     output = subprocess.check_output(
-        ["ps", "-axww", "-o", "pid=,ppid=,command="],
+        ["ps", "-axww", "-o", "pid=,ppid=,state=,command="],
         text=True,
     )
     by_parent: dict[int, list[int]] = {}
     commands: dict[int, str] = {}
+    states: dict[int, str] = {}
     for line in output.splitlines():
-        parts = line.strip().split(None, 2)
+        parts = line.strip().split(None, 3)
         if len(parts) < 3:
             continue
-        pid = int(parts[0])
-        ppid = int(parts[1])
-        commands[pid] = parts[2]
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+        except ValueError:
+            continue
+        states[pid] = parts[2]
+        commands[pid] = parts[3] if len(parts) > 3 else ""
         by_parent.setdefault(ppid, []).append(pid)
     found: dict[int, str] = {}
     stack = list(by_parent.get(root_pid, ()))
@@ -197,7 +202,12 @@ def _python_descendant_pids(root_pid: int) -> dict[int, str]:
         pid = stack.pop()
         ps_cmd = commands.get(pid, "")
         cmd = _process_command(pid) or ps_cmd
-        if _ignore_leftover_python_descendant(cmd, pid=pid, ps_cmd=ps_cmd):
+        if _ignore_leftover_python_descendant(
+            cmd,
+            pid=pid,
+            ps_cmd=ps_cmd,
+            ps_state=states.get(pid, ""),
+        ):
             stack.extend(by_parent.get(pid, ()))
             continue
         if "python" in cmd.lower():
@@ -250,10 +260,13 @@ def _ignore_leftover_python_descendant(
     cmd: str,
     pid: int | None = None,
     ps_cmd: str = "",
+    ps_state: str = "",
 ) -> bool:
     """Ignore pytest helpers and already-dead zombies still visible in ``ps``."""
 
     if "<defunct>" in cmd.lower() or "<defunct>" in ps_cmd.lower():
+        return True
+    if str(ps_state).lstrip()[:1].upper() == "Z":
         return True
     if pid is not None and _linux_stat_is_zombie(pid):
         return True

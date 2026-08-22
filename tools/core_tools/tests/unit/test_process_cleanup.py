@@ -58,13 +58,32 @@ def test_leftover_scan_ignores_zombie_pid_with_live_looking_cmdline(monkeypatch)
     )
 
 
+def test_leftover_scan_ignores_ps_zombie_state_without_proc(monkeypatch) -> None:
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    assert _ignore_leftover_python_descendant(
+        "python -c import time; time.sleep(60)",
+        pid=4242,
+        ps_state="Z",
+    )
+    assert _ignore_leftover_python_descendant(
+        "python -c import time; time.sleep(60)",
+        pid=4242,
+        ps_state="Z+",
+    )
+    assert not _ignore_leftover_python_descendant(
+        "python -c import time; time.sleep(60)",
+        pid=4242,
+        ps_state="S",
+    )
+
+
 def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
     parent = 1000
     zombie = 2000
     monkeypatch.setattr(
         "tests.conftest.subprocess.check_output",
         lambda *_args, **_kwargs: (
-            f"{zombie} {parent} python -c import time; time.sleep(60)\n"
+            f"{zombie} {parent} S python -c import time; time.sleep(60)\n"
         ),
     )
     monkeypatch.setattr(
@@ -73,6 +92,38 @@ def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
     )
     monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda pid: pid == zombie)
     assert _python_descendant_pids(parent) == {}
+
+
+def test_python_descendant_scan_omits_darwin_zombies_without_proc_stat(
+    monkeypatch,
+) -> None:
+    parent = 1000
+    zombie = 2000
+    monkeypatch.setattr(
+        "tests.conftest.subprocess.check_output",
+        lambda *_args, **_kwargs: (
+            f"{zombie} {parent} Z+ python -c import time; time.sleep(60)\n"
+        ),
+    )
+    monkeypatch.setattr(
+        "tests.conftest._process_command",
+        lambda _pid: "python -c import time; time.sleep(60)",
+    )
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    assert _python_descendant_pids(parent) == {}
+
+
+def test_python_descendant_scan_keeps_live_python_child(monkeypatch) -> None:
+    parent = 1000
+    child = 2001
+    command = "python -c import time; time.sleep(60)"
+    monkeypatch.setattr(
+        "tests.conftest.subprocess.check_output",
+        lambda *_args, **_kwargs: f"{child} {parent} S {command}\n",
+    )
+    monkeypatch.setattr("tests.conftest._process_command", lambda _pid: command)
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    assert _python_descendant_pids(parent) == {child: command}
 
 
 def test_wait_published_pid_ignores_empty_file_until_integer(tmp_path: Path) -> None:
