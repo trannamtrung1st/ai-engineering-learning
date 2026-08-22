@@ -51,12 +51,7 @@ def test_leftover_scan_ignores_defunct_python_zombies() -> None:
 
 
 def test_leftover_scan_ignores_zombie_pid_with_live_looking_cmdline(monkeypatch) -> None:
-    from core_tools.provider.process_cleanup import PidInspectState
-
-    monkeypatch.setattr(
-        "tests.conftest.inspect_pid_liveness",
-        lambda pid, timeout=None: PidInspectState.ZOMBIE,
-    )
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda pid: pid == 4242)
     assert _ignore_leftover_python_descendant(
         "python -c import time; time.sleep(60)",
         pid=4242,
@@ -64,8 +59,6 @@ def test_leftover_scan_ignores_zombie_pid_with_live_looking_cmdline(monkeypatch)
 
 
 def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
-    from core_tools.provider.process_cleanup import PidInspectState
-
     parent = 1000
     zombie = 2000
     monkeypatch.setattr(
@@ -78,10 +71,7 @@ def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
         "tests.conftest._process_command",
         lambda _pid: "python -c import time; time.sleep(60)",
     )
-    monkeypatch.setattr(
-        "tests.conftest.inspect_pid_liveness",
-        lambda pid, timeout=None: PidInspectState.ZOMBIE,
-    )
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda pid: pid == zombie)
     assert _python_descendant_pids(parent) == {}
 
 

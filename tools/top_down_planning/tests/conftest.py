@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import pytest
 
-from core_tools.provider.process_cleanup import PidInspectState, inspect_pid_liveness
 from top_down_planning.cli.main import main
 from top_down_planning.orchestrator.agent_process_cleanup import OrphanScanResult
 
@@ -86,15 +85,32 @@ def _python_descendant_pids(root_pid: int) -> dict[int, str]:
         pid = stack.pop()
         ps_cmd = commands.get(pid, "")
         cmd = _process_command(pid) or ps_cmd
-        if "<defunct>" in ps_cmd.lower() or (
-            inspect_pid_liveness(pid) is PidInspectState.ZOMBIE
-        ):
+        if _leftover_python_is_zombie(pid, cmd, ps_cmd):
             stack.extend(by_parent.get(pid, ()))
             continue
         if "python" in cmd.lower():
             found[pid] = cmd
         stack.extend(by_parent.get(pid, ()))
     return found
+
+
+def _linux_stat_is_zombie(pid: int) -> bool:
+    path = Path(f"/proc/{pid}/stat")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    right_paren = text.rfind(")")
+    if right_paren == -1:
+        return False
+    fields = text[right_paren + 2 :].split()
+    return bool(fields) and fields[0][:1] == "Z"
+
+
+def _leftover_python_is_zombie(pid: int, cmd: str, ps_cmd: str) -> bool:
+    if "<defunct>" in cmd.lower() or "<defunct>" in ps_cmd.lower():
+        return True
+    return _linux_stat_is_zombie(pid)
 
 
 def _process_command(pid: int) -> str:
@@ -135,8 +151,7 @@ def assert_no_leftover_python_descendants():
             for pid, cmd in _python_descendant_pids(parent).items()
             if pid not in before
             and not _is_pytest_infrastructure(cmd)
-            and inspect_pid_liveness(pid) is not PidInspectState.ZOMBIE
-            and "<defunct>" not in cmd.lower()
+            and not _leftover_python_is_zombie(pid, cmd, cmd)
         }
         if not leftover or time.monotonic() >= deadline:
             break

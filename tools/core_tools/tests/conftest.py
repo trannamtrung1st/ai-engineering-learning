@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from core_tools.provider.cursor import _TrackedTurnProc
-from core_tools.provider.process_cleanup import PidInspectState, inspect_pid_liveness
 from core_tools.provider.process_identity import ProcessIdentity
 
 
@@ -198,7 +197,7 @@ def _python_descendant_pids(root_pid: int) -> dict[int, str]:
         pid = stack.pop()
         ps_cmd = commands.get(pid, "")
         cmd = _process_command(pid) or ps_cmd
-        if _ignore_leftover_python_descendant(cmd, pid=pid) or "<defunct>" in ps_cmd.lower():
+        if _ignore_leftover_python_descendant(cmd, pid=pid, ps_cmd=ps_cmd):
             stack.extend(by_parent.get(pid, ()))
             continue
         if "python" in cmd.lower():
@@ -232,13 +231,31 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
     )
 
 
-def _ignore_leftover_python_descendant(cmd: str, pid: int | None = None) -> bool:
+def _linux_stat_is_zombie(pid: int) -> bool:
+    """Return whether ``/proc/<pid>/stat`` reports an unreaped zombie."""
+
+    path = Path(f"/proc/{pid}/stat")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    right_paren = text.rfind(")")
+    if right_paren == -1:
+        return False
+    fields = text[right_paren + 2 :].split()
+    return bool(fields) and fields[0][:1] == "Z"
+
+
+def _ignore_leftover_python_descendant(
+    cmd: str,
+    pid: int | None = None,
+    ps_cmd: str = "",
+) -> bool:
     """Ignore pytest helpers and already-dead zombies still visible in ``ps``."""
 
-    lowered = cmd.lower()
-    if "<defunct>" in lowered:
+    if "<defunct>" in cmd.lower() or "<defunct>" in ps_cmd.lower():
         return True
-    if pid is not None and inspect_pid_liveness(pid) is PidInspectState.ZOMBIE:
+    if pid is not None and _linux_stat_is_zombie(pid):
         return True
     return _is_pytest_infrastructure(cmd)
 
@@ -344,7 +361,8 @@ def assert_no_leftover_python_descendants():
         leftover = {
             pid: cmd
             for pid, cmd in _python_descendant_pids(parent).items()
-            if pid not in before and not _ignore_leftover_python_descendant(cmd, pid=pid)
+            if pid not in before
+            and not _ignore_leftover_python_descendant(cmd, pid=pid)
         }
         if not leftover or time.monotonic() >= deadline:
             break
