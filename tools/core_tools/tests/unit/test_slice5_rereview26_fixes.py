@@ -150,21 +150,29 @@ def test_concurrent_wait_does_not_reap_while_status_read_pending() -> None:
     assert proc.wait_calls == 1
 
 
-def test_wait_deducts_status_read_from_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A 0.2s wait budget must shrink by status-read time before raw_wait."""
-
-    clock = {"now": 1000.0}
+def _controlled_monotonic(
+    monkeypatch: pytest.MonkeyPatch, *, start: float = 1000.0
+) -> dict[str, float]:
+    clock = {"now": start}
 
     def fake_monotonic() -> float:
         return clock["now"]
 
     monkeypatch.setattr("core_tools.provider.session_janitor.time.monotonic", fake_monotonic)
+    return clock
+
+
+def test_wait_deducts_status_read_from_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 0.2s wait budget must shrink by status-read time before raw_wait."""
+
+    clock = _controlled_monotonic(monkeypatch)
     status_r, status_w = _pipe()
     proc = _FakeProc()
     owner = JanitorStatusOwner(status_r)
+    read_timeouts: list[float] = []
 
     def consume_then_clean(*, timeout: float) -> dict[str, object]:
-        del timeout
+        read_timeouts.append(timeout)
         clock["now"] += 0.15
         status = {
             "agent_code": 0,
@@ -178,6 +186,7 @@ def test_wait_deducts_status_read_from_one_deadline(monkeypatch: pytest.MonkeyPa
     owner.bind(proc)
     try:
         assert proc.wait(timeout=0.2) == 0
+        assert read_timeouts == [pytest.approx(0.2)]
         assert proc.wait_calls == 1
         assert proc.wait_timeouts == [pytest.approx(0.05)]
         assert proc.wait_timeouts[0] != 0.2
@@ -191,25 +200,24 @@ def test_wait_timeout_does_not_call_raw_wait_when_status_never_clean(
 ) -> None:
     """If status never becomes CLEAN, wait times out and must not reap via raw_wait."""
 
-    clock = {"now": 1000.0}
-
-    def fake_monotonic() -> float:
-        return clock["now"]
-
-    monkeypatch.setattr("core_tools.provider.session_janitor.time.monotonic", fake_monotonic)
+    clock = _controlled_monotonic(monkeypatch)
     status_r, status_w = _pipe()
     proc = _FakeProc()
     owner = JanitorStatusOwner(status_r)
+    read_timeouts: list[float] = []
 
     def consume_budget(*, timeout: float) -> None:
+        read_timeouts.append(timeout)
         clock["now"] += max(0.0, timeout)
         return None
 
     owner.read = consume_budget  # type: ignore[method-assign]
     owner.bind(proc)
     try:
-        with pytest.raises(subprocess.TimeoutExpired):
+        with pytest.raises(subprocess.TimeoutExpired) as exc_info:
             proc.wait(timeout=0.2)
+        assert exc_info.value.timeout == 0.2
+        assert read_timeouts == [pytest.approx(0.2)]
         assert proc.wait_calls == 0
         assert proc.wait_timeouts == []
         assert proc.reaped is False
