@@ -330,25 +330,26 @@ def test_prepared_create_survives_inherited_review_write_failure(tmp_path: Path)
     def reuse_drive(self, child_store, child_run_id, **kwargs):
         return PreparedChildResult.from_run(child_store.load_run(child_run_id), ok=True)
 
-    with (
-        patch("top_down_planning.persistence.file_store.atomic_write_json", fail_review_stage),
-        patch.object(PreparedUnitExecutor, "drive_child_run", reuse_drive),
-    ):
-        first = run_cli(argv)
-    leftover = _run_dirs(tmp_path / "runs")
-    store = FileRunStore(tmp_path / "runs")
-    children = []
-    for path in leftover:
-        try:
-            run = store.load_run(path.name)
-        except Exception:
-            continue
-        if str(run.get("run_kind") or "") == "sub_tdp_execution":
-            children.append(path.name)
-    _assert_no_traceback(first)
-    assert first.exit_code != 0
-    assert children == []
-    second = run_cli(argv)
+    with patch.object(PreparedUnitExecutor, "drive_child_run", reuse_drive):
+        with patch(
+            "top_down_planning.persistence.file_store.atomic_write_json",
+            fail_review_stage,
+        ):
+            first = run_cli(argv)
+        leftover = _run_dirs(tmp_path / "runs")
+        store = FileRunStore(tmp_path / "runs")
+        children = []
+        for path in leftover:
+            try:
+                run = store.load_run(path.name)
+            except Exception:
+                continue
+            if str(run.get("run_kind") or "") == "sub_tdp_execution":
+                children.append(path.name)
+        _assert_no_traceback(first)
+        assert first.exit_code != 0
+        assert children == []
+        second = run_cli(argv)
     _assert_no_traceback(second)
     after = [
         path.name

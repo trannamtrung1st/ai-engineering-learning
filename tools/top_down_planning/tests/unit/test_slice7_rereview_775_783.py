@@ -522,31 +522,32 @@ def test_prepared_create_rolls_back_when_inherited_review_staging_fails(
             raise PersistenceError("review stage failed")
         return real_write(path, payload, **kwargs)
 
-    with (
-        patch("top_down_planning.persistence.file_store.atomic_write_json", fail_review_stage),
-        patch.object(
-            PreparedUnitExecutor,
-            "drive_child_run",
-            lambda self, child_store, child_run_id, **kwargs: PreparedChildResult.from_run(
-                child_store.load_run(child_run_id), ok=True
-            ),
+    with patch.object(
+        PreparedUnitExecutor,
+        "drive_child_run",
+        lambda self, child_store, child_run_id, **kwargs: PreparedChildResult.from_run(
+            child_store.load_run(child_run_id), ok=True
         ),
     ):
-        first = run_cli(argv)
-    leftover = _run_dirs(tmp_path / "runs")
-    children = []
-    store = FileRunStore(tmp_path / "runs")
-    for path in leftover:
-        try:
-            run = store.load_run(path.name)
-        except Exception:
-            continue
-        if str(run.get("run_kind") or "") == RUN_KIND_SUB_TDP_EXECUTION:
-            children.append(path.name)
-    _assert_no_traceback(first)
-    assert first.exit_code != 0
-    assert children == []
-    second = run_cli(argv)
+        with patch(
+            "top_down_planning.persistence.file_store.atomic_write_json",
+            fail_review_stage,
+        ):
+            first = run_cli(argv)
+        leftover = _run_dirs(tmp_path / "runs")
+        children = []
+        store = FileRunStore(tmp_path / "runs")
+        for path in leftover:
+            try:
+                run = store.load_run(path.name)
+            except Exception:
+                continue
+            if str(run.get("run_kind") or "") == RUN_KIND_SUB_TDP_EXECUTION:
+                children.append(path.name)
+        _assert_no_traceback(first)
+        assert first.exit_code != 0
+        assert children == []
+        second = run_cli(argv)
     _assert_no_traceback(second)
     after = [
         path.name
