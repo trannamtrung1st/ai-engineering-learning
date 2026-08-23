@@ -61,6 +61,7 @@ class _FakeProc:
         self.reaped = False
         self.killed = False
         self.wait_calls = 0
+        self.wait_timeouts: list[float | None] = []
 
     def poll(self) -> int | None:
         self.reaped = True
@@ -68,6 +69,7 @@ class _FakeProc:
 
     def wait(self, timeout: float | None = None) -> int:
         self.wait_calls += 1
+        self.wait_timeouts.append(timeout)
         self.reaped = True
         return 0
 
@@ -148,19 +150,72 @@ def test_concurrent_wait_does_not_reap_while_status_read_pending() -> None:
     assert proc.wait_calls == 1
 
 
-def test_wait_timeout_uses_one_wall_clock_budget() -> None:
+def test_wait_deducts_status_read_from_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 0.2s wait budget must shrink by status-read time before raw_wait."""
+
+    clock = {"now": 1000.0}
+
+    def fake_monotonic() -> float:
+        return clock["now"]
+
+    monkeypatch.setattr("core_tools.provider.session_janitor.time.monotonic", fake_monotonic)
     status_r, status_w = _pipe()
     proc = _FakeProc()
     owner = JanitorStatusOwner(status_r)
+
+    def consume_then_clean(*, timeout: float) -> dict[str, object]:
+        del timeout
+        clock["now"] += 0.15
+        status = {
+            "agent_code": 0,
+            "drain": DrainResult.CLEAN.value,
+            "stop_requested": True,
+        }
+        owner.mark_safe_fallback(status)
+        return status
+
+    owner.read = consume_then_clean  # type: ignore[method-assign]
     owner.bind(proc)
-    started = time.monotonic()
-    with pytest.raises(subprocess.TimeoutExpired):
-        proc.wait(timeout=0.2)
-    elapsed = time.monotonic() - started
-    os.close(status_w)
-    os.close(status_r)
-    assert elapsed < 0.35
-    assert proc.reaped is False
+    try:
+        assert proc.wait(timeout=0.2) == 0
+        assert proc.wait_calls == 1
+        assert proc.wait_timeouts == [pytest.approx(0.05)]
+        assert proc.wait_timeouts[0] != 0.2
+    finally:
+        os.close(status_w)
+        os.close(status_r)
+
+
+def test_wait_timeout_does_not_call_raw_wait_when_status_never_clean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If status never becomes CLEAN, wait times out and must not reap via raw_wait."""
+
+    clock = {"now": 1000.0}
+
+    def fake_monotonic() -> float:
+        return clock["now"]
+
+    monkeypatch.setattr("core_tools.provider.session_janitor.time.monotonic", fake_monotonic)
+    status_r, status_w = _pipe()
+    proc = _FakeProc()
+    owner = JanitorStatusOwner(status_r)
+
+    def consume_budget(*, timeout: float) -> None:
+        clock["now"] += max(0.0, timeout)
+        return None
+
+    owner.read = consume_budget  # type: ignore[method-assign]
+    owner.bind(proc)
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            proc.wait(timeout=0.2)
+        assert proc.wait_calls == 0
+        assert proc.wait_timeouts == []
+        assert proc.reaped is False
+    finally:
+        os.close(status_w)
+        os.close(status_r)
 
 
 def test_close_does_not_release_poll_barrier_while_reader_inflight() -> None:
