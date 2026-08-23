@@ -108,16 +108,18 @@ def test_configured_record_limit_accepts_line_under_cap(tmp_path: Path) -> None:
         close_and_reap_iterator(iterator)
 
 
-def _write_payload_argv(tmp_path: Path, payload: bytes) -> list[str]:
+def _write_payload_argv(tmp_path: Path, payload: bytes, *, hold: bool = False) -> list[str]:
     """Run a file-backed writer so large records are not passed on argv."""
 
     blob = tmp_path / "records.bin"
     blob.write_bytes(payload)
     script = tmp_path / "write_records.py"
+    hold_tail = "sys.stdin.read()\n" if hold else ""
     script.write_text(
         "import sys\n"
         f"sys.stdout.buffer.write(open({str(blob)!r}, 'rb').read())\n"
-        "sys.stdout.buffer.flush()\n",
+        "sys.stdout.buffer.flush()\n"
+        f"{hold_tail}",
         encoding="utf-8",
     )
     return [sys.executable, str(script)]
@@ -176,7 +178,7 @@ def test_exiting_oversized_flood_does_not_buffer_past_rescue_slack(
 
     record = (b"x" * (512 * 1024)) + b"\n"
     iterator = _SubprocessStdoutIterator(
-        [sys.executable, "-c", _write_record_script(record)],
+        _write_payload_argv(tmp_path, record),
         tmp_path,
         max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
     )
@@ -316,7 +318,7 @@ def test_rejected_oversized_flood_does_not_leave_a_blocked_writer(
 
     record = (b"x" * (512 * 1024)) + b"\n"
     iterator = _SubprocessStdoutIterator(
-        [sys.executable, "-c", _write_record_script(record, hold=True)],
+        _write_payload_argv(tmp_path, record, hold=True),
         tmp_path,
         max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
     )
@@ -339,7 +341,7 @@ def test_oversized_writer_is_killed_when_bound_terminate_fails_closed(
 
     record = (b"x" * (512 * 1024)) + b"\n"
     iterator = _SubprocessStdoutIterator(
-        [sys.executable, "-c", _write_record_script(record, hold=True)],
+        _write_payload_argv(tmp_path, record, hold=True),
         tmp_path,
         max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
     )
@@ -366,7 +368,7 @@ def test_oversized_writer_is_killed_when_identity_inspect_is_unverifiable(
 
     record = (b"x" * (512 * 1024)) + b"\n"
     iterator = _SubprocessStdoutIterator(
-        [sys.executable, "-c", _write_record_script(record, hold=True)],
+        _write_payload_argv(tmp_path, record, hold=True),
         tmp_path,
         max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
     )
