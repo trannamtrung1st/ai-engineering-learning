@@ -31,6 +31,7 @@ from tests.conftest import (
     _is_pytest_infrastructure,
     _python_descendant_pids,
     _signal_leftover_python_descendants,
+    assert_session_leftovers_then_reap,
     reap_hold_process,
     spawn_hold_process,
     tracked_turn_proc,
@@ -38,10 +39,30 @@ from tests.conftest import (
 )
 
 
-def test_leftover_settle_covers_janitor_term_and_kill_drain() -> None:
-    """A janitor can spend TERM then KILL drain before exiting."""
+def test_leftover_settle_covers_janitor_parent_wait() -> None:
+    """Legitimate janitor cleanup may use the full parent wait before leftover capture."""
 
+    from core_tools.provider.session_janitor import JANITOR_PARENT_WAIT_SECONDS
+
+    assert _LEFTOVER_SETTLE_SECONDS >= JANITOR_PARENT_WAIT_SECONDS
     assert _LEFTOVER_SETTLE_SECONDS >= _TERM_DRAIN_SECONDS + _KILL_DRAIN_SECONDS
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX hold process")
+def test_injected_orphan_fails_leftover_detector_then_is_reaped() -> None:
+    """Orphan detection must fail on the original leak; hygiene reap is after that."""
+
+    proc = spawn_hold_process()
+    try:
+        leftover = {proc.pid: "injected-orphan"}
+        with pytest.raises(AssertionError, match="injected-orphan"):
+            assert_session_leftovers_then_reap(leftover)
+        deadline = time.monotonic() + 1.0
+        while proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert proc.poll() is not None
+    finally:
+        reap_hold_process(proc)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX hold process")
@@ -81,7 +102,7 @@ def test_leftover_scan_ignores_defunct_python_zombies() -> None:
 
 
 def test_leftover_scan_ignores_zombie_pid_with_live_looking_cmdline(monkeypatch) -> None:
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda pid: pid == 4242)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda pid: pid == 4242)
     assert _ignore_leftover_python_descendant(
         "python -c import time; time.sleep(60)",
         pid=4242,
@@ -89,7 +110,7 @@ def test_leftover_scan_ignores_zombie_pid_with_live_looking_cmdline(monkeypatch)
 
 
 def test_leftover_scan_ignores_ps_zombie_state_without_proc(monkeypatch) -> None:
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda _pid: False)
     assert _ignore_leftover_python_descendant(
         "python -c import time; time.sleep(60)",
         pid=4242,
@@ -110,7 +131,7 @@ def test_leftover_scan_ignores_ps_zombie_state_without_proc(monkeypatch) -> None
 def test_leftover_scan_ignores_linux_dead_x_state(monkeypatch) -> None:
     """After SIGKILL, Linux may show TASK_DEAD as X before waitpid reaps."""
 
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda _pid: False)
     assert _ignore_leftover_python_descendant(
         "python -c import sys; sys.stdin.read()",
         pid=4242,
@@ -123,7 +144,7 @@ def test_leftover_scan_ignores_linux_dead_x_state(monkeypatch) -> None:
     )
 
 
-def test_linux_stat_treats_dead_x_as_already_reaped(monkeypatch, tmp_path: Path) -> None:
+def test_linux_proc_treats_dead_x_as_already_reaped(monkeypatch, tmp_path: Path) -> None:
     stat_text = "4242 (python3) X 1 4242 4242 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1\n"
 
     def fake_read_text(self, encoding="utf-8"):
@@ -153,7 +174,7 @@ def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
         "tests.conftest._process_command",
         lambda _pid: "python -c import time; time.sleep(60)",
     )
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda pid: pid == zombie)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda pid: pid == zombie)
     assert _python_descendant_pids(parent) == {}
 
 
@@ -170,7 +191,7 @@ def test_python_descendant_scan_omits_linux_dead_x_state(monkeypatch) -> None:
         "tests.conftest._process_command",
         lambda _pid: "python -c import sys; sys.stdin.read()",
     )
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda _pid: False)
     assert _python_descendant_pids(parent) == {}
 
 
@@ -189,7 +210,7 @@ def test_python_descendant_scan_omits_darwin_zombies_without_proc_stat(
         "tests.conftest._process_command",
         lambda _pid: "python -c import time; time.sleep(60)",
     )
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda _pid: False)
     assert _python_descendant_pids(parent) == {}
 
 
@@ -202,7 +223,7 @@ def test_python_descendant_scan_keeps_live_python_child(monkeypatch) -> None:
         lambda *_args, **_kwargs: f"{child} {parent} S {command}\n",
     )
     monkeypatch.setattr("tests.conftest._process_command", lambda _pid: command)
-    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    monkeypatch.setattr("tests.conftest._linux_proc_is_unreaped_dead", lambda _pid: False)
     assert _python_descendant_pids(parent) == {child: command}
 
 
@@ -259,13 +280,20 @@ def test_cursor_provider_terminate_all_sessions_kills_tracked_turn(tmp_path: Pat
         stderr=subprocess.DEVNULL,
         start_new_session=sys.platform != "win32",
     )
-    provider._tracked_turn_procs[proc.pid] = tracked_turn_proc("cursor-session-1", "planner", proc.pid, proc=proc)
+    try:
+        provider._tracked_turn_procs[proc.pid] = tracked_turn_proc(
+            "cursor-session-1", "planner", proc.pid, proc=proc
+        )
 
-    terminated = provider.terminate_all_sessions()
+        terminated = provider.terminate_all_sessions()
 
-    assert proc.poll() is not None
-    assert not provider._tracked_turn_procs
-    assert any(record.get("pid") == proc.pid for record in terminated)
+        assert proc.poll() is not None
+        assert not provider._tracked_turn_procs
+        assert any(record.get("pid") == proc.pid for record in terminated)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
 
 
 def test_stub_provider_list_active_sessions() -> None:

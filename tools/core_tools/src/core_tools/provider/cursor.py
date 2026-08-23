@@ -201,6 +201,35 @@ def _stdout_fd_readable(
     return bool(ready)
 
 
+def _bound_popen_child_running(proc: subprocess.Popen[str] | None) -> bool:
+    """True only while this Popen handle still owns an unreaped live child."""
+
+    if proc is None or getattr(proc, "pid", None) is None:
+        return False
+    raw_poll = getattr(proc, "_core_tools_raw_poll", None)
+    poll = raw_poll if callable(raw_poll) else getattr(proc, "poll", None)
+    if not callable(poll):
+        return False
+    try:
+        return poll() is None
+    except Exception:
+        return False
+
+
+def _kill_bound_popen_leader(proc: subprocess.Popen[str]) -> None:
+    """SIGKILL only the bound child; never a numeric PGID that we do not own."""
+
+    if not _bound_popen_child_running(proc):
+        return
+    try:
+        os.kill(int(proc.pid), signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
 class _SubprocessStdoutIterator(Iterator[str]):
     """Eager-start subprocess runner so callers can track PID before first stdout line."""
 
@@ -506,16 +535,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
 
     def _writer_still_live(self) -> bool:
         proc = getattr(self, "_proc", None)
-        if proc is None or proc.pid is None:
-            return False
-        raw_poll = getattr(proc, "_core_tools_raw_poll", None)
-        if callable(raw_poll):
-            try:
-                if raw_poll() is not None:
-                    return False
-            except Exception:
-                pass
-        return is_pid_alive(proc.pid)
+        return _bound_popen_child_running(proc)
 
     def _reap_writer_if_exited(self) -> None:
         proc = getattr(self, "_proc", None)
@@ -535,23 +555,29 @@ class _SubprocessStdoutIterator(Iterator[str]):
         *,
         expected_pgid: int | None = None,
     ) -> None:
-        """SIGKILL the session we spawned only while *proc* still owns that PGID."""
+        """SIGKILL the session we spawned only while the bound Popen child is live."""
 
+        if not _bound_popen_child_running(proc):
+            return
         cached_pgid = getattr(proc, "_core_tools_session_pgid", None)
         if not isinstance(cached_pgid, int) or cached_pgid <= 0:
+            _kill_bound_popen_leader(proc)
             return
         if expected_pgid is not None and expected_pgid != cached_pgid:
+            _kill_bound_popen_leader(proc)
             return
         try:
             current_pgid = os.getpgid(proc.pid)
         except OSError:
+            _kill_bound_popen_leader(proc)
             return
         if current_pgid != cached_pgid:
+            _kill_bound_popen_leader(proc)
             return
         try:
             os.killpg(cached_pgid, signal.SIGKILL)
         except OSError:
-            pass
+            _kill_bound_popen_leader(proc)
 
     def _abandon_stdout_after_record_cap(self) -> None:
         """Stop reading and terminate a still-owned live writer, never a stale PGID."""
@@ -583,6 +609,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             self._reap_writer_if_exited()
             return
         if identity is None or inspect_state is not IdentityInspectState.LIVE_MATCH:
+            # UNVERIFIABLE/None: terminate only through the still-bound Popen child.
             self._kill_bound_session_group(proc)
             self._reap_writer_if_exited()
             return

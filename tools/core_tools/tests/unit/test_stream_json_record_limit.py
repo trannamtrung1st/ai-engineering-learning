@@ -362,7 +362,7 @@ def test_oversized_writer_is_killed_when_bound_terminate_fails_closed(
 def test_oversized_writer_is_killed_when_identity_inspect_is_unverifiable(
     tmp_path: Path,
 ) -> None:
-    """A short inspect timeout must not leave the cap-reject writer running."""
+    """A still-bound live Popen must stop the writer even if identity inspect times out."""
 
     record = (b"x" * (512 * 1024)) + b"\n"
     iterator = _SubprocessStdoutIterator(
@@ -383,6 +383,58 @@ def test_oversized_writer_is_killed_when_identity_inspect_is_unverifiable(
         assert _wait_until_exited(iterator._proc, timeout=1.0)
     finally:
         close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_exited_popen_does_not_killpg_a_reused_or_foreign_pgid() -> None:
+    """Numeric PID/PGID match after the bound child exited must not signal a foreign group."""
+
+    victim = spawn_hold_process()
+
+    class ExitedPopen:
+        pid = victim.pid
+        _core_tools_session_pgid = victim.pid
+
+        def poll(self) -> int:
+            return 0
+
+    try:
+        _SubprocessStdoutIterator._kill_bound_session_group(None, ExitedPopen())
+        assert victim.poll() is None
+    finally:
+        reap_hold_process(victim)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_unverifiable_inspect_does_not_signal_foreign_group_after_writer_exits(
+    tmp_path: Path,
+) -> None:
+    """UNVERIFIABLE inspect plus a stale cached PGID must not killpg a live stranger."""
+
+    victim = spawn_hold_process()
+    cap = 64
+    record = (b"z" * (cap + 10)) + b"\n"
+    iterator = _exited_iterator_with_buffered_record(tmp_path, record, cap=cap)
+    killpg_targets: list[int] = []
+    try:
+        iterator._proc._core_tools_session_pgid = victim.pid
+        with patch(
+            "core_tools.provider.cursor.inspect_process_identity",
+            return_value=IdentityInspectState.UNVERIFIABLE,
+        ), patch(
+            "core_tools.provider.cursor.os.getpgid",
+            return_value=victim.pid,
+        ), patch(
+            "core_tools.provider.cursor.os.killpg",
+            side_effect=lambda pgid, _sig: killpg_targets.append(pgid),
+        ):
+            with pytest.raises(ProviderStreamRecordTooLargeError, match=str(cap)):
+                next(iterator)
+        assert victim.pid not in killpg_targets
+        assert victim.poll() is None
+    finally:
+        close_and_reap_iterator(iterator)
+        reap_hold_process(victim)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")

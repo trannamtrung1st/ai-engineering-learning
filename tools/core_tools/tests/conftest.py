@@ -15,12 +15,13 @@ import pytest
 from core_tools.provider.cursor import _TrackedTurnProc
 from core_tools.provider.process_identity import ProcessIdentity
 from core_tools.provider.session_janitor import (
+    JANITOR_PARENT_WAIT_SECONDS,
     _KILL_DRAIN_SECONDS,
     _TERM_DRAIN_SECONDS,
 )
 
-# Janitor cleanup can spend SIGTERM drain then SIGKILL drain before exiting.
-_LEFTOVER_SETTLE_SECONDS = _TERM_DRAIN_SECONDS + _KILL_DRAIN_SECONDS + 1.0
+# Capture leftovers only after a janitor could finish its parent wait.
+_LEFTOVER_SETTLE_SECONDS = JANITOR_PARENT_WAIT_SECONDS
 
 
 def _kill_session_and_raw_wait(
@@ -300,8 +301,8 @@ def _is_pytest_infrastructure(cmd: str) -> bool:
     )
 
 
-def _linux_stat_is_zombie(pid: int) -> bool:
-    """Return whether ``/proc/<pid>/stat`` reports an unreaped zombie."""
+def _linux_proc_is_unreaped_dead(pid: int) -> bool:
+    """Return whether ``/proc/<pid>/stat`` is an unreaped zombie (Z) or TASK_DEAD (X)."""
 
     path = Path(f"/proc/{pid}/stat")
     try:
@@ -321,13 +322,13 @@ def _ignore_leftover_python_descendant(
     ps_cmd: str = "",
     ps_state: str = "",
 ) -> bool:
-    """Ignore pytest helpers and already-dead zombies still visible in ``ps``."""
+    """Ignore pytest helpers and already-dead Z/X descendants still visible in ``ps``."""
 
     if "<defunct>" in cmd.lower() or "<defunct>" in ps_cmd.lower():
         return True
     if str(ps_state).lstrip()[:1].upper() in {"Z", "X"}:
         return True
-    if pid is not None and _linux_stat_is_zombie(pid):
+    if pid is not None and _linux_proc_is_unreaped_dead(pid):
         return True
     return _is_pytest_infrastructure(cmd)
 
@@ -421,33 +422,65 @@ def trace_process_signals(monkeypatch: pytest.MonkeyPatch):
     yield
 
 
+def _scan_new_python_descendants(parent: int, before: set[int]) -> dict[int, str]:
+    _reap_unwaited_children()
+    return {
+        pid: cmd
+        for pid, cmd in _python_descendant_pids(parent).items()
+        if pid not in before
+    }
+
+
+def _wait_for_leftover_settle(
+    parent: int,
+    before: set[int],
+    *,
+    settle_seconds: float,
+) -> dict[int, str]:
+    leftover: dict[int, str] = {}
+    deadline = time.monotonic() + max(0.0, settle_seconds)
+    while True:
+        leftover = _scan_new_python_descendants(parent, before)
+        if not leftover or time.monotonic() >= deadline:
+            return leftover
+        time.sleep(0.05)
+
+
+def _reap_leftover_python_descendants(leftover: dict[int, str]) -> None:
+    """Best-effort runner hygiene after leftover capture; does not change pass/fail."""
+
+    if not leftover:
+        return
+    remaining = dict(leftover)
+    deadline = time.monotonic() + 1.0
+    while remaining and time.monotonic() < deadline:
+        _signal_leftover_python_descendants(remaining)
+        remaining = {
+            pid: cmd
+            for pid, cmd in leftover.items()
+            if pid in _python_descendant_pids(os.getpid())
+        }
+        if remaining:
+            time.sleep(0.05)
+
+
+def assert_session_leftovers_then_reap(leftover: dict[int, str]) -> None:
+    """Fail on the original leftover set, then always reap those PIDs."""
+
+    try:
+        assert leftover == {}, leftover
+    finally:
+        _reap_leftover_python_descendants(leftover)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def assert_no_leftover_python_descendants():
     parent = os.getpid()
     before = set(_python_descendant_pids(parent))
     yield
-    leftover: dict[int, str] = {}
-    deadline = time.monotonic() + _LEFTOVER_SETTLE_SECONDS
-    while True:
-        _reap_unwaited_children()
-        leftover = {
-            pid: cmd
-            for pid, cmd in _python_descendant_pids(parent).items()
-            if pid not in before
-        }
-        if not leftover or time.monotonic() >= deadline:
-            break
-        time.sleep(0.05)
-    if leftover:
-        _signal_leftover_python_descendants(leftover)
-        reap_deadline = time.monotonic() + 1.0
-        while leftover and time.monotonic() < reap_deadline:
-            leftover = {
-                pid: cmd
-                for pid, cmd in _python_descendant_pids(parent).items()
-                if pid not in before
-            }
-            if leftover:
-                _signal_leftover_python_descendants(leftover)
-            time.sleep(0.05)
-    assert leftover == {}, leftover
+    leftover = _wait_for_leftover_settle(
+        parent,
+        before,
+        settle_seconds=_LEFTOVER_SETTLE_SECONDS,
+    )
+    assert_session_leftovers_then_reap(leftover)

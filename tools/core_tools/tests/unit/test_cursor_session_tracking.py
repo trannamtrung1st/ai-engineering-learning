@@ -130,9 +130,15 @@ def test_concurrent_collect_contexts_track_distinct_pids(tmp_path: Path) -> None
     assert provider._tracked_turn_procs[tracked["a"]].session_id == session_a
     assert provider._tracked_turn_procs[tracked["b"]].session_id == session_b
 
-    provider.terminate_session(session_a)
+    try:
+        provider.terminate_session(session_a)
 
-    assert session_a not in provider._sessions
-    assert provider._tracked_turn_procs[tracked["b"]].session_id == session_b
-    for proc in procs:
-        reap_hold_process(proc)
+        assert session_a not in provider._sessions
+        assert provider._tracked_turn_procs[tracked["b"]].session_id == session_b
+        proc_a = next(proc for proc in procs if proc.pid == tracked["a"])
+        proc_b = next(proc for proc in procs if proc.pid == tracked["b"])
+        assert proc_a.poll() is not None
+        assert proc_b.poll() is None
+    finally:
+        for proc in procs:
+            reap_hold_process(proc)
