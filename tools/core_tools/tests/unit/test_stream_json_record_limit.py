@@ -19,7 +19,10 @@ from core_tools.provider.cursor import (
 )
 from core_tools.provider.errors import ProviderStreamRecordTooLargeError
 from core_tools.provider.process_cleanup import terminate_process_tree
-from core_tools.provider.process_identity import TerminateIdentityResult
+from core_tools.provider.process_identity import (
+    IdentityInspectState,
+    TerminateIdentityResult,
+)
 from tests.conftest import close_and_reap_iterator
 
 
@@ -351,6 +354,33 @@ def test_oversized_writer_is_killed_when_bound_terminate_fails_closed(
             ):
                 next(iterator)
         assert _wait_until_exited(iterator._proc)
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_oversized_writer_is_killed_when_identity_inspect_is_unverifiable(
+    tmp_path: Path,
+) -> None:
+    """A short inspect timeout must not leave the cap-reject writer running."""
+
+    record = (b"x" * (512 * 1024)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", _write_record_script(record, hold=True)],
+        tmp_path,
+        max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
+    )
+    try:
+        with patch(
+            "core_tools.provider.cursor.inspect_process_identity",
+            return_value=IdentityInspectState.UNVERIFIABLE,
+        ):
+            with pytest.raises(
+                ProviderStreamRecordTooLargeError,
+                match=str(MAX_STREAM_JSON_RECORD_BYTES),
+            ):
+                next(iterator)
+        assert _wait_until_exited(iterator._proc, timeout=1.0)
     finally:
         close_and_reap_iterator(iterator)
 

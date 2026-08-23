@@ -529,6 +529,30 @@ class _SubprocessStdoutIterator(Iterator[str]):
         except (OSError, subprocess.TimeoutExpired):
             pass
 
+    def _kill_bound_session_group(
+        self,
+        proc: subprocess.Popen[str],
+        *,
+        expected_pgid: int | None = None,
+    ) -> None:
+        """SIGKILL the session we spawned only while *proc* still owns that PGID."""
+
+        cached_pgid = getattr(proc, "_core_tools_session_pgid", None)
+        if not isinstance(cached_pgid, int) or cached_pgid <= 0:
+            return
+        if expected_pgid is not None and expected_pgid != cached_pgid:
+            return
+        try:
+            current_pgid = os.getpgid(proc.pid)
+        except OSError:
+            return
+        if current_pgid != cached_pgid:
+            return
+        try:
+            os.killpg(cached_pgid, signal.SIGKILL)
+        except OSError:
+            pass
+
     def _abandon_stdout_after_record_cap(self) -> None:
         """Stop reading and terminate a still-owned live writer, never a stale PGID."""
 
@@ -548,17 +572,22 @@ class _SubprocessStdoutIterator(Iterator[str]):
         identity = self._leader_identity
         if identity is None or identity.pid != proc.pid:
             identity = read_process_identity(proc.pid, timeout=0.05)
-        if identity is None:
+        inspect_state = (
+            inspect_process_identity(identity, timeout=0.05)
+            if identity is not None
+            else IdentityInspectState.UNVERIFIABLE
+        )
+        if inspect_state is IdentityInspectState.IDENTITY_MISMATCH:
             self._reap_writer_if_exited()
             return
-        if inspect_process_identity(identity, timeout=0.05) is not (
-            IdentityInspectState.LIVE_MATCH
-        ):
+        if identity is None or inspect_state is not IdentityInspectState.LIVE_MATCH:
+            self._kill_bound_session_group(proc)
             self._reap_writer_if_exited()
             return
         live_pgid = read_process_group_id(identity.pid, timeout=0.05)
         cached_pgid = getattr(proc, "_core_tools_session_pgid", None)
         if live_pgid is None or live_pgid <= 0:
+            self._kill_bound_session_group(proc)
             self._reap_writer_if_exited()
             return
         if isinstance(cached_pgid, int) and cached_pgid > 0 and live_pgid != cached_pgid:
@@ -569,19 +598,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
             pgid=live_pgid,
             timeout=0.35,
         )
-        if self._writer_still_live() and inspect_process_identity(
-            identity, timeout=0.05
-        ) is IdentityInspectState.LIVE_MATCH:
-            follow_pgid = read_process_group_id(identity.pid, timeout=0.05)
-            if (
-                follow_pgid is not None
-                and follow_pgid > 0
-                and follow_pgid == live_pgid
-            ):
-                try:
-                    os.killpg(follow_pgid, signal.SIGKILL)
-                except OSError:
-                    pass
+        if self._writer_still_live():
+            self._kill_bound_session_group(proc, expected_pgid=live_pgid)
         self._reap_writer_if_exited()
 
     def _raise_if_current_record_too_large(self) -> None:
