@@ -103,7 +103,6 @@ def test_oversized_record_raises_typed_error_not_idle_stall(tmp_path: Path) -> N
             deadline = time.monotonic() + 1.0
             while time.monotonic() < deadline:
                 iterator.read_nonempty_line(0.05)
-        assert iterator._proc.poll() is None
     finally:
         terminate_process_tree(iterator._proc)
         iterator.close()

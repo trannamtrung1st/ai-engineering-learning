@@ -7,6 +7,7 @@ import os
 import queue
 import select
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -568,6 +569,19 @@ class _SubprocessStdoutIterator(Iterator[str]):
             pgid=live_pgid,
             timeout=0.35,
         )
+        if self._writer_still_live() and inspect_process_identity(
+            identity, timeout=0.05
+        ) is IdentityInspectState.LIVE_MATCH:
+            follow_pgid = read_process_group_id(identity.pid, timeout=0.05)
+            if (
+                follow_pgid is not None
+                and follow_pgid > 0
+                and follow_pgid == live_pgid
+            ):
+                try:
+                    os.killpg(follow_pgid, signal.SIGKILL)
+                except OSError:
+                    pass
         self._reap_writer_if_exited()
 
     def _raise_if_current_record_too_large(self) -> None:

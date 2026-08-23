@@ -19,6 +19,7 @@ from core_tools.provider.cursor import (
 )
 from core_tools.provider.errors import ProviderStreamRecordTooLargeError
 from core_tools.provider.process_cleanup import terminate_process_tree
+from core_tools.provider.process_identity import TerminateIdentityResult
 from tests.conftest import close_and_reap_iterator
 
 
@@ -328,6 +329,33 @@ def test_rejected_oversized_flood_does_not_leave_a_blocked_writer(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
+def test_oversized_writer_is_killed_when_bound_terminate_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Cap reject must still stop a live writer if bound terminate fails closed."""
+
+    record = (b"x" * (512 * 1024)) + b"\n"
+    iterator = _SubprocessStdoutIterator(
+        [sys.executable, "-c", _write_record_script(record, hold=True)],
+        tmp_path,
+        max_record_bytes=MAX_STREAM_JSON_RECORD_BYTES,
+    )
+    try:
+        with patch(
+            "core_tools.provider.cursor.terminate_verified_process_identity",
+            return_value=TerminateIdentityResult.FAILED,
+        ):
+            with pytest.raises(
+                ProviderStreamRecordTooLargeError,
+                match=str(MAX_STREAM_JSON_RECORD_BYTES),
+            ):
+                next(iterator)
+        assert _wait_until_exited(iterator._proc)
+    finally:
+        close_and_reap_iterator(iterator)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 def test_rejected_second_record_does_not_leave_a_blocked_writer(
     tmp_path: Path,
 ) -> None:
@@ -353,7 +381,7 @@ def _exited_iterator_with_buffered_record(
     """Buffer a complete record after the owned writer/janitor has been reaped."""
 
     iterator = _SubprocessStdoutIterator(
-        [sys.executable, "-c", "import time; time.sleep(60)"],
+        [sys.executable, "-c", "raise SystemExit"],
         tmp_path,
         max_record_bytes=cap,
     )
