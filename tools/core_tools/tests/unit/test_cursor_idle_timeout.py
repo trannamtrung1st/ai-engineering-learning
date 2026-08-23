@@ -231,7 +231,7 @@ def test_default_config_cursor_stream_stalls_without_override(tmp_path: Path) ->
         binary=str(agent_path),
         skip_probe=True,
     )
-    assert default_provider._turn_idle_timeout_seconds() == 2.0
+    assert default_provider._turn_idle_timeout_seconds() == 300.0
     provider = CursorProvider(
         {"limits": {"provider": {"turn_idle_timeout_seconds": 0.05}}},
         workspace=tmp_path,

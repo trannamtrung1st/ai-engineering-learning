@@ -73,7 +73,7 @@ Empty `patterns` does not disable built-ins; set `defaults: false` to turn them 
 
 ## Limits
 
-Under `limits.*` (execution digest). Package defaults include planning item/turn caps, focused and whole review revision cycles, production batch/turn caps, amendment caps, `limits.review.max_agent_turns_per_gate`, and `limits.provider.max_retries_per_call` / `turn_idle_timeout_seconds` (default `2`; `0` disables idle stall detection) / `max_stream_json_record_bytes` (default `1048576` / 1 MiB; assembled Cursor stream-json line cap, including the terminating newline; TDP requires an integer >= 1). Exact paths: `tdp agent schema config` or the example YAML [limits block](../../examples/top-down-planning.yaml).
+Under `limits.*` (execution digest). Package defaults include planning item/turn caps, focused and whole review revision cycles, production batch/turn caps, amendment caps, `limits.review.max_agent_turns_per_gate`, and `limits.provider.max_retries_per_call` / `turn_idle_timeout_seconds` (default `300`; `0` disables idle stall detection) / `max_stream_json_record_bytes` (default `1048576` / 1 MiB; assembled Cursor stream-json line cap, including the terminating newline; TDP requires an integer >= 1). Exact paths: `tdp agent schema config` or the example YAML [limits block](../../examples/top-down-planning.yaml).
 
 ## Observability and notifications
 

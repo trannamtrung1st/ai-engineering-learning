@@ -228,7 +228,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "provider": {
             "max_retries_per_call": 2,
-            "turn_idle_timeout_seconds": 2.0,
+            "turn_idle_timeout_seconds": 300.0,
             "max_stream_json_record_bytes": 1048576,
         },
     },

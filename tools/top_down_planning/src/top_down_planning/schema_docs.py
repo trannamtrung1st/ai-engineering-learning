@@ -1361,10 +1361,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                             },
                             "turn_idle_timeout_seconds": {
                                 "type": "number",
+                                "default": 300,
                                 "description": (
                                     "Seconds without Cursor stream-json stdout before "
                                     "the provider ends the turn. 0 disables idle timeout "
-                                    "and is an explicit opt-out; the default is 2.0."
+                                    "and is an explicit opt-out; the default is 300."
                                 ),
                             },
                             "max_stream_json_record_bytes": {

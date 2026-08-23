@@ -65,7 +65,7 @@ Documented on [agent CLI](agents/cli.md). Matches: `help`, `readme`, `schema`, `
 
 ### Configuration
 
-Documented on [configuration](manual/configuration.md). Matches `tdp agent schema config` top-level keys: `agent_context`, `context_snapshot`, `execution`, `limits`, `notifications`, `observability`, `planning`, `project`, `provider`, `review`, `run`, `runtime`, `version`. `provider.name` enum is `cursor` \| `stub`. `execution.mode` exists. `limits.provider.turn_idle_timeout_seconds`, `max_retries_per_call`, and `max_stream_json_record_bytes` exist; example YAML sets idle timeout default `2` and stream-json line cap default `1048576`. Resume hatch `--allow-config-drift` before vs after whole-plan approval matches `tdp resume --help`.
+Documented on [configuration](manual/configuration.md). Matches `tdp agent schema config` top-level keys: `agent_context`, `context_snapshot`, `execution`, `limits`, `notifications`, `observability`, `planning`, `project`, `provider`, `review`, `run`, `runtime`, `version`. `provider.name` enum is `cursor` \| `stub`. `execution.mode` exists. `limits.provider.turn_idle_timeout_seconds`, `max_retries_per_call`, and `max_stream_json_record_bytes` exist; example YAML sets idle timeout default `300` and stream-json line cap default `1048576`. Resume hatch `--allow-config-drift` before vs after whole-plan approval matches `tdp resume --help`.
 
 ### Resume approval bindings (HEAD)
 

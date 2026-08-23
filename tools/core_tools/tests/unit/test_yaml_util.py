@@ -83,10 +83,10 @@ def test_load_yaml_parses_inline_comment_after_number() -> None:
         """
 limits:
   provider:
-    turn_idle_timeout_seconds: 2  # seconds without stream-json stdout; 0 = opt out
+    turn_idle_timeout_seconds: 300  # seconds without stream-json stdout; 0 = opt out
 """
     )
-    assert parsed["limits"]["provider"]["turn_idle_timeout_seconds"] == 2
+    assert parsed["limits"]["provider"]["turn_idle_timeout_seconds"] == 300
 
 
 def test_load_yaml_keeps_hash_inside_quoted_string() -> None:

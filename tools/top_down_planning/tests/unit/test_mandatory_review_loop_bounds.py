@@ -57,7 +57,7 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
     output_limits = DEFAULT_CONFIG["limits"]["whole_output_review"]
     provider_limits = DEFAULT_CONFIG["limits"]["provider"]
     assert provider_limits["max_retries_per_call"] == 2
-    assert provider_limits["turn_idle_timeout_seconds"] == 2.0
+    assert provider_limits["turn_idle_timeout_seconds"] == 300.0
     assert provider_limits["max_stream_json_record_bytes"] == 1048576
     assert (
         "limits.provider.max_stream_json_record_bytes" in ALLOWED_OVERRIDE_PATHS

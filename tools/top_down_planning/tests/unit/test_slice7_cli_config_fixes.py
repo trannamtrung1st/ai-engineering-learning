@@ -17,6 +17,7 @@ from top_down_planning.cli.execute import (
     parse_upstream_bindings,
 )
 from top_down_planning.config import ConfigError, DEFAULT_CONFIG, resolve_config
+from top_down_planning.schema_docs import show_schema
 from top_down_planning.orchestrator.engine import RunContinuationResult
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION
 from top_down_planning.persistence import FileRunStore
@@ -768,16 +769,33 @@ def test_config_package_all_exports_exist() -> None:
 
 
 def test_provider_idle_timeout_default_matches_documented_contract() -> None:
-    assert DEFAULT_CONFIG["limits"]["provider"]["turn_idle_timeout_seconds"] == 2.0
+    assert DEFAULT_CONFIG["limits"]["provider"]["turn_idle_timeout_seconds"] == 300.0
+    assert (
+        resolve_config(None)["limits"]["provider"]["turn_idle_timeout_seconds"]
+        == 300.0
+    )
+    idle_schema = show_schema("config")["properties"]["limits"]["properties"][
+        "provider"
+    ]["properties"]["turn_idle_timeout_seconds"]
+    assert idle_schema["default"] == 300
+    assert "the default is 300" in idle_schema["description"]
     assert DEFAULT_CONFIG["limits"]["provider"]["max_stream_json_record_bytes"] == 1048576
     assert (
         resolve_config(None)["limits"]["provider"]["max_stream_json_record_bytes"]
         == 1048576
     )
-    readme = Path(__file__).resolve().parents[2] / "README.md"
-    text = readme.read_text(encoding="utf-8")
-    assert "default `0`, disabled" not in text
-    assert "default `2`" in text or "default 2" in text
+    package_root = Path(__file__).resolve().parents[2]
+    example = (package_root / "examples" / "top-down-planning.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "turn_idle_timeout_seconds: 300" in example
+    readme = (package_root / "README.md").read_text(encoding="utf-8")
+    assert "default `0`, disabled" not in readme
+    assert "default `300`" in readme or "default 300" in readme
+    configuration = (
+        package_root / "docs" / "manual" / "configuration.md"
+    ).read_text(encoding="utf-8")
+    assert "turn_idle_timeout_seconds` (default `300`" in configuration
 
 
 def test_stream_json_commands_emit_one_json_document() -> None:

@@ -139,5 +139,5 @@ limits:
     max_agent_turns_per_gate: 5
   provider:
     max_retries_per_call: 2
-    turn_idle_timeout_seconds: 2  # seconds without stream-json stdout; 0 = opt out
+    turn_idle_timeout_seconds: 300  # seconds without stream-json stdout; 0 = opt out
     max_stream_json_record_bytes: 1048576  # assembled NDJSON line including newline; TDP default 1 MiB
