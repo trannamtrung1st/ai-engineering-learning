@@ -30,6 +30,9 @@ from tests.conftest import (
     _ignore_leftover_python_descendant,
     _is_pytest_infrastructure,
     _python_descendant_pids,
+    _signal_leftover_python_descendants,
+    reap_hold_process,
+    spawn_hold_process,
     tracked_turn_proc,
     wait_published_pid,
 )
@@ -39,6 +42,22 @@ def test_leftover_settle_covers_janitor_term_and_kill_drain() -> None:
     """A janitor can spend TERM then KILL drain before exiting."""
 
     assert _LEFTOVER_SETTLE_SECONDS >= _TERM_DRAIN_SECONDS + _KILL_DRAIN_SECONDS
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX hold process")
+def test_leftover_reaper_stops_a_live_hold_process() -> None:
+    """Session leftover teardown must be able to stop a still-held test child."""
+
+    proc = spawn_hold_process()
+    try:
+        assert proc.poll() is None
+        _signal_leftover_python_descendants({proc.pid: "hold"})
+        deadline = time.monotonic() + 1.0
+        while proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert proc.poll() is not None
+    finally:
+        reap_hold_process(proc)
 
 
 def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:

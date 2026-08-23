@@ -183,6 +183,58 @@ def reap_process_group(
     _kill_session_and_raw_wait(proc, extra_pids=extra_pids)
 
 
+def spawn_hold_process() -> subprocess.Popen[bytes]:
+    """Start a child that holds until stdin EOF or SIGKILL — not a timed sleep."""
+
+    return subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdin.read()"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=sys.platform != "win32",
+    )
+
+
+def reap_hold_process(proc: subprocess.Popen[bytes]) -> None:
+    """Guarantee a hold child is dead, even if the test failed mid-assertion."""
+
+    if proc.poll() is not None:
+        return
+    if sys.platform != "win32" and proc.pid:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+    else:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _signal_leftover_python_descendants(leftover: dict[int, str]) -> None:
+    """SIGKILL leftover test children (and their groups) so session teardown can finish."""
+
+    for pid in leftover:
+        if sys.platform != "win32":
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    _reap_unwaited_children()
+
+
 def _python_descendant_pids(root_pid: int) -> dict[int, str]:
     output = subprocess.check_output(
         ["ps", "-axww", "-o", "pid=,ppid=,state=,command="],
@@ -386,4 +438,16 @@ def assert_no_leftover_python_descendants():
         if not leftover or time.monotonic() >= deadline:
             break
         time.sleep(0.05)
+    if leftover:
+        _signal_leftover_python_descendants(leftover)
+        reap_deadline = time.monotonic() + 1.0
+        while leftover and time.monotonic() < reap_deadline:
+            leftover = {
+                pid: cmd
+                for pid, cmd in _python_descendant_pids(parent).items()
+                if pid not in before
+            }
+            if leftover:
+                _signal_leftover_python_descendants(leftover)
+            time.sleep(0.05)
     assert leftover == {}, leftover

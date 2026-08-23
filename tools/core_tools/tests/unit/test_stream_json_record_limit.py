@@ -23,7 +23,7 @@ from core_tools.provider.process_identity import (
     IdentityInspectState,
     TerminateIdentityResult,
 )
-from tests.conftest import close_and_reap_iterator
+from tests.conftest import close_and_reap_iterator, reap_hold_process, spawn_hold_process
 
 
 def test_max_stream_json_record_bytes_defaults_to_256kib() -> None:
@@ -446,12 +446,7 @@ def test_exited_oversized_record_is_rejected_without_group_kill(
 def test_stale_cached_pgid_is_not_signaled_after_writer_exits(
     tmp_path: Path,
 ) -> None:
-    victim = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(60)"],
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    victim = spawn_hold_process()
     cap = 64
     record = (b"z" * (cap + 10)) + b"\n"
     iterator = _exited_iterator_with_buffered_record(tmp_path, record, cap=cap)
@@ -462,12 +457,7 @@ def test_stale_cached_pgid_is_not_signaled_after_writer_exits(
         assert victim.poll() is None
     finally:
         close_and_reap_iterator(iterator)
-        if victim.poll() is None:
-            try:
-                os.killpg(victim.pid, 9)
-            except OSError:
-                pass
-            victim.wait(timeout=1)
+        reap_hold_process(victim)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")

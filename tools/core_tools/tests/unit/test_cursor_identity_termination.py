@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from core_tools.provider.cursor import CursorProvider, _TrackedTurnProc
+from tests.conftest import reap_hold_process, spawn_hold_process
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
@@ -39,12 +39,7 @@ def test_cursor_terminate_tracked_proc_uses_bound_popen(tmp_path: Path) -> None:
         binary=str(agent_path),
         skip_probe=True,
     )
-    proc = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(60)"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=sys.platform != "win32",
-    )
+    proc = spawn_hold_process()
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     provider._tracked_turn_procs[proc.pid] = _tracked(session_id, "planner", proc)
 
@@ -61,9 +56,7 @@ def test_cursor_terminate_tracked_proc_uses_bound_popen(tmp_path: Path) -> None:
         assert terminate.call_args.kwargs["proc"] is proc
         assert proc.pid not in provider._tracked_turn_procs
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=5)
+        reap_hold_process(proc)
 
 
 def test_cursor_terminate_tracked_proc_does_not_signal_pid_reuse(tmp_path: Path) -> None:

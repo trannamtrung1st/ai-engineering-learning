@@ -210,8 +210,8 @@ def _stalling_stdout_runner(first_line: str | None = None):
     script_lines = []
     if first_line is not None:
         script_lines.append(f"print({first_line!r}, flush=True)")
-    script_lines.append("import time")
-    script_lines.append("time.sleep(60)")
+    script_lines.append("import sys")
+    script_lines.append("sys.stdin.read()")
     script = "\n".join(script_lines)
 
     def runner(argv: list[str], cwd: Path):
