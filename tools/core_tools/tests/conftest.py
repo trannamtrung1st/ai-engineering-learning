@@ -312,7 +312,7 @@ def _linux_stat_is_zombie(pid: int) -> bool:
     if right_paren == -1:
         return False
     fields = text[right_paren + 2 :].split()
-    return bool(fields) and fields[0][:1] == "Z"
+    return bool(fields) and fields[0][:1] in {"Z", "X"}
 
 
 def _ignore_leftover_python_descendant(
@@ -325,7 +325,7 @@ def _ignore_leftover_python_descendant(
 
     if "<defunct>" in cmd.lower() or "<defunct>" in ps_cmd.lower():
         return True
-    if str(ps_state).lstrip()[:1].upper() == "Z":
+    if str(ps_state).lstrip()[:1].upper() in {"Z", "X"}:
         return True
     if pid is not None and _linux_stat_is_zombie(pid):
         return True

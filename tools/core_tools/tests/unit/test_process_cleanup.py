@@ -107,6 +107,39 @@ def test_leftover_scan_ignores_ps_zombie_state_without_proc(monkeypatch) -> None
     )
 
 
+def test_leftover_scan_ignores_linux_dead_x_state(monkeypatch) -> None:
+    """After SIGKILL, Linux may show TASK_DEAD as X before waitpid reaps."""
+
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
+    assert _ignore_leftover_python_descendant(
+        "python -c import sys; sys.stdin.read()",
+        pid=4242,
+        ps_state="X",
+    )
+    assert _ignore_leftover_python_descendant(
+        "python -c import sys; sys.stdin.read()",
+        pid=4242,
+        ps_state="X+",
+    )
+
+
+def test_linux_stat_treats_dead_x_as_already_reaped(monkeypatch, tmp_path: Path) -> None:
+    stat_text = "4242 (python3) X 1 4242 4242 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1\n"
+
+    def fake_read_text(self, encoding="utf-8"):
+        del encoding
+        if self == Path("/proc/4242/stat"):
+            return stat_text
+        raise OSError("missing")
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    assert _ignore_leftover_python_descendant(
+        "python -c import sys; sys.stdin.read()",
+        pid=4242,
+        ps_state="S",
+    )
+
+
 def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
     parent = 1000
     zombie = 2000
@@ -121,6 +154,23 @@ def test_python_descendant_scan_omits_linux_zombies(monkeypatch) -> None:
         lambda _pid: "python -c import time; time.sleep(60)",
     )
     monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda pid: pid == zombie)
+    assert _python_descendant_pids(parent) == {}
+
+
+def test_python_descendant_scan_omits_linux_dead_x_state(monkeypatch) -> None:
+    parent = 1000
+    dead = 2000
+    monkeypatch.setattr(
+        "tests.conftest.subprocess.check_output",
+        lambda *_args, **_kwargs: (
+            f"{dead} {parent} X python -c import sys; sys.stdin.read()\n"
+        ),
+    )
+    monkeypatch.setattr(
+        "tests.conftest._process_command",
+        lambda _pid: "python -c import sys; sys.stdin.read()",
+    )
+    monkeypatch.setattr("tests.conftest._linux_stat_is_zombie", lambda _pid: False)
     assert _python_descendant_pids(parent) == {}
 
 
