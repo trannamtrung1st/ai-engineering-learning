@@ -65,10 +65,10 @@ def test_max_stream_json_record_bytes_rejects_non_positive_as_default() -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX subprocess stdout")
 def test_configured_record_limit_rejects_oversized_line(tmp_path: Path) -> None:
     script = (
-        "import os, sys, time\n"
+        "import os, sys\n"
         "os.write(1, b'x' * 4096)\n"
         "sys.stdout.flush()\n"
-        "time.sleep(60)\n"
+        "sys.stdin.read()\n"
     )
     iterator = _SubprocessStdoutIterator(
         [sys.executable, "-c", script],
@@ -126,7 +126,7 @@ def _write_payload_argv(tmp_path: Path, payload: bytes) -> list[str]:
 def _write_record_script(payload: bytes, *, chunk_size: int | None = None, hold: bool = False) -> str:
     """Emit one NDJSON record; optional write chunking and a hold so the child stays alive."""
 
-    hold_tail = "import time\ntime.sleep(60)\n" if hold else ""
+    hold_tail = "sys.stdin.read()\n" if hold else ""
     if chunk_size is None:
         return (
             "import sys\n"

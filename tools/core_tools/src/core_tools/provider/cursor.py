@@ -557,13 +557,15 @@ class _SubprocessStdoutIterator(Iterator[str]):
         """Stop reading and terminate a still-owned live writer, never a stale PGID."""
 
         self._stdout_eof = True
-        stdout = getattr(self._proc, "stdout", None)
-        if stdout is not None:
-            try:
-                stdout.close()
-            except (OSError, ValueError):
-                pass
         proc = getattr(self, "_proc", None)
+        if proc is not None:
+            for stream in (getattr(proc, "stdin", None), getattr(proc, "stdout", None)):
+                if stream is None:
+                    continue
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
         if proc is None or sys.platform == "win32":
             return
         if not self._writer_still_live():
