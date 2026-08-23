@@ -21,7 +21,10 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.stub import StubProvider
-from core_tools.provider.session_janitor import _TERM_DRAIN_SECONDS
+from core_tools.provider.session_janitor import (
+    _KILL_DRAIN_SECONDS,
+    _TERM_DRAIN_SECONDS,
+)
 from tests.conftest import (
     _LEFTOVER_SETTLE_SECONDS,
     _ignore_leftover_python_descendant,
@@ -32,10 +35,10 @@ from tests.conftest import (
 )
 
 
-def test_leftover_settle_covers_janitor_term_drain() -> None:
-    """Dying janitors drain SIGTERM for 5s; leftover must wait that out."""
+def test_leftover_settle_covers_janitor_term_and_kill_drain() -> None:
+    """A janitor can spend TERM then KILL drain before exiting."""
 
-    assert _LEFTOVER_SETTLE_SECONDS >= _TERM_DRAIN_SECONDS
+    assert _LEFTOVER_SETTLE_SECONDS >= _TERM_DRAIN_SECONDS + _KILL_DRAIN_SECONDS
 
 
 def test_leftover_scan_ignores_pytest_and_multiprocessing_helpers() -> None:

@@ -14,11 +14,13 @@ import pytest
 
 from core_tools.provider.cursor import _TrackedTurnProc
 from core_tools.provider.process_identity import ProcessIdentity
-from core_tools.provider.session_janitor import _TERM_DRAIN_SECONDS
+from core_tools.provider.session_janitor import (
+    _KILL_DRAIN_SECONDS,
+    _TERM_DRAIN_SECONDS,
+)
 
-# Janitor SIGTERM drain is 5s; leftover must wait at least that long or a
-# still-dying python janitor fails the session teardown scan.
-_LEFTOVER_SETTLE_SECONDS = _TERM_DRAIN_SECONDS + 1.0
+# Janitor cleanup can spend SIGTERM drain then SIGKILL drain before exiting.
+_LEFTOVER_SETTLE_SECONDS = _TERM_DRAIN_SECONDS + _KILL_DRAIN_SECONDS + 1.0
 
 
 def _kill_session_and_raw_wait(

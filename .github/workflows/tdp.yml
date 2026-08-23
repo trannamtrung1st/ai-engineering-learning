@@ -82,6 +82,11 @@ jobs:
           python -m pip install -e ".[dev]"
           python -m pytest \
             --ignore=tests/unit/test_process_cleanup.py \
+            --ignore=tests/unit/test_stream_json_record_limit.py \
+            --ignore=tests/unit/test_cursor_idle_timeout.py \
+            --ignore=tests/unit/test_cursor_identity_termination.py \
+            --ignore=tests/unit/test_cursor_fail_closed_termination.py \
+            --ignore=tests/unit/test_cursor_session_tracking.py \
             --ignore-glob='tests/unit/test_slice5_rereview*_fixes.py'
 
   linux-process-lifecycle:
@@ -128,6 +133,11 @@ jobs:
           set +e
           python -m pytest -p no:xdist -o addopts='' --tb=short -s \
             tests/unit/test_process_cleanup.py \
+            tests/unit/test_stream_json_record_limit.py \
+            tests/unit/test_cursor_idle_timeout.py \
+            tests/unit/test_cursor_identity_termination.py \
+            tests/unit/test_cursor_fail_closed_termination.py \
+            tests/unit/test_cursor_session_tracking.py \
             tests/unit/test_slice5_rereview*_fixes.py
           status=$?
           if [ -f "$TDP_GROUP_SIGNAL_LOG" ]; then
@@ -170,6 +180,11 @@ jobs:
           cd tools/core_tools
           python -m pytest -p no:xdist -o addopts='' --tb=short \
             tests/unit/test_process_cleanup.py \
+            tests/unit/test_stream_json_record_limit.py \
+            tests/unit/test_cursor_idle_timeout.py \
+            tests/unit/test_cursor_identity_termination.py \
+            tests/unit/test_cursor_fail_closed_termination.py \
+            tests/unit/test_cursor_session_tracking.py \
             tests/unit/test_slice5_rereview*_fixes.py
 
       - name: TDP Darwin orphan cleanup
