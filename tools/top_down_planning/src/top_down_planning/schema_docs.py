@@ -1567,7 +1567,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "scope_review approval is still required; status reflects finding "
             "disposition policy, not gate clearance). "
             "Persisted review loops may include `finding_ids_by_set` mapping each "
-            "discovery finding_set_id to finding ids introduced in that set."
+            "discovery finding_set_id to finding ids introduced in that set. "
+            "Mandatory whole_* loops may also persist `pending_revision_cycle_entry` "
+            "when a verification_revision limit pause blocked the next owner cycle "
+            "before it was charged to `revision_cycles`."
         ),
         "type": "object",
         "required": ["loop_id", "target_revision", "target_digest", "finding_set_id"],
@@ -3304,7 +3307,13 @@ include the full limit path (`limits.whole_*_review.max_*`), integer `consumed` 
 `configured`, `loop_id`, and `exhausted_budget`. Resume requires the exhausted limit's
 candidate value to be strictly greater than consumed usage. Setting that limit above
 consumed usage revives the same review loop and preserves `revision_cycles` /
-`scope_review_rounds` — it does not open a new loop or reset the phase budget counter.
+`scope_review_rounds` — it does not open a new loop or reset the phase budget
+counter. For `exhausted_budget=verification_revision`, revival also sets
+`pending_revision_cycle_entry` because the pause happened before
+`enter_revision_cycle` charged the next owner revision; continue then consumes
+exactly one new cycle and clears the flag. A genuine mid-cycle interrupt after
+a charged `enter_revision_cycle` leaves `pending_revision_cycle_entry` false and
+resumes the owner without incrementing again.
 
 When a reviewer gate turn ends without `review respond`, the run pauses with
 `limits.review.max_agent_turns_per_gate` once the per-gate turn budget is exhausted.

@@ -161,8 +161,12 @@ def enter_owner_revision_cycle(loop: ReviewLoop) -> ReviewLoop:
             loop,
             status="pending",
             active_stage="finding_verification",
+            pending_revision_cycle_entry=False,
         )
-    return mark_revision_in_progress(loop)
+    return replace(
+        mark_revision_in_progress(loop),
+        pending_revision_cycle_entry=False,
+    )
 
 
 def mandatory_orchestration_decision(loop: ReviewLoop) -> str:
@@ -268,6 +272,9 @@ def mark_limit_reached_loop(
         lifecycle_status="limit_reached",
         findings=list(terminal.findings),
         exhausted_budget=terminal.exhausted_budget,
+        # verification_revision pauses before enter_revision_cycle increments;
+        # preserve that fact so limit-extension resume can charge exactly once.
+        pending_revision_cycle_entry=(exhausted == "verification_revision"),
     )
 
 

@@ -734,6 +734,10 @@ class ReviewLoop:
     verification_result: dict[str, Any] | None = None
     scope_review_result: dict[str, Any] | None = None
     exhausted_budget: ExhaustedReviewBudget | None = None
+    # True when verification_revision limit blocked before enter_revision_cycle
+    # charged the next owner cycle. Distinguishes limit-extension resume (charge
+    # once) from mid-cycle owner interruption (do not re-charge).
+    pending_revision_cycle_entry: bool = False
     # Severity-threshold review fields (proposal review-record model).
     review_record_schema_version: int = CURRENT_REVIEW_RECORD_SCHEMA_VERSION
     review_contract_version: int = CURRENT_REVIEW_CONTRACT_VERSION
@@ -797,6 +801,8 @@ class ReviewLoop:
             payload["scope_review_result"] = dict(self.scope_review_result)
         if self.exhausted_budget is not None:
             payload["exhausted_budget"] = normalize_exhausted_budget(self.exhausted_budget)
+        if self.pending_revision_cycle_entry:
+            payload["pending_revision_cycle_entry"] = True
         if self.finding_families:
             payload["finding_families"] = [
                 family.to_dict() for family in self.finding_families
@@ -897,6 +903,13 @@ class ReviewLoop:
             if exhausted_raw is not None and str(exhausted_raw).strip()
             else None
         )
+        pending_entry_raw = payload.get("pending_revision_cycle_entry")
+        if pending_entry_raw is None:
+            pending_revision_cycle_entry = False
+        elif isinstance(pending_entry_raw, bool):
+            pending_revision_cycle_entry = pending_entry_raw
+        else:
+            raise ValueError("pending_revision_cycle_entry must be a boolean")
         rounds_raw = payload.get("scope_review_rounds")
         if rounds_raw is None and payload.get("blocker_review_rounds") is not None:
             raise ValueError(
@@ -1003,6 +1016,7 @@ class ReviewLoop:
             verification_result=verification_result,
             scope_review_result=scope_review_result,
             exhausted_budget=exhausted_budget,  # type: ignore[arg-type]
+            pending_revision_cycle_entry=pending_revision_cycle_entry,
             review_record_schema_version=review_record_schema_version,
             review_contract_version=review_contract_version,
             revise_at=revise_at,
@@ -1595,6 +1609,9 @@ def pending_interrupted_owner_revision(
     Used after ``limit_reached`` revival and mid-cycle interruption. Does not
     require unresolved *required* findings: optional remaining work or a
     consumed ``needs_revision`` can still leave the owner turn pending.
+
+    Does not distinguish whether ``revision_cycles`` already charged the next
+    cycle — see ``pending_unconsumed_revision_cycle_entry``.
     """
 
     if loop.lifecycle_status != "revision_in_progress":
@@ -1604,6 +1621,19 @@ def pending_interrupted_owner_revision(
     if current_revision > loop.target_revision:
         return False
     return True
+
+
+def pending_unconsumed_revision_cycle_entry(loop: ReviewLoop) -> bool:
+    """True when the next owner revision cycle was blocked before being charged.
+
+    Persisted proof for verification_revision limit exhaustion: the reviewer
+    decision was consumed and ``mark_limit_reached_loop`` / resume revival set
+    ``pending_revision_cycle_entry`` because the max check stopped before
+    ``enter_revision_cycle`` incremented ``revision_cycles``. Mid-cycle owner
+    interruption leaves this flag false so resume does not double-count.
+    """
+
+    return bool(loop.pending_revision_cycle_entry)
 
 
 def needs_primary_revision_resume(
@@ -2823,8 +2853,9 @@ def prepare_limit_reached_retry(loop: ReviewLoop) -> ReviewLoop:
         )
 
     if exhausted == "verification_revision":
-        # Re-enter primary owner revision for the already-consumed cycle
-        # (pending_interrupted_owner_revision) without double-counting.
+        # Next owner revision was blocked before enter_revision_cycle charged it.
+        # Revive revision_in_progress with pending_revision_cycle_entry so resume
+        # consumes exactly one new cycle without replaying the reviewer decision.
         assert_mandatory_review_transition("limit_reached", "revision_in_progress")
         return reset_gate_agent_turns(
             replace(
@@ -2833,6 +2864,7 @@ def prepare_limit_reached_retry(loop: ReviewLoop) -> ReviewLoop:
                 lifecycle_status="revision_in_progress",
                 active_stage="finding_verification",
                 exhausted_budget=None,
+                pending_revision_cycle_entry=True,
             ).with_reviewer_session_released()
         )
 

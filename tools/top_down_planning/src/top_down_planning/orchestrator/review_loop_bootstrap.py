@@ -27,6 +27,8 @@ def bootstrap_whole_review_loop(
     owner work after ``changes_requested`` cold-resume and after
     ``review_incomplete`` retry). Remaining work is the owner turn, not a
     replay of a consumed ``needs_revision`` / ``changes_requested`` decision.
+    When revival set ``pending_revision_cycle_entry``, the driver charges
+    exactly one new ``revision_cycles`` before the owner turn.
     """
 
     loop, reviewer_turn_delivered = normalize_loop_for_resume(loop)

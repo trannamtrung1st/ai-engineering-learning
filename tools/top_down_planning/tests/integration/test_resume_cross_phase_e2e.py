@@ -651,6 +651,7 @@ def test_resume_whole_plan_revision_limit_exhausted_increased_and_resumed(
     assert int(review_after.get("revision_cycles") or 0) == revision_cycles_before
     assert review_after.get("lifecycle_status") == "revision_in_progress"
     assert review_after.get("exhausted_budget") is None
+    assert review_after.get("pending_revision_cycle_entry") is True
     whole_plan_loops = [
         payload
         for payload in store.list_reviews(run_id)
@@ -688,6 +689,7 @@ def test_resume_whole_output_revision_limit_exhausted_increased_and_resumed(
     assert int(review_after.get("revision_cycles") or 0) == revision_cycles_before
     assert review_after.get("lifecycle_status") == "revision_in_progress"
     assert review_after.get("exhausted_budget") is None
+    assert review_after.get("pending_revision_cycle_entry") is True
     config = store.load_resolved_config(run_id)
     assert int(config["limits"]["whole_output_review"]["max_revision_cycles"]) == 5
     events = store.load_events(run_id)

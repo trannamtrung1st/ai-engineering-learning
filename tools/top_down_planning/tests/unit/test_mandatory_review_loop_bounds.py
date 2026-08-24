@@ -317,3 +317,5 @@ def test_prepare_limit_reached_retry_preserves_revision_budget() -> None:
     assert revived.lifecycle_status == "revision_in_progress"
     assert revived.status == "pending"
     assert revived.exhausted_budget is None
+    # Discriminator: next owner cycle was blocked before enter_revision_cycle.
+    assert revived.pending_revision_cycle_entry is True

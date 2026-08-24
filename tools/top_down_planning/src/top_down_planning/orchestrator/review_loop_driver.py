@@ -27,6 +27,7 @@ from top_down_planning.domain.reviews import (
     policy_observability_fields_for_loop,
     prepare_limit_reached_retry,
     prepare_review_incomplete_retry,
+    pending_unconsumed_revision_cycle_entry,
     required_open_findings,
     reset_gate_agent_turns,
     review_gate_limits_from_config,
@@ -1104,6 +1105,13 @@ class ReviewLoopDriver:
         )
 
     def _resume_interrupted_owner_revision(self, loop: ReviewLoop) -> ReviewLoop:
+        if pending_unconsumed_revision_cycle_entry(loop):
+            # Limit-extension resume: charge the next cycle once, then run owner.
+            # Do not replay mark_findings_open / the consumed reviewer decision.
+            revision_cycles = int(loop.revision_cycles) + 1
+            loop = self._persist_loop(
+                self._adapter.enter_revision_cycle(loop, revision_cycles)
+            )
         self._resume_owner_with_findings(loop)
         return self._prepare_recheck(loop)
 

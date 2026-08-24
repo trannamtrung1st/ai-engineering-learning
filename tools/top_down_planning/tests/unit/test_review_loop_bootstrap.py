@@ -8,6 +8,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     needs_primary_revision_resume,
     pending_interrupted_owner_revision,
+    pending_unconsumed_revision_cycle_entry,
     prepare_limit_reached_retry,
 )
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
@@ -36,8 +37,9 @@ def _loop(**overrides) -> ReviewLoop:
         revise_at="blocker",
         lifecycle_status="revision_in_progress",
         active_stage="finding_verification",
+        pending_revision_cycle_entry=False,
     )
-    return make_review_loop(
+    kwargs = dict(
         id=overrides.get("id", base.id),
         type=overrides.get("type", base.type),
         reviewer_session_id=overrides.get("reviewer_session_id", base.reviewer_session_id),
@@ -49,7 +51,15 @@ def _loop(**overrides) -> ReviewLoop:
         revise_at=overrides.get("revise_at", base.revise_at),
         lifecycle_status=overrides.get("lifecycle_status", base.lifecycle_status),
         active_stage=overrides.get("active_stage", base.active_stage),
+        pending_revision_cycle_entry=overrides.get(
+            "pending_revision_cycle_entry",
+            base.pending_revision_cycle_entry,
+        ),
     )
+    for key, value in overrides.items():
+        if key not in kwargs:
+            kwargs[key] = value
+    return make_review_loop(**kwargs)
 
 
 def test_needs_primary_revision_resume_detects_interrupted_cycle() -> None:
@@ -127,8 +137,6 @@ def test_bootstrap_skips_owner_resume_after_verification_recheck() -> None:
 def test_bootstrap_normalizes_limit_reached_before_primary_revision_resume() -> None:
     """limit_reached revival must run before needs_primary_revision_resume."""
 
-    from top_down_planning.domain.reviews import prepare_limit_reached_retry
-
     loop = make_review_loop(
         id="review-whole-output-01",
         type="whole_output",
@@ -140,6 +148,7 @@ def test_bootstrap_normalizes_limit_reached_before_primary_revision_resume() -> 
         revise_at="blocker",
         lifecycle_status="limit_reached",
         exhausted_budget="verification_revision",
+        pending_revision_cycle_entry=True,
         active_stage="finding_verification",
         review_record_schema_version=2,
         review_contract_version=2,
@@ -155,6 +164,7 @@ def test_bootstrap_normalizes_limit_reached_before_primary_revision_resume() -> 
         order.append("resume_interrupted")
         assert current.status == "pending"
         assert current.lifecycle_status == "revision_in_progress"
+        assert current.pending_revision_cycle_entry is True
         return current
 
     updated, deliver_on_existing_session = bootstrap_whole_review_loop(
@@ -195,6 +205,7 @@ def test_pending_interrupted_owner_revision_after_limit_retry_without_required_f
         revise_at="blocker",
         lifecycle_status="limit_reached",
         exhausted_budget="verification_revision",
+        pending_revision_cycle_entry=True,
         active_stage="finding_verification",
         review_record_schema_version=2,
         review_contract_version=2,
@@ -205,6 +216,8 @@ def test_pending_interrupted_owner_revision_after_limit_retry_without_required_f
     assert revived.status == "pending"
     assert revived.lifecycle_status == "revision_in_progress"
     assert revived.revision_cycles == 5
+    assert revived.pending_revision_cycle_entry is True
+    assert pending_unconsumed_revision_cycle_entry(revived) is True
     assert pending_interrupted_owner_revision(revived, current_revision=1) is True
     assert needs_primary_revision_resume(revived, current_revision=1) is False
 
@@ -223,6 +236,7 @@ def test_bootstrap_resumes_owner_revision_when_only_optional_findings_remain_aft
         revise_at="blocker",
         lifecycle_status="limit_reached",
         exhausted_budget="verification_revision",
+        pending_revision_cycle_entry=True,
         active_stage="finding_verification",
         review_record_schema_version=2,
         review_contract_version=2,
@@ -237,6 +251,7 @@ def test_bootstrap_resumes_owner_revision_when_only_optional_findings_remain_aft
         resumed.append(current.id)
         assert current.status == "pending"
         assert current.lifecycle_status == "revision_in_progress"
+        assert current.pending_revision_cycle_entry is True
         return current
 
     updated, deliver_on_existing_session = bootstrap_whole_review_loop(
@@ -249,3 +264,26 @@ def test_bootstrap_resumes_owner_revision_when_only_optional_findings_remain_aft
     assert resumed == ["review-whole-plan-01"]
     assert updated.lifecycle_status == "revision_in_progress"
     assert deliver_on_existing_session is False
+
+
+def test_pending_unconsumed_revision_cycle_entry_distinguishes_limit_block_from_mid_cycle() -> None:
+    """verification_revision limit pause is not a charged mid-cycle interrupt."""
+
+    blocked_before_entry = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        findings=[_optional_finding()],
+        revision_cycles=5,
+        revise_at="blocker",
+        lifecycle_status="revision_in_progress",
+        pending_revision_cycle_entry=True,
+        active_stage="finding_verification",
+    )
+    mid_cycle = _loop(pending_revision_cycle_entry=False)
+
+    assert pending_unconsumed_revision_cycle_entry(blocked_before_entry) is True
+    assert pending_unconsumed_revision_cycle_entry(mid_cycle) is False
+    assert pending_interrupted_owner_revision(mid_cycle, current_revision=4) is True
