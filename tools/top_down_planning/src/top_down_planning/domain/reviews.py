@@ -1585,6 +1585,27 @@ def required_unresolved_finding_ids(
     return required_open_finding_ids(findings, revise_at)
 
 
+def pending_interrupted_owner_revision(
+    loop: ReviewLoop,
+    *,
+    current_revision: int,
+) -> bool:
+    """True when owner revision is the remaining work after findings were opened.
+
+    Used after ``limit_reached`` revival and mid-cycle interruption. Does not
+    require unresolved *required* findings: optional remaining work or a
+    consumed ``needs_revision`` can still leave the owner turn pending.
+    """
+
+    if loop.lifecycle_status != "revision_in_progress":
+        return False
+    if loop.status != "pending":
+        return False
+    if current_revision > loop.target_revision:
+        return False
+    return True
+
+
 def needs_primary_revision_resume(
     loop: ReviewLoop,
     *,
@@ -1592,9 +1613,11 @@ def needs_primary_revision_resume(
 ) -> bool:
     """True when a revision cycle started but the primary owner never ran."""
 
-    if loop.revision_cycles <= 0 or loop.status != "pending":
+    if loop.revision_cycles <= 0:
         return False
-    if current_revision > loop.target_revision:
+    if not pending_interrupted_owner_revision(
+        loop, current_revision=current_revision
+    ):
         return False
     return bool(
         required_unresolved_finding_ids(
@@ -2801,7 +2824,7 @@ def prepare_limit_reached_retry(loop: ReviewLoop) -> ReviewLoop:
 
     if exhausted == "verification_revision":
         # Re-enter primary owner revision for the already-consumed cycle
-        # (needs_primary_revision_resume) without double-counting.
+        # (pending_interrupted_owner_revision) without double-counting.
         assert_mandatory_review_transition("limit_reached", "revision_in_progress")
         return reset_gate_agent_turns(
             replace(

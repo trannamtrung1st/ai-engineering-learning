@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from tests.helpers import make_review_loop
-from top_down_planning.domain.reviews import ReviewFinding, ReviewLoop, needs_primary_revision_resume
+from top_down_planning.domain.reviews import (
+    ReviewFinding,
+    ReviewLoop,
+    needs_primary_revision_resume,
+    pending_interrupted_owner_revision,
+    prepare_limit_reached_retry,
+)
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 
 
@@ -159,5 +165,87 @@ def test_bootstrap_normalizes_limit_reached_before_primary_revision_resume() -> 
     )
 
     assert order == ["normalize", "resume_interrupted"]
+    assert updated.lifecycle_status == "revision_in_progress"
+    assert deliver_on_existing_session is False
+
+
+def _optional_finding() -> ReviewFinding:
+    return ReviewFinding(
+        id="finding-minor-01",
+        severity="minor",
+        category="other",
+        target_refs=["item-a"],
+        issue="Polish path.",
+        recommended_change="Tighten wording.",
+        status="unresolved",
+    )
+
+
+def test_pending_interrupted_owner_revision_after_limit_retry_without_required_findings() -> None:
+    """Limit revival leaves owner revision pending even when only optional findings remain."""
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="blocked",
+        findings=[_optional_finding()],
+        revision_cycles=5,
+        revise_at="blocker",
+        lifecycle_status="limit_reached",
+        exhausted_budget="verification_revision",
+        active_stage="finding_verification",
+        review_record_schema_version=2,
+        review_contract_version=2,
+        verification_result={"decision": "needs_revision"},
+    )
+    revived = prepare_limit_reached_retry(loop)
+
+    assert revived.status == "pending"
+    assert revived.lifecycle_status == "revision_in_progress"
+    assert revived.revision_cycles == 5
+    assert pending_interrupted_owner_revision(revived, current_revision=1) is True
+    assert needs_primary_revision_resume(revived, current_revision=1) is False
+
+
+def test_bootstrap_resumes_owner_revision_when_only_optional_findings_remain_after_limit_retry() -> None:
+    """Raising the revision cap must resume the pending owner turn, not replay needs_revision."""
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="blocked",
+        findings=[_optional_finding()],
+        revision_cycles=5,
+        revise_at="blocker",
+        lifecycle_status="limit_reached",
+        exhausted_budget="verification_revision",
+        active_stage="finding_verification",
+        review_record_schema_version=2,
+        review_contract_version=2,
+        verification_result={"decision": "needs_revision"},
+    )
+    resumed: list[str] = []
+
+    def normalize(current: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        return prepare_limit_reached_retry(current), False
+
+    def resume_interrupted(current: ReviewLoop) -> ReviewLoop:
+        resumed.append(current.id)
+        assert current.status == "pending"
+        assert current.lifecycle_status == "revision_in_progress"
+        return current
+
+    updated, deliver_on_existing_session = bootstrap_whole_review_loop(
+        loop,
+        current_revision=1,
+        resume_interrupted_revision=resume_interrupted,
+        normalize_loop_for_resume=normalize,
+    )
+
+    assert resumed == ["review-whole-plan-01"]
     assert updated.lifecycle_status == "revision_in_progress"
     assert deliver_on_existing_session is False

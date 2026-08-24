@@ -353,6 +353,26 @@ def test_resolve_reviewer_session_for_recheck_raises_when_replacement_required()
         )
 
 
+def test_resolve_reviewer_session_for_recheck_replaces_missing_session_after_owner_revision() -> None:
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        revise_at="blocker",
+        status="pending",
+        lifecycle_status="revision_in_progress",
+        revision_cycles=1,
+    )
+
+    with pytest.raises(ReviewerRecheckRequiresNewSession):
+        resolve_reviewer_session_for_recheck(
+            loop,
+            target_revision=1,
+            current_revision=2,
+        )
+
+
 def test_consume_provider_turn_returns_canonical_reviewer_session_id(
     tmp_path: Path,
 ) -> None:

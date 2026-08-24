@@ -378,6 +378,12 @@ def resolve_reviewer_session_for_recheck(
     if session_id is not None:
         return session_id
 
+    # Limit-reached revival releases the reviewer session before the pending
+    # owner revision. After the artifact advances, recheck needs a new session
+    # even when finding_actions were not recorded.
+    if current_revision > target_revision:
+        raise ReviewerRecheckRequiresNewSession()
+
     if recheck_requires_reviewer_session_replacement(
         loop,
         target_revision=target_revision,

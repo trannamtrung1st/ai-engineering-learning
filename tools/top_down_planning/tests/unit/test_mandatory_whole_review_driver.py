@@ -496,6 +496,247 @@ def test_driver_revision_limit_pauses_run(tmp_path: Path) -> None:
     assert run["stop"]["code"] == "limit_exhausted"
 
 
+def test_driver_resumes_pending_owner_revision_after_revision_limit_extension(
+    tmp_path: Path,
+) -> None:
+    """Raising max_revision_cycles must resume the pending owner revision.
+
+    After verification ``needs_revision`` exhausts the revision budget, required
+    findings may already be resolved while an optional finding remains. Resume
+    must not replay that consumed decision through ``mark_findings_open``.
+    """
+
+    import copy
+    from unittest.mock import patch
+
+    from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
+    from top_down_planning.orchestrator.mandatory_review_stages import mark_findings_open
+    from top_down_planning.orchestrator.prepare_resume import prepare_resume
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000318-000318"
+    planner_session_id, loop_id = _create_driver_run(
+        store,
+        run_id,
+        provider=provider,
+        limits={"max_revision_cycles": 1},
+    )
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    findings = [_blocker_finding(), _minor_finding()]
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+                decision="changes_requested",
+                findings=findings,
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        ),
+    )
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {"outcome": "Improved outcome."},
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        ),
+    )
+
+    def _needs_revision_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        respond_review(
+            store,
+            run_id,
+            mandatory_verification_needs_revision_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_plan",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["blocker addressed"],
+                        "direct_side_effects": [],
+                    },
+                    {
+                        "finding_id": "finding-minor-01",
+                        "disposition": "partially_resolved",
+                        "evidence": ["wording still loose"],
+                        "direct_side_effects": [],
+                    },
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_needs_revision_respond,
+    )
+    paused = ReviewLoopDriver(store, run_id, provider, adapter).run()
+    assert paused.ok is False
+    run = store.load_run(run_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
+    review_at_pause = store.load_review(run_id, loop_id)
+    assert review_at_pause["lifecycle_status"] == "limit_reached"
+    assert review_at_pause["revision_cycles"] == 1
+    assert review_at_pause["status"] == "blocked"
+    finding_by_id = {item["id"]: item for item in review_at_pause["findings"]}
+    assert finding_by_id["finding-01"]["status"] == "resolved"
+    assert finding_by_id["finding-minor-01"]["status"] == "partially_resolved"
+    assert (review_at_pause.get("verification_result") or {}).get("decision") == (
+        "needs_revision"
+    )
+    finding_ids_at_pause = [item["id"] for item in review_at_pause["findings"]]
+    events_at_pause = [event.get("type") for event in store.load_events(run_id)]
+    review_started_at_pause = events_at_pause.count("whole_plan_review_started")
+
+    stored = store.load_resolved_config(run_id)
+    candidate = copy.deepcopy(stored)
+    candidate["limits"]["whole_plan_review"]["max_revision_cycles"] = 2
+    resume_plan = prepare_resume(store, run_id, candidate, allow_config_drift=True)
+    apply_resume_plan_atomically(
+        store,
+        resume_plan,
+        resolved_config=candidate,
+        invocation=store.load_invocation(run_id),
+    )
+    review_after_apply = store.load_review(run_id, loop_id)
+    assert review_after_apply["lifecycle_status"] == "revision_in_progress"
+    assert review_after_apply["status"] == "pending"
+    assert review_after_apply["revision_cycles"] == 1
+    assert int(store.load_resolved_config(run_id)["limits"]["whole_plan_review"]["max_revision_cycles"]) == 2
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {"outcome": "Improved outcome with tighter wording."},
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        ),
+    )
+
+    def _verification_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        respond_review(
+            store,
+            run_id,
+            mandatory_verification_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=2,
+                review_type="whole_plan",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["still resolved"],
+                        "direct_side_effects": [],
+                    },
+                    {
+                        "finding_id": "finding-minor-01",
+                        "disposition": "resolved",
+                        "evidence": ["wording tightened"],
+                        "direct_side_effects": [],
+                    },
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    def _scope_clear() -> None:
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=2,
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_verification_respond,
+    )
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_clear)
+    adapter.approval_result = MandatoryWholeReviewResult(
+        ok=True,
+        phase=PLAN_VALIDATED,
+        status="running",
+        outcome=None,
+        loop_id=loop_id,
+        reviewer_session_id="stub-reviewer",
+        revision_cycles=1,
+    )
+
+    mark_calls: list[str] = []
+    real_mark_findings_open = mark_findings_open
+
+    def _tracking_mark_findings_open(loop: ReviewLoop) -> ReviewLoop:
+        mark_calls.append(str(loop.lifecycle_status))
+        return real_mark_findings_open(loop)
+
+    with patch(
+        "top_down_planning.orchestrator.review_loop_driver.mark_findings_open",
+        side_effect=_tracking_mark_findings_open,
+    ):
+        result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+
+    assert result.ok is True
+    assert "orchestrator_invariant_failure" not in (result.reason or "")
+    run = store.load_run(run_id)
+    assert (run.get("stop") or {}).get("code") != "orchestrator_invariant_failure"
+    assert "revision_in_progress" not in mark_calls
+    review = store.load_review(run_id, loop_id)
+    assert review["revision_cycles"] == 1
+    assert [item["id"] for item in review["findings"]] == finding_ids_at_pause
+    events_after = [event.get("type") for event in store.load_events(run_id)]
+    assert events_after.count("whole_plan_review_started") == review_started_at_pause
+    assert review.get("verification_result")
+    assert review.get("scope_review_result")
+    assert int(store.load_plan(run_id)["revision"]) == 2
+
+
 def test_driver_verified_path_enters_scope_review_before_final_approval(
     tmp_path: Path,
 ) -> None:

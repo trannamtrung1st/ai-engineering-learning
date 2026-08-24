@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from top_down_planning.domain.reviews import ReviewLoop, needs_primary_revision_resume
+from top_down_planning.domain.reviews import (
+    ReviewLoop,
+    pending_interrupted_owner_revision,
+)
 from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 
 
@@ -19,17 +22,17 @@ def bootstrap_whole_review_loop(
 
     Normalize runs first so ``limit_reached`` revival can restore
     ``revision_in_progress`` / ``pending`` before owner-resume detection.
-    Owner resume runs only for ``revision_in_progress`` after normalize did not
-    already deliver a verification recheck (avoids double owner work after
-    ``changes_requested`` cold-resume and after ``review_incomplete`` retry).
+    Owner resume runs when an interrupted owner revision is pending after
+    normalize did not already deliver a verification recheck (avoids double
+    owner work after ``changes_requested`` cold-resume and after
+    ``review_incomplete`` retry). Remaining work is the owner turn, not a
+    replay of a consumed ``needs_revision`` / ``changes_requested`` decision.
     """
 
     loop, reviewer_turn_delivered = normalize_loop_for_resume(loop)
     interrupted_revision_resumed = False
-    if (
-        not reviewer_turn_delivered
-        and loop.lifecycle_status == "revision_in_progress"
-        and needs_primary_revision_resume(loop, current_revision=current_revision)
+    if not reviewer_turn_delivered and pending_interrupted_owner_revision(
+        loop, current_revision=current_revision
     ):
         loop = resume_interrupted_revision(loop)
         interrupted_revision_resumed = True

@@ -278,6 +278,7 @@ class ReviewLoopDriver:
             resume_interrupted_revision=self._resume_interrupted_owner_revision,
             normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
+        loop = self._reload_loop(loop.id)
         self._adapter.preflight(loop)
         reject_mandatory_contract_v1_loop(loop)
         loop = self._persist_loop(seed_mandatory_loop_fields(loop))
@@ -1265,7 +1266,8 @@ class ReviewLoopDriver:
                 current_revision=artifact_revision,
             )
         except ReviewerRecheckRequiresNewSession:
-            loop = self._persist_loop(loop.with_reviewer_session_released())
+            current = self._reload_loop(loop.id)
+            loop = self._persist_loop(current.with_reviewer_session_released())
             updated = self._persist_loop(
                 self._adapter.prepare_recheck_transition(loop, artifact_revision)
             )
@@ -1296,7 +1298,7 @@ class ReviewLoopDriver:
                 context_digest=role_context.context_digest,
                 **extra,
             )
-            return updated
+            return self._reload_loop(loop.id)
 
         if not self.profile.is_mandatory_gate:
             updated = updated.with_reviewer_provider_session_id(session_id)
