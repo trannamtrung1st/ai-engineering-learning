@@ -272,6 +272,18 @@ def check_continuation_ok_docs(docs: Path) -> list[str]:
     return errors
 
 
+def _workspace_stays_under_first_run(package_root: Path, workspace: str) -> bool:
+    tutorial = (package_root / "examples" / "first-run").resolve()
+    repo_root = package_root.parent.parent.resolve()
+    candidate = Path(workspace)
+    resolved = candidate.resolve() if candidate.is_absolute() else (repo_root / candidate).resolve()
+    try:
+        resolved.relative_to(tutorial)
+    except ValueError:
+        return False
+    return True
+
+
 def check_first_run_safety(package_root: Path) -> list[str]:
     errors: list[str] = []
     config_path = package_root / FIRST_RUN_CONFIG_REL
@@ -283,8 +295,7 @@ def check_first_run_safety(package_root: Path) -> list[str]:
     workspace = str((parsed.get("project") or {}).get("workspace") or "")
     if workspace in {"", "."}:
         errors.append("first-run config must not use project.workspace: .")
-    expected_prefix = "tools/top_down_planning/examples/first-run/"
-    if not workspace.startswith(expected_prefix):
+    if not _workspace_stays_under_first_run(package_root, workspace):
         errors.append(
             "first-run project.workspace must stay under examples/first-run/"
         )

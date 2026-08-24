@@ -111,6 +111,43 @@ def test_continuation_ok_docs_reject_completed_accepted_only(tmp_path: Path) -> 
     assert errors
 
 
+def _write_first_run_tree(tmp_path: Path, workspace: str) -> Path:
+    package_root = tmp_path / "tools" / "top_down_planning"
+    (package_root / "examples" / "first-run").mkdir(parents=True)
+    (package_root / "docs" / "workflows").mkdir(parents=True)
+    (package_root / "examples" / "first-run" / "config.yaml").write_text(
+        f"project:\n  workspace: {workspace}\n",
+        encoding="utf-8",
+    )
+    (package_root / "docs" / "workflows" / "first-run.md").write_text(
+        "Use examples/first-run/config.yaml. Artifact greeting.txt.\n",
+        encoding="utf-8",
+    )
+    return package_root
+
+
+def test_first_run_safety_accepts_workspace_under_tutorial_dir(tmp_path: Path) -> None:
+    check_docs = _load_check_docs()
+    package_root = _write_first_run_tree(
+        tmp_path,
+        "tools/top_down_planning/examples/first-run/workspace",
+    )
+    assert check_docs.check_first_run_safety(package_root) == []
+
+
+def test_first_run_safety_rejects_workspace_that_escapes_via_parent_segments(
+    tmp_path: Path,
+) -> None:
+    check_docs = _load_check_docs()
+    package_root = _write_first_run_tree(
+        tmp_path,
+        "tools/top_down_planning/examples/first-run/../../../outside",
+    )
+    errors = check_docs.check_first_run_safety(package_root)
+    joined = "\n".join(errors)
+    assert "examples/first-run" in joined
+
+
 def test_package_docs_pass_quality_checks() -> None:
     check_docs = _load_check_docs()
     errors = check_docs.check_all(_PACKAGE_ROOT)
