@@ -19,6 +19,7 @@ _READY = os.environ.get("TDP_STUB_TURN_READY_PATH")
 _WOR_SCRIPT = os.environ.get("TDP_WOR_SCRIPT")
 _WOR_RUNS_DIR = os.environ.get("TDP_WOR_RUNS_DIR")
 _OWNER_COUNT_PATH = os.environ.get("TDP_WOR_OWNER_TURN_COUNT_PATH")
+_SNAPSHOT_PATH = os.environ.get("TDP_WOR_SNAPSHOT_PATH")
 
 if _READY or (_WOR_SCRIPT and _WOR_RUNS_DIR):
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
@@ -183,6 +184,21 @@ if _READY or (_WOR_SCRIPT and _WOR_RUNS_DIR):
                 loop_id=loop_id,
             )()
 
+        def _write_recheck_snapshot(store, run_id: str) -> None:
+            if not _SNAPSHOT_PATH:
+                return
+            loop = _whole_output_loop(store, run_id)
+            Path(_SNAPSHOT_PATH).write_text(
+                "\n".join(
+                    [
+                        str(loop.get("lifecycle_status") or ""),
+                        str(loop.get("target_revision") or ""),
+                        repr(loop.get("verification_result")),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
         def _wor_resolve_script(self: StubProvider, session_id: str) -> list[dict[str, object]]:
             session = self._require_session(session_id)
             last = session.history[-1] if session.history else {}
@@ -215,6 +231,7 @@ if _READY or (_WOR_SCRIPT and _WOR_RUNS_DIR):
                     loop = _whole_output_loop(store, _run_id(store))
                     stage = str(loop.get("active_stage") or "")
                     if stage == "finding_verification":
+                        _write_recheck_snapshot(store, _run_id(store))
                         session.pending_hook = _verification_respond_mutate(store)
                         return [{"type": "done", "subtype": "success", "text": "verification"}]
                     if stage == "scope_review" or loop.get("lifecycle_status") == (
@@ -223,6 +240,30 @@ if _READY or (_WOR_SCRIPT and _WOR_RUNS_DIR):
                         session.pending_hook = _scope_clear_mutate(store)
                         return [{"type": "done", "subtype": "success", "text": "scope review"}]
                 return [{"type": "done", "subtype": "success", "text": "turn complete"}]
+
+            if script == "artifact_advanced_then_verify":
+                if session.role == "producer" and session.kind == "primary":
+                    if _is_owner_revision_turn(store, session):
+                        _record_owner_turn()
+                        raise RuntimeError(
+                            "artifact_advanced_then_verify: owner revision turn was started"
+                        )
+                if session.role == "reviewer":
+                    loop = _whole_output_loop(store, _run_id(store))
+                    stage = str(loop.get("active_stage") or "")
+                    if stage == "finding_verification":
+                        _write_recheck_snapshot(store, _run_id(store))
+                        session.pending_hook = _verification_respond_mutate(store)
+                        return [{"type": "done", "subtype": "success", "text": "verification"}]
+                    if stage == "scope_review" or loop.get("lifecycle_status") == (
+                        "findings_closed"
+                    ):
+                        session.pending_hook = _scope_clear_mutate(store)
+                        return [{"type": "done", "subtype": "success", "text": "scope review"}]
+                    return [{"type": "done", "subtype": "success", "text": "reviewer noop"}]
+                raise RuntimeError(
+                    f"artifact_advanced_then_verify: unexpected turn role={session.role}"
+                )
 
             if script == "artifact_advanced_verify_only":
                 if session.role == "producer" and session.kind == "primary":

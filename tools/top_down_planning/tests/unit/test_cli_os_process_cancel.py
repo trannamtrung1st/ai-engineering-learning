@@ -9,10 +9,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.provider_turns import review_respond_count
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import apply_production, only_run_id, write_config
 from tests.support.whole_output_sigint_resume import seed_whole_output_revision_in_progress_run
@@ -102,6 +104,40 @@ def _wait_ready_and_sigint(child: subprocess.Popen[str], ready_path: Path) -> No
     child.wait(timeout=15)
 
 
+def _assert_no_illegal_mandatory_review_transition(
+    combined: str,
+    run: dict[str, Any],
+) -> None:
+    assert "illegal mandatory review transition" not in combined
+    assert "revision_in_progress' → 'findings_open'" not in combined
+    assert "orchestrator_invariant_failure" not in combined
+    assert (run.get("stop") or {}).get("code") != "orchestrator_invariant_failure"
+
+
+def _assert_whole_output_review_completed_successfully(
+    store: FileRunStore,
+    run_id: str,
+    loop_id: str,
+    *,
+    revision_cycles_expected: int,
+    finding_set_id_expected: str,
+    review_respond_count_expected: int,
+) -> None:
+    run = store.load_run(run_id)
+    assert run["status"] == "completed"
+    assert run["phase"] == OUTPUT_VALIDATED
+    assert run["outcome"] == "accepted"
+    assert run.get("stop") is None
+
+    review = store.load_review(run_id, loop_id)
+    assert review["lifecycle_status"] == "approved"
+    assert int(review["revision_cycles"]) == revision_cycles_expected
+    assert review["finding_set_id"] == finding_set_id_expected
+    assert (review.get("verification_result") or {}).get("decision") == "verified"
+    assert (review.get("scope_review_result") or {}).get("decision") == "approved"
+    assert review_respond_count(store, run_id, loop_id) == review_respond_count_expected
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT CLI contract")
 def test_tdp_run_sigint_exits_130_and_pauses_run_as_user_cancelled(
     tmp_path: Path,
@@ -183,7 +219,10 @@ def test_tdp_resume_sigint_whole_output_revision_in_progress_then_resumes(
         run_id,
         revision_cycles=1,
     )
-    revision_cycles_before = int(store.load_review(run_id, loop_id)["revision_cycles"])
+    review_before = store.load_review(run_id, loop_id)
+    revision_cycles_before = int(review_before["revision_cycles"])
+    finding_set_id_before = str(review_before["finding_set_id"])
+    review_responds_before = review_respond_count(store, run_id, loop_id)
 
     ready_path = tmp_path / "owner-revision-ready"
     child = _run_tdp_resume_sigint(
@@ -208,9 +247,11 @@ def test_tdp_resume_sigint_whole_output_revision_in_progress_then_resumes(
     review_after_sigint = store.load_review(run_id, loop_id)
     assert review_after_sigint["lifecycle_status"] == "revision_in_progress"
     assert int(review_after_sigint["revision_cycles"]) == revision_cycles_before
+    assert review_after_sigint["finding_set_id"] == finding_set_id_before
     assert (review_after_sigint.get("verification_result") or {}).get("decision") == (
         "needs_revision"
     )
+    assert review_respond_count(store, run_id, loop_id) == review_responds_before
 
     owner_count_path = tmp_path / "owner-turn-count"
     completed = subprocess.run(
@@ -239,17 +280,18 @@ def test_tdp_resume_sigint_whole_output_revision_in_progress_then_resumes(
         check=False,
     )
     combined = f"{completed.stdout}\n{completed.stderr}"
-    assert "orchestrator_invariant_failure" not in combined
-    assert "revision_in_progress" not in combined or "findings_open" not in combined
-
+    assert completed.returncode == 0, combined
     run = store.load_run(run_id)
-    assert run["status"] != "failed"
-    assert (run.get("stop") or {}).get("code") != "orchestrator_invariant_failure"
-    review = store.load_review(run_id, loop_id)
-    assert int(review["revision_cycles"]) == revision_cycles_before
+    _assert_no_illegal_mandatory_review_transition(combined, run)
     assert owner_count_path.read_text(encoding="utf-8").strip() == "1"
-    assert review.get("verification_result")
-    assert review.get("scope_review_result")
+    _assert_whole_output_review_completed_successfully(
+        store,
+        run_id,
+        loop_id,
+        revision_cycles_expected=revision_cycles_before,
+        finding_set_id_expected=finding_set_id_before,
+        review_respond_count_expected=review_responds_before + 2,
+    )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT CLI contract")
@@ -272,6 +314,11 @@ def test_tdp_resume_whole_output_artifact_advanced_skips_owner_rerun(
         target_revision=1,
         revision_cycles=1,
     )
+    review_before = store.load_review(run_id, loop_id)
+    revision_cycles_before = int(review_before["revision_cycles"])
+    finding_set_id_before = str(review_before["finding_set_id"])
+    review_responds_before = review_respond_count(store, run_id, loop_id)
+
     apply_production(
         store,
         run_id,
@@ -316,6 +363,7 @@ def test_tdp_resume_whole_output_artifact_advanced_skips_owner_rerun(
     assert int(store.load_production(run_id)["output_revision"]) == 2
 
     owner_count_path = tmp_path / "owner-turn-count-advanced"
+    recheck_snapshot_path = tmp_path / "recheck-snapshot"
     completed = subprocess.run(
         [
             shutil.which("tdp"),
@@ -332,8 +380,9 @@ def test_tdp_resume_whole_output_artifact_advanced_skips_owner_rerun(
             sitecustomize_dir=_WOR_SITCUSTOMIZE_DIR,
             extra={
                 "TDP_WOR_RUNS_DIR": str(runs_dir),
-                "TDP_WOR_SCRIPT": "artifact_advanced_verify_only",
+                "TDP_WOR_SCRIPT": "artifact_advanced_then_verify",
                 "TDP_WOR_OWNER_TURN_COUNT_PATH": str(owner_count_path),
+                "TDP_WOR_SNAPSHOT_PATH": str(recheck_snapshot_path),
             },
         ),
         capture_output=True,
@@ -342,13 +391,21 @@ def test_tdp_resume_whole_output_artifact_advanced_skips_owner_rerun(
         check=False,
     )
     combined = f"{completed.stdout}\n{completed.stderr}"
-    assert "orchestrator_invariant_failure" not in combined
-    assert completed.returncode in {0, 1}
-
-    assert not owner_count_path.is_file()
-    review = store.load_review(run_id, loop_id)
-    assert review["lifecycle_status"] == "verification_pending"
-    assert review.get("verification_result") is None
-    assert int(review["target_revision"]) == 2
+    assert completed.returncode == 0, combined
     run = store.load_run(run_id)
-    assert (run.get("stop") or {}).get("code") != "orchestrator_invariant_failure"
+    _assert_no_illegal_mandatory_review_transition(combined, run)
+    assert not owner_count_path.is_file()
+    snapshot_lines = recheck_snapshot_path.read_text(encoding="utf-8").splitlines()
+    assert snapshot_lines[0] == "verification_pending"
+    assert snapshot_lines[1] == "2"
+    assert snapshot_lines[2] == "None"
+    _assert_whole_output_review_completed_successfully(
+        store,
+        run_id,
+        loop_id,
+        revision_cycles_expected=revision_cycles_before,
+        finding_set_id_expected=finding_set_id_before,
+        review_respond_count_expected=review_responds_before + 2,
+    )
+    review = store.load_review(run_id, loop_id)
+    assert int(review["target_revision"]) == 2
