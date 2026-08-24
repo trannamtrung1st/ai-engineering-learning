@@ -70,6 +70,22 @@ def test_mandatory_stage_respond_decision_honors_persisted_verification_while_pe
     assert mandatory_stage_respond_decision(loop) == "verified"
 
 
+def test_mandatory_stage_respond_decision_revision_in_progress_ignores_stale_verification() -> None:
+    loop = make_review_loop(
+        id="r5",
+        type="whole_output",
+        reviewer_session_id="s",
+        target_revision=4,
+        scope={"kind": "whole_output"},
+        status="pending",
+        lifecycle_status="revision_in_progress",
+        active_stage="finding_verification",
+        verification_result={"decision": "needs_revision"},
+        revise_at="blocker",
+    )
+    assert mandatory_stage_respond_decision(loop) == "pending"
+
+
 def test_validate_mandatory_stage_decision_returns_stage_native_values() -> None:
     assert validate_mandatory_stage_decision("finding_verification", "verified") == "verified"
     with pytest.raises(ValueError, match="unknown mandatory review stage"):

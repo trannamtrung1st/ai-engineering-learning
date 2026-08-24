@@ -68,6 +68,7 @@ _SIBLING_IMPORT_ALLOWLIST = frozenset(
         "unit/test_sub_tdp_defect_rescan.py",
         "unit/test_sub_tdp_review_continued.py",
         "unit/test_sub_tdp_review_fixes.py",
+        "unit/test_mandatory_review_cancel_resume.py",
         "unit/test_whole_plan_review.py",
     }
 )

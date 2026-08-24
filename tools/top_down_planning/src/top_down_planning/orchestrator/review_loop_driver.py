@@ -497,6 +497,12 @@ class ReviewLoopDriver:
                     else:
                         return self._adapter.complete_success(loop)
                 if required_open_findings(loop.findings, loop_revise_at(loop)):
+                    if (
+                        self.profile.is_mandatory_gate
+                        and loop.lifecycle_status == "revision_in_progress"
+                    ):
+                        loop = self._resume_interrupted_owner_revision(loop)
+                        continue
                     stage_decision = "changes_requested"
                 elif verification_required_for_loop(loop):
                     active = finding_actions_for_active_set(loop)
@@ -523,6 +529,9 @@ class ReviewLoopDriver:
 
             loop = self._reload_loop(loop.id)
             if self.profile.is_mandatory_gate:
+                if loop.lifecycle_status == "revision_in_progress":
+                    loop = self._resume_interrupted_owner_revision(loop)
+                    continue
                 prior_finding_set_id = loop.finding_set_id
                 was_scope_review_stage = is_scope_review_stage(loop)
                 loop = self._persist_loop(mark_findings_open(loop))
@@ -740,6 +749,12 @@ class ReviewLoopDriver:
             retried = prepare_review_incomplete_retry(loop)
             retried, _finding_set_id = allocate_discovery_finding_set_id(retried)
             return self._persist_loop(retried), False
+
+        if loop.lifecycle_status == "revision_in_progress":
+            artifact_revision, _digest = self._adapter.current_artifact_binding()
+            if artifact_revision > loop.target_revision:
+                return self._prepare_recheck(loop), True
+            return loop, False
 
         if not is_revision_requested_status(loop.status):
             return loop, False
@@ -1105,6 +1120,9 @@ class ReviewLoopDriver:
         )
 
     def _resume_interrupted_owner_revision(self, loop: ReviewLoop) -> ReviewLoop:
+        artifact_revision, _digest = self._adapter.current_artifact_binding()
+        if artifact_revision > loop.target_revision:
+            return self._prepare_recheck(loop)
         if pending_unconsumed_revision_cycle_entry(loop):
             # Limit-extension resume: charge the next cycle once, then run owner.
             # Do not replay mark_findings_open / the consumed reviewer decision.

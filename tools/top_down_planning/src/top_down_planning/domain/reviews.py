@@ -3247,6 +3247,10 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
         raise ValueError("scope_review loop missing scope_review_result")
 
     if stage == "finding_verification":
+        # A consumed needs_revision already moved the loop into revision_in_progress.
+        # Stale verification_result must not drive orchestration on cancel/resume.
+        if loop.lifecycle_status == "revision_in_progress":
+            return "pending"
         verification = loop.verification_result
         if isinstance(verification, dict):
             raw = str(verification.get("decision") or "").strip()
