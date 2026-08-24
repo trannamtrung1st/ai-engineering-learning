@@ -54,7 +54,9 @@ Per-role and per-activity model selection uses `agent_context.roles.<role>.model
 
 ## Minimal working config
 
-Canonical example: [examples/top-down-planning.yaml](../../examples/top-down-planning.yaml). That file sets `runtime.runs_dir`, so `tdp run` does not need `--runs-dir`. `tdp run` / `tdp prepare` / `tdp execute` do **not** fall back to `./runs`.
+Canonical operator example: [examples/top-down-planning.yaml](../../examples/top-down-planning.yaml). That file sets `runtime.runs_dir`, so `tdp run` does not need `--runs-dir`. `tdp run` / `tdp prepare` / `tdp execute` do **not** fall back to `./runs`. Its `project.workspace: .` is the process cwd — use it only when that directory is the project you want the producer to change.
+
+The [first-run walkthrough](../workflows/first-run.md) uses a disposable workspace and config: [examples/first-run/config.yaml](../../examples/first-run/config.yaml).
 
 ```yaml
 version: 1
@@ -78,10 +80,10 @@ agent_context:
     model: auto
 ```
 
-Use either `run.output_goal` or `run.output_goal_file` (UTF-8 file resolved against `project.workspace`), not both. From the repository root:
+Use either `run.output_goal` or `run.output_goal_file` (UTF-8 file resolved against `project.workspace`), not both. First-run from the repository root:
 
 ```bash
-tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp run --config tools/top_down_planning/examples/first-run/config.yaml
 ```
 
 That command defaults to `--until plan`. After this page, complete one successful run with the [first-run walkthrough](../workflows/first-run.md), which explains later `--until` milestones. Inspect and resume catalogs: [user CLI](cli.md) and [operations](../workflows/operations.md).

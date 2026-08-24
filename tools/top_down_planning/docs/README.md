@@ -2,9 +2,9 @@
 
 Top Down Planning (`tdp`) orchestrates planning and production: it takes an input and output goal, builds a top-down plan, reviews and validates that plan, produces output in coherent batches, and resolves a final quality outcome.
 
-This directory is the publication-ready documentation set. The [package README](../README.md) remains the in-repo operator entry; these pages expand it for newcomers, operators, runtime agents, and maintainers.
+This directory is the documentation set for newcomers, operators, runtime agents, and maintainers. The [package README](../README.md) remains the in-repo operator entry; these pages expand it.
 
-Production runs use the `cursor` provider. The `stub` provider is test-only. Host IDE planning modes are not part of the TDP workflow. Resume locking and the Cursor adapter require a POSIX environment; desktop alerts need the optional `[notifications]` extra. Details: [install](manual/install.md) and [quality checks](QUALITY-CHECKS.md).
+Production runs use the `cursor` provider. The `stub` provider is test-only. Host IDE planning modes are not part of the TDP workflow. Resume locking and the Cursor adapter require a POSIX environment; desktop alerts need the optional `[notifications]` extra. Details: [install](manual/install.md). How this tree is verified: [quality checks](QUALITY-CHECKS.md).
 
 Shared vocabulary lives in [lifecycle terms](concepts/lifecycle-terms.md) (`status` vs `phase` vs review `active_stage` vs revisions). Duplicate explanations elsewhere point back to one canonical page.
 
@@ -74,8 +74,8 @@ Follow these pages in order. Command flags and recovery details stay on the link
 1. Prerequisites, installation, `cursor` provider setup, POSIX limits, optional `[notifications]`, and a minimal config — [Install and setup](manual/install.md)
 2. Confirm `tdp --help` / `tdp agent help`, start a run from the example YAML — [First run](workflows/first-run.md) (steps 1–2)
 3. Inspect `status` and `phase` — [First run](workflows/first-run.md) (step 3) and [lifecycle terms](concepts/lifecycle-terms.md)
-4. After a default `tdp run` (`--until plan`), continue with `tdp resume --until completed` — [First run](workflows/first-run.md) (step 4). Omit `--until` on resume to advance one orchestrator step only — [operations](workflows/operations.md)
-5. Interpret `completed`/`accepted` vs paused vs failed — [First run](workflows/first-run.md) (step 5) and [lifecycle](workflows/lifecycle.md)
+4. After a default `tdp run` (`--until plan`), continue with `tdp resume --until completed` using the disposable first-run config — [First run](workflows/first-run.md) (step 4). Omit `--until` on resume to advance one orchestrator step only — [operations](workflows/operations.md)
+5. Interpret staged `ok=true` while `running` versus terminal `completed`/`accepted` versus paused versus failed — [First run](workflows/first-run.md) (step 5) and [lifecycle](workflows/lifecycle.md)
 
 ## Runtime agents start-here
 
@@ -103,7 +103,6 @@ Then `tdp agent help` and `tdp agent readme` in the session. Packaged role skill
 
 ## About these docs
 
-- [Page ownership](PAGE-OWNERSHIP.md) names every planned page, its audience job, and which plan item fills it.
-- [Quality checks](QUALITY-CHECKS.md) records the link scan and command/config verification evidence for this set.
+- [Quality checks](QUALITY-CHECKS.md) explains how to run the checked-in docs checker (`scripts/check_docs.py`).
 
 Links in this set are repository-relative so the docs remain browsable on GitHub.

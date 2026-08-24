@@ -60,6 +60,8 @@ A run **completes** with a quality **outcome**. `accepted` requires every clause
 
 If that invariant is satisfied, the outcome is `accepted`. If plan or output deterministic validation failed, or a required whole-plan or whole-output approval is missing, the outcome is `blocked`. Otherwise the outcome is `rejected`.
 
-`completed` plus `accepted` is the successful continuation result. `completed` with `rejected` or `blocked` is a finished run that did not accept. Those values are not the same as run **status** `failed` (an invariant stop). See [lifecycle terms](lifecycle-terms.md).
+**Terminal quality success** is `status=completed` and `outcome=accepted`. `completed` with `rejected` or `blocked` is a finished run that did not accept. Those values are not the same as run **status** `failed` (an invariant stop).
+
+**Continuation-command success** (`ok` on `tdp run` / `tdp resume`) is broader: a `running` run can still have `ok=true` after a staged `--until` target. `paused` and `failed` are `ok=false`. Vocabulary: [lifecycle terms](lifecycle-terms.md).
 
 Related: [plan tree](plan-tree.md), [roles](roles.md), [lifecycle walkthrough](../workflows/lifecycle.md).

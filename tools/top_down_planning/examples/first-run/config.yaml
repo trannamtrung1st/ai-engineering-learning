@@ -1,0 +1,37 @@
+# Disposable first-run tutorial config.
+#
+# Launch from the repository root:
+#   tdp run --config tools/top_down_planning/examples/first-run/config.yaml
+#
+# Production writes only under project.workspace (this example's workspace/),
+# not the repository root. The expected artifact is greeting.txt containing
+# exactly: Hello from TDP
+#
+# Creating commands (run, prepare, execute):
+#   --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir (no ./runs fallback)
+# Lookup/resume-style commands (resume, status, inspect, validate, doctor, sub-tdp attach):
+#   --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir > ./runs
+version: 1
+
+runtime:
+  runs_dir: tools/top_down_planning/examples/first-run/.tdp-runs
+
+project:
+  workspace: tools/top_down_planning/examples/first-run/workspace
+
+run:
+  input_refs:
+    - brief.md
+  output_goal: "Create greeting.txt in the workspace containing exactly one line: Hello from TDP"
+  boundaries: []
+  acceptance: []
+
+provider:
+  name: cursor
+
+agent_context:
+  default:
+    model: auto
+
+planning:
+  max_depth: 2

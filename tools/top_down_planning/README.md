@@ -18,11 +18,15 @@ tdp agent help
 tdp agent schema plan-transaction
 tdp agent example expand-branch
 
+# First complete run: disposable workspace (writes greeting.txt there only)
+tdp run --config tools/top_down_planning/examples/first-run/config.yaml
+tdp run --config tools/top_down_planning/examples/first-run/config.yaml --until validated
+tdp status --run <run-id> --config tools/top_down_planning/examples/first-run/config.yaml
+tdp resume --run <run-id> --config tools/top_down_planning/examples/first-run/config.yaml
+tdp resume --run <run-id> --until completed --config tools/top_down_planning/examples/first-run/config.yaml
+
+# Canonical example for an existing project (project.workspace: . is process cwd)
 tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
-tdp run --config tools/top_down_planning/examples/top-down-planning.yaml --until validated
-tdp status --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
-tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
-tdp resume --run <run-id> --until completed --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
 
 The default provider is `cursor` (requires the Cursor CLI on PATH). Unit and integration

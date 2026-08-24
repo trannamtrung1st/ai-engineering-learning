@@ -1,7 +1,10 @@
 # Example Top Down Planning configuration (proposal §14).
 #
-# From the repository root (project.workspace: . resolves against cwd):
+# From the repository root (project.workspace: . is the process cwd — the
+# producer may create/change files there). This is the canonical operator
+# example for an existing project, not the first-run tutorial.
 #   tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
+# First successful run (disposable workspace): examples/first-run/config.yaml
 #
 # Path resolution:
 #   project.workspace resolves against the process working directory.
@@ -16,8 +19,12 @@
 #   tools/top_down_planning/docs/README.md
 #   Packaged skills auto-injected (agent_context.bundled_skills, default true)
 #
-# Run store (optional):
-#   Precedence: --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir > ./runs
+# Run store:
+#   Creating commands (run, prepare, execute):
+#     --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir (no ./runs fallback)
+#   Lookup/resume-style commands (resume, status, inspect, validate, doctor, sub-tdp attach):
+#     --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir > ./runs
+#   Agent commands: --runs-dir > $TDP_RUNS_DIR > ./runs
 version: 1
 
 runtime:

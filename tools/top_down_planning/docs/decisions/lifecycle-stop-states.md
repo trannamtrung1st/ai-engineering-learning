@@ -23,7 +23,7 @@ A run’s durability is `status` plus, when stopped, either a structured `stop` 
 
 - `limit_exhausted` is an **operational** pause (`PAUSED_STOP_CODES`), not `failed`.
 - `session_recovery_exhausted` is an **invariant** failure (`FAILED_STOP_CODES`).
-- Continuation/resume success is `completed` **and** `accepted` only (`continuation_ok_from_run`).
+- `continuation_ok_from_run` is **continuation-command success**: `running` → `true`; `paused`/`failed` → `false`; `completed` → `true` only for `accepted`. Terminal quality success is still `completed` + `accepted`.
 - Quality `blocked` / `rejected` are **completion outcomes**, not `status=failed`.
 - Run records use `schema_version` 3; unsupported versions fail load with no migrator (`test_decision_14_old_schemas_rejected`).
 

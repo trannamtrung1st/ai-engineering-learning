@@ -23,7 +23,7 @@ completed / failed → no lifecycle mutation
 - `completed` requires a quality `outcome` (`accepted` / `rejected` / `blocked`) and null `stop`.
 - `running` has null `outcome` and null `stop`.
 
-Continuation success is `completed` **and** `accepted` only.
+`continuation_ok_from_run()` maps durable state to **continuation-command success**: `true` for a normal `running` run, `false` for `paused` / `failed`, and `true` for `completed` only when `outcome=accepted`. **Terminal quality success** remains `completed` + `accepted`. Staged `--until` targets can return `ok=true` with `status=running` and `target_reached=true`.
 
 ## Phases and review stages
 

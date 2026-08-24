@@ -15,9 +15,18 @@ TDP uses several independent axes. Mixing them (for example treating a review st
 | `completed` | The run finished with a quality `outcome` (`accepted`, `rejected`, or `blocked`). `stop` is null. |
 | `failed` | The run hit an **invariant** stop. `outcome` is null. This is not a quality outcome. |
 
-Paused runs are **recoverable** in the lifecycle sense: they carry an operational `stop.code` (for example `limit_exhausted`, `user_cancelled`, `amendment_pending`, `provider_turn_failed`). Failed runs are **terminal** for that run: they carry an invariant `stop.code` (for example `orchestrator_invariant_failure`, `session_recovery_exhausted`, `sub_tdp_unit_permanently_failed`). Completed runs are also terminal; success is `completed` **and** `outcome` `accepted`.
+Paused runs are **recoverable** in the lifecycle sense: they carry an operational `stop.code` (for example `limit_exhausted`, `user_cancelled`, `amendment_pending`, `provider_turn_failed`). Failed runs are **terminal** for that run: they carry an invariant `stop.code` (for example `orchestrator_invariant_failure`, `session_recovery_exhausted`, `sub_tdp_unit_permanently_failed`). Completed runs are also terminal.
 
-Continuation/resume success is `true` only for `completed` + `accepted`. `paused` and `failed` are not success. See [lifecycle architecture](../architecture/lifecycle.md) and the [stop-state decision](../decisions/lifecycle-stop-states.md).
+Distinguish **continuation-command success** (`ok` on `tdp run` / `tdp resume`) from **terminal quality success**:
+
+| Signal | Meaning |
+| --- | --- |
+| Continuation-command success (`ok=true`) | Durable `status=running` (including after a staged `--until` target), or `status=completed` with `outcome=accepted`. |
+| `ok=false` | `status=paused` or `status=failed`, or `status=completed` with `outcome` other than `accepted`. |
+| Terminal quality success | `status=completed` **and** `outcome=accepted`. |
+| `target_reached` | The requested `--until` milestone was reached. Independent of `ok`. |
+
+`--until plan` and `--until validated` can stop while the run is still `status=running`; the CLI payload then carries both `ok` and `target_reached`. See [lifecycle architecture](../architecture/lifecycle.md) and the [stop-state decision](../decisions/lifecycle-stop-states.md).
 
 ## Lifecycle phase
 
@@ -81,7 +90,7 @@ Stale revision fields return `revision_conflict`. Whole-plan and whole-output ap
 | --- | --- | --- |
 | Recoverable pause | `status=paused`, operational `stop` | Diagnose, possibly change presentation/limits, `tdp resume` |
 | Terminal failure | `status=failed`, invariant `stop` | Treat as a broken run; do not expect resume to continue production |
-| Terminal completion | `status=completed` plus an `outcome` | Read the quality outcome; only `accepted` is success |
+| Terminal completion | `status=completed` plus an `outcome` | Read the quality outcome; **terminal quality success** is `accepted` only |
 
 Amendment-pending and some Sub-TDP waits are pauses, not failures. Quality `blocked`/`rejected` are completion outcomes, not `status=failed`.
 

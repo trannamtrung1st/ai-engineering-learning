@@ -60,7 +60,7 @@ It owns:
 - Phase changes listed under [lifecycle terms](lifecycle-terms.md)
 - Provider session create/resume/teardown and process cleanup
 - Run ownership so two operators do not mutate the same run concurrently
-- Mapping durable state to continuation success (`completed` + `accepted` only)
+- Mapping durable state to continuation-command success (`ok`: `running` is true; `paused`/`failed` are false; `completed` is true only for `accepted`)
 
 It does not invent plan items, dispositions, or review findings. Those come from agents through authorized `tdp agent` commands.
 

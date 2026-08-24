@@ -48,7 +48,7 @@ Phase `production`. The producer records batches with evidence until applicable 
 
 Phase `whole_output_review`, then `output_validated`. Mandatory whole-output gate, then deterministic output validation. The run **completes** with `outcome` `accepted`, `rejected`, or `blocked` per the acceptance invariant on [quality loop](../concepts/quality-loop.md).
 
-Success for continuation/resume semantics is `completed` **and** `accepted` only.
+**Terminal quality success** is `completed` **and** `accepted`. **Continuation-command success** (`ok`) can also be true while `status=running` after `--until plan` or `--until validated`. `paused` and `failed` are `ok=false`. The payload includes `target_reached` for the requested milestone. See [lifecycle terms](../concepts/lifecycle-terms.md) and [operations](operations.md).
 
 ## Reading the result
 

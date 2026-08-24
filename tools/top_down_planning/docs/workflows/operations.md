@@ -23,7 +23,7 @@ tdp resume --run <run-id> --until completed --config cfg.yaml
 tdp resume --run <run-id> --config cfg.yaml
 ```
 
-Partial `--until` milestones can notify when notifications are enabled; default single-step resume does not emit `target_reached`. [Observability](../manual/observability.md).
+A staged stop can still be **continuation-command success**: `ok=true` with `status=running` when the `--until` milestone is met (`target_reached=true`). That is not **terminal quality success**. `paused` / `failed` payloads have `ok=false` even if an older phase would have matched the target. Default single-step resume (no `--until`) does not emit `target_reached`. Partial `--until` milestones can notify when notifications are enabled. [Observability](../manual/observability.md) and [lifecycle terms](../concepts/lifecycle-terms.md).
 
 ## Status, inspect, validate
 

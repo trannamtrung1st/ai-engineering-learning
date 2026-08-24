@@ -25,7 +25,7 @@ Packaged agent skills live under `src/top_down_planning/bundled_skills/tdp-agent
 
 ## Tests
 
-From `tools/top_down_planning`:
+From `tools/top_down_planning` (docs links and known contracts: `python scripts/check_docs.py` or `pytest tests/unit/test_docs_quality.py`):
 
 ```bash
 python -m pytest                  # parallel unit tests (excludes integration and packaging)

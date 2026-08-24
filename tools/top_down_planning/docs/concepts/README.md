@@ -4,7 +4,7 @@
 
 **Audience:** newcomers and anyone who needs shared vocabulary before running or operating TDP.
 
-These pages define what Top Down Planning is and the terms later sections reuse. Workflows, the operator manual, and architecture [link here](../PAGE-OWNERSHIP.md) instead of redefining the same words.
+These pages define what Top Down Planning is and the terms later sections reuse. Workflows, the operator manual, and architecture link here instead of redefining the same words.
 
 ## Pages
 
