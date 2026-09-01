@@ -53,6 +53,7 @@ from top_down_planning.orchestrator.run_transitions import (
     pending_capability_revocation_pending,
     pending_capability_revoke_unresolved,
     reconcile_pending_capability_revocation,
+    reopen_stale_blocked_production_run,
 )
 from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
 from top_down_planning.orchestrator.session_policy_execution import (
@@ -216,6 +217,21 @@ def _maybe_stopped_continuation_result(
             reason=f"run is paused ({stop_code or 'unknown'})",
         )
     return None
+
+
+def _is_stale_blocked_repair_candidate(run: dict[str, Any]) -> bool:
+    return (
+        str(run.get("status") or "") == "completed"
+        and str(run.get("outcome") or "") == "blocked"
+        and str(run.get("phase") or "") == "production"
+    )
+
+
+def _reopen_stale_blocked_if_needed(store: RunStore, run_id: str) -> dict[str, Any]:
+    run = store.load_run(run_id)
+    if not _is_stale_blocked_repair_candidate(run):
+        return run
+    return reopen_stale_blocked_production_run(store, run_id)
 
 
 _CAPABILITY_REVOCATION_BLOCKED_REASON = (
@@ -404,7 +420,11 @@ class RunEngine:
                 )
 
                 if run_dir is not None:
-                    if terminal_precheck is not None and not pending_revoke:
+                    if (
+                        terminal_precheck is not None
+                        and not pending_revoke
+                        and not _is_stale_blocked_repair_candidate(run)
+                    ):
                         self._emit_done(terminal_precheck, started_at=started_at)
                         result = terminal_precheck
                     else:
@@ -420,6 +440,7 @@ class RunEngine:
                                 self._emit_done(blocked, started_at=started_at)
                                 ownership_result = blocked
                             else:
+                                _reopen_stale_blocked_if_needed(self._store, run_id)
                                 run = self._store.load_run(run_id)
                                 terminal = _maybe_stopped_continuation_result(
                                     run,
@@ -483,6 +504,7 @@ class RunEngine:
                         self._emit_done(blocked, started_at=started_at)
                         result = blocked
                     else:
+                        _reopen_stale_blocked_if_needed(self._store, run_id)
                         run = self._store.load_run(run_id)
                         terminal = _maybe_stopped_continuation_result(
                             run,
@@ -531,6 +553,7 @@ class RunEngine:
         if started_at is None:
             started_at = time.monotonic()
         steps: list[RunStepResult] = []
+        _reopen_stale_blocked_if_needed(self._store, run_id)
         run = self._store.load_run(run_id)
         stopped = _maybe_stopped_continuation_result(
             run,

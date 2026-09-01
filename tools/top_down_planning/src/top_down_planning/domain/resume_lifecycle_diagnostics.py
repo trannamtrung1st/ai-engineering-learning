@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from top_down_planning.domain.production_blockers import evaluate_blocker_report
+from top_down_planning.domain.production_blockers import (
+    evaluate_blocker_report,
+    stale_blocked_run_is_repairable,
+)
 from top_down_planning.domain.reviews import (
     CLEAR_APPROVAL_STATUSES,
     ReviewLoop,
@@ -140,6 +143,33 @@ def collect_lifecycle_diagnostics(
                     "evidence, then bind explicitly or keep as external"
                 ),
                 loop_id=evaluation.matching_loop_id,
+                target_revision=report.get("target_revision")
+                if isinstance(report.get("target_revision"), int)
+                else None,
+                target_digest=str(report.get("target_digest") or "") or None,
+            )
+        )
+
+    repair = stale_blocked_run_is_repairable(
+        run=run,
+        production=production_payload,
+        reviews=loops,
+        events=events,
+    )
+    if repair is not None:
+        report = repair.report or {}
+        diagnostics.append(
+            LifecycleDiagnostic(
+                code="stale_blocked_run_repairable",
+                message=(
+                    "completed blocked outcome was caused by a stale "
+                    "focused-review wait that is already satisfied"
+                ),
+                proposed_reconciliation=(
+                    "reopen the run to running and persist blocker "
+                    "status=resolved; continue production"
+                ),
+                loop_id=repair.matching_loop_id,
                 target_revision=report.get("target_revision")
                 if isinstance(report.get("target_revision"), int)
                 else None,

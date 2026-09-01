@@ -93,7 +93,12 @@ def test_collects_stale_diagnostic_for_legacy_untyped_satisfied_review_wait() ->
         verification_result={"target_digest": "digest-a", "decision": "verified"},
     )
     diagnostics = collect_lifecycle_diagnostics(
-        run={"status": "completed", "outcome": "blocked", "stop": None},
+        run={
+            "status": "completed",
+            "outcome": "blocked",
+            "phase": PRODUCTION,
+            "stop": None,
+        },
         production={
             "blocker_report": {
                 "evidence": "Producer is waiting for focused review of item-first.",
@@ -128,6 +133,10 @@ def test_collects_stale_diagnostic_for_legacy_untyped_satisfied_review_wait() ->
     row = next(item for item in diagnostics if item.code == "stale_review_bound_blocker")
     assert row.loop_id == loop.id
     assert "already satisfied" in row.message
+    assert any(item.code == "stale_blocked_run_repairable" for item in diagnostics)
+    repair = next(item for item in diagnostics if item.code == "stale_blocked_run_repairable")
+    assert "reopen" in repair.proposed_reconciliation
+    assert "do not auto-clear" not in repair.proposed_reconciliation
 
 
 def test_collects_ambiguous_legacy_blocker_without_proposing_auto_clear() -> None:

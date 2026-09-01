@@ -38,6 +38,7 @@ from top_down_planning.orchestrator.run_transitions import (
     pending_capability_revocation_pending,
     pending_capability_revoke_unresolved,
     reconcile_pending_capability_revocation,
+    reopen_stale_blocked_production_run,
 )
 from top_down_planning.orchestrator.errors import OrchestratorError
 from top_down_planning.orchestrator.phases import PRODUCTION
@@ -131,6 +132,25 @@ def _apply_resume_plan_under_ownership(
         ) from exc
 
     actual_status = str(run.get("status") or "")
+    transition = resume_plan.state_transition
+    if (
+        actual_status == "completed"
+        and transition is not None
+        and transition.from_status == "completed"
+        and transition.to_status == "running"
+    ):
+        reopened = reopen_stale_blocked_production_run(store, run_id)
+        if str(reopened.get("status") or "") != "running":
+            raise ApplyResumeError(
+                "stale blocked production repair was refused",
+                code="resume_apply_blocked",
+            )
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "reopened_stale_blocked": True,
+            "status": "running",
+        }
     if actual_status in {"completed", "failed"}:
         raise ApplyResumeError(
             f"cannot resume run in terminal status {actual_status!r}",

@@ -205,42 +205,120 @@ def _is_legacy_untyped(raw: Mapping[str, Any]) -> bool:
     )
 
 
+def _event_loop_id(event: Mapping[str, Any]) -> str:
+    return str(event.get("loop_id") or "").strip()
+
+
+def _is_focused_output_request(event: Mapping[str, Any]) -> bool:
+    if event.get("type") != "focused_review_requested":
+        return False
+    review_type = str(event.get("review_type") or "")
+    return not review_type or review_type == "focused_output"
+
+
+def _is_focused_loop_terminal_event(event: Mapping[str, Any]) -> bool:
+    event_type = str(event.get("type") or "")
+    if event_type == "focused_review_approved":
+        return True
+    if event_type != "review_responded":
+        return False
+    decision = str(event.get("decision") or "").strip()
+    return decision in {"approved", "blocked", "verified"}
+
+
+def _last_blocked_index(events: Sequence[Mapping[str, Any]]) -> int | None:
+    last_blocked_index: int | None = None
+    for index, event in enumerate(events):
+        if event.get("type") == "production_blocked_reported":
+            last_blocked_index = index
+    return last_blocked_index
+
+
+def _request_overlaps_blocker(
+    event: Mapping[str, Any],
+    reviews: list[ReviewLoop],
+    report: Mapping[str, Any],
+) -> bool:
+    loop_by_id = {loop.id: loop for loop in reviews}
+    affected = {str(item) for item in (report.get("affected_refs") or []) if str(item)}
+    loop_id = _event_loop_id(event)
+    item_ids = _scope_item_ids(event.get("scope"))
+    loop = loop_by_id.get(loop_id)
+    if not item_ids and loop is not None:
+        item_ids = _scope_item_ids(loop.scope)
+    if affected and item_ids and affected.isdisjoint(item_ids):
+        return False
+    if affected and not item_ids:
+        return False
+    return True
+
+
 def _overlapping_request_loop_ids(
     events: Sequence[Mapping[str, Any]],
     reviews: list[ReviewLoop],
     report: Mapping[str, Any],
 ) -> list[str]:
-    loop_by_id = {loop.id: loop for loop in reviews}
-    affected = {str(item) for item in (report.get("affected_refs") or []) if str(item)}
-    last_blocked_index: int | None = None
-    for index, event in enumerate(events):
-        if event.get("type") == "production_blocked_reported":
-            last_blocked_index = index
+    last_blocked_index = _last_blocked_index(events)
     if last_blocked_index is None:
         return []
 
     candidates: list[str] = []
     seen: set[str] = set()
     for event in events[:last_blocked_index]:
-        if event.get("type") != "focused_review_requested":
+        if not _is_focused_output_request(event):
             continue
-        review_type = str(event.get("review_type") or "")
-        if review_type and review_type != "focused_output":
-            continue
-        loop_id = str(event.get("loop_id") or "").strip()
+        loop_id = _event_loop_id(event)
         if not loop_id or loop_id in seen:
             continue
-        item_ids = _scope_item_ids(event.get("scope"))
-        loop = loop_by_id.get(loop_id)
-        if not item_ids and loop is not None:
-            item_ids = _scope_item_ids(loop.scope)
-        if affected and item_ids and affected.isdisjoint(item_ids):
-            continue
-        if affected and not item_ids:
+        if not _request_overlaps_blocker(event, reviews, report):
             continue
         seen.add(loop_id)
         candidates.append(loop_id)
     return candidates
+
+
+def _loop_was_unresolved_at_blocked(
+    events: Sequence[Mapping[str, Any]],
+    loop_id: str,
+    blocked_index: int,
+) -> bool:
+    requested = False
+    for event in events[:blocked_index]:
+        if _event_loop_id(event) != loop_id:
+            continue
+        if _is_focused_output_request(event):
+            requested = True
+        if _is_focused_loop_terminal_event(event):
+            return False
+    return requested
+
+
+def _approval_follows_blocked(
+    events: Sequence[Mapping[str, Any]],
+    loop_id: str,
+    blocked_index: int,
+) -> bool:
+    for event in events[blocked_index + 1 :]:
+        if _event_loop_id(event) != loop_id:
+            continue
+        if event.get("type") == "focused_review_approved":
+            return True
+    return False
+
+
+def _unresolved_overlapping_loop_ids(
+    events: Sequence[Mapping[str, Any]],
+    reviews: list[ReviewLoop],
+    report: Mapping[str, Any],
+) -> list[str]:
+    blocked_index = _last_blocked_index(events)
+    if blocked_index is None:
+        return []
+    return [
+        loop_id
+        for loop_id in _overlapping_request_loop_ids(events, reviews, report)
+        if _loop_was_unresolved_at_blocked(events, loop_id, blocked_index)
+    ]
 
 
 def _bind_report_to_loop(
@@ -324,14 +402,35 @@ def evaluate_blocker_report(
     history = [event for event in (events or []) if isinstance(event, Mapping)]
     if _is_legacy_untyped(report) and history:
         overlapping = _overlapping_request_loop_ids(history, reviews, normalized)
+        unresolved = _unresolved_overlapping_loop_ids(history, reviews, normalized)
+        blocked_index = _last_blocked_index(history)
         unique_loop = None
-        if len(overlapping) == 1:
+        if len(unresolved) == 1:
             unique_loop = next(
-                (loop for loop in reviews if loop.id == overlapping[0]),
+                (loop for loop in reviews if loop.id == unresolved[0]),
                 None,
             )
-        if unique_loop is not None and _looks_like_review_wait_evidence(normalized):
+        if (
+            unique_loop is not None
+            and blocked_index is not None
+            and _looks_like_review_wait_evidence(normalized)
+        ):
             bound = _bind_report_to_loop(normalized, unique_loop)
+            if _approval_follows_blocked(history, unique_loop.id, blocked_index):
+                return _evaluate_review_bound(bound, reviews)
+            if unique_loop.status in CLEAR_APPROVAL_STATUSES or is_terminal_review_loop(
+                unique_loop
+            ):
+                return BlockerEvaluation(
+                    disposition="active_terminal",
+                    report=normalized,
+                    matching_loop_id=unique_loop.id,
+                    reason=(
+                        "legacy production blocker coincides with focused review "
+                        "history but causal binding is ambiguous"
+                    ),
+                    diagnostic_code=DIAGNOSTIC_AMBIGUOUS_LEGACY_BLOCKER,
+                )
             return _evaluate_review_bound(bound, reviews)
         if overlapping:
             return BlockerEvaluation(
@@ -349,6 +448,34 @@ def evaluate_blocker_report(
         report=normalized,
         reason="external production blocker is still active",
     )
+
+
+def stale_blocked_run_is_repairable(
+    *,
+    run: Mapping[str, Any],
+    production: Mapping[str, Any] | None,
+    reviews: list[ReviewLoop],
+    events: Sequence[Mapping[str, Any]] | None = None,
+) -> BlockerEvaluation | None:
+    """Return the resolved evaluation when a completed blocked run is a stale review wait."""
+
+    if str(run.get("status") or "") != "completed":
+        return None
+    if str(run.get("outcome") or "") != "blocked":
+        return None
+    if str(run.get("phase") or "") != "production":
+        return None
+    if not isinstance(production, Mapping):
+        return None
+    report = production.get("blocker_report")
+    if not isinstance(report, Mapping):
+        return None
+    if str(report.get("status") or "") in _INACTIVE_STATUSES:
+        return None
+    evaluation = evaluate_blocker_report(report, reviews, events=events)
+    if evaluation.disposition != "resolved":
+        return None
+    return evaluation
 
 
 def bind_open_focused_review_to_blocker(

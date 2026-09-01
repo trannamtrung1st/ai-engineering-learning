@@ -28,7 +28,7 @@ A completion claim that asserts the goal is met is persisted with `goal_met`, cu
 
 `production_revision` versions production state; `output_revision` versions the output snapshot used by review and claims.
 
-Structured `blocker_report` values are either `external` (genuine terminal blocked outcome) or `focused_review_wait` (recoverable pause). Before terminalizing, orchestration re-evaluates review-bound identity (loop, revision, and digest when the blocker recorded one). Untyped legacy blockers are rebound only from unambiguous event history. An active wait pauses with `stop.code=focused_review_wait` rather than `outcome=blocked`. Details: [review architecture](../internals/reviews.md).
+Structured `blocker_report` values are either `external` (genuine terminal blocked outcome) or `focused_review_wait` (recoverable pause). Before terminalizing, orchestration re-evaluates review-bound identity (loop, revision, and digest when the blocker recorded one). Untyped legacy blockers are rebound only from temporally causal event history (`request` while unresolved, then `blocked reported`, then `approved`). An active wait pauses with `stop.code=focused_review_wait` rather than `outcome=blocked`. Details: [review architecture](../internals/reviews.md).
 
 ## Reviews
 

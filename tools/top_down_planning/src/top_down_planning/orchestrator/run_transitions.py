@@ -444,6 +444,60 @@ def pause_for_limit_exhausted(
     )
 
 
+def reopen_stale_blocked_production_run(store: RunStore, run_id: str) -> dict[str, Any]:
+    """Reopen a completed/blocked run only when a stale focused-review wait is proven."""
+
+    from top_down_planning.domain.production_blockers import stale_blocked_run_is_repairable
+    from top_down_planning.domain.reviews import ReviewLoop
+
+    run = store.load_run(run_id)
+    production = store.load_production(run_id)
+    reviews = [ReviewLoop.from_dict(raw) for raw in store.list_reviews(run_id)]
+    evaluation = stale_blocked_run_is_repairable(
+        run=run,
+        production=production if isinstance(production, dict) else None,
+        reviews=reviews,
+        events=store.load_events(run_id),
+    )
+    if evaluation is None or evaluation.report is None:
+        return run
+
+    expected_run_revision = int(run["revision"])
+    expected_production_revision = int(production["revision"])
+    updated_run = dict(run)
+    updated_run["revision"] = expected_run_revision + 1
+    updated_run["status"] = "running"
+    updated_run["outcome"] = None
+    updated_run["stop"] = None
+    updated_production = dict(production)
+    updated_production["revision"] = expected_production_revision + 1
+    updated_production["blocker_report"] = evaluation.report
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=updated_run,
+            run_expected_revision=expected_run_revision,
+            production=updated_production,
+            production_expected_revision=expected_production_revision,
+            events=[
+                {
+                    "type": "stale_blocked_run_reopened",
+                    "run_id": run_id,
+                    "review_loop_id": evaluation.matching_loop_id,
+                    "reason": evaluation.reason,
+                },
+                {
+                    "type": "production_blocker_resolved",
+                    "run_id": run_id,
+                    "review_loop_id": evaluation.matching_loop_id,
+                    "resolved_by": evaluation.matching_loop_id,
+                },
+            ],
+        ),
+    )
+    return store.load_run(run_id)
+
+
 __all__ = [
     "complete_run_with_outcome",
     "fail_run",
@@ -456,4 +510,5 @@ __all__ = [
     "pending_capability_revocation_pending",
     "pending_capability_revoke_unresolved",
     "reconcile_pending_capability_revocation",
+    "reopen_stale_blocked_production_run",
 ]

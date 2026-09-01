@@ -203,6 +203,172 @@ def test_historical_untyped_blocker_does_not_terminalize_after_approved_review(
     assert report.get("resolved_by") == loop.id
 
 
+def test_focused_review_requested_event_persists_target_digest(tmp_path: Path) -> None:
+    from top_down_planning.persistence.digests import compute_output_digest
+
+    store = FileRunStore(tmp_path)
+    create_production_run(store)
+    run_id = "run-20260101T000501-000501"
+    request_focused_review(
+        store,
+        run_id,
+        {"type": "focused_output", "scope": {"item_ids": ["item-first"]}},
+        role="producer",
+        phase=PRODUCTION,
+    )()
+    expected = compute_output_digest(store.load_production(run_id))
+    requested = next(
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "focused_review_requested"
+    )
+    assert requested.get("target_digest") == expected
+    assert requested.get("target_revision") is not None
+
+
+def test_completed_blocked_stale_review_wait_is_reopened_and_continues(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator import RunEngine
+    from top_down_planning.orchestrator.run_transitions import complete_run_with_outcome
+    from tests.helpers import make_review_loop, save_review_payload
+    from top_down_planning.persistence.commit import CommitSpec
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    producer_session_id = create_production_run(store, provider=provider)
+    run_id = "run-20260101T000501-000501"
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": int(store.load_production(run_id)["revision"]),
+            "plan_items": ["item-first"],
+            "dispositions": {"item-first": {"disposition": "completed"}},
+            "outputs": [],
+            "contributions": [],
+            "summary": "batch complete",
+            "empty_output": False,
+        },
+        handler="apply",
+    )()
+    apply_production(
+        store,
+        run_id,
+        {"goal_assessment": "Output goal is fully met."},
+        handler="submit_completion",
+    )()
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="approved",
+        reviewer_session_id="sess-fr",
+        verification_result={"target_digest": "digest-a", "decision": "verified"},
+    )
+    save_review_payload(store, run_id, loop.to_dict())
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    updated = dict(production)
+    updated["revision"] = expected + 1
+    updated["blocker_report"] = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    store.commit(
+        run_id,
+        CommitSpec(
+            production=updated,
+            production_expected_revision=expected,
+            events=[
+                {
+                    "type": "focused_review_requested",
+                    "run_id": run_id,
+                    "loop_id": loop.id,
+                    "review_type": "focused_output",
+                    "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+                    "target_revision": 2,
+                },
+                {
+                    "type": "production_blocked_reported",
+                    "run_id": run_id,
+                    "affected_refs": ["item-first"],
+                    "production_revision": updated["revision"],
+                },
+                {
+                    "type": "focused_review_approved",
+                    "run_id": run_id,
+                    "loop_id": loop.id,
+                    "review_type": "focused_output",
+                    "target_revision": 2,
+                },
+            ],
+        ),
+    )
+    complete_run_with_outcome(store, run_id, "blocked")
+    run = store.load_run(run_id)
+    assert run["status"] == "completed"
+    assert run["outcome"] == "blocked"
+    revision_before = int(run["revision"])
+
+    provider.script_session_turn(
+        producer_session_id,
+        done_events(text="producer session resume after stale blocker repair"),
+    )
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+    ).continue_run(run_id, until="validated")
+
+    run = store.load_run(run_id)
+    report = store.load_production(run_id).get("blocker_report") or {}
+    events = store.load_events(run_id)
+    assert result.ok is True
+    assert run.get("outcome") != "blocked"
+    assert int(run["revision"]) > revision_before
+    assert report.get("status") == BLOCKER_STATUS_RESOLVED
+    assert report.get("resolved_by") == loop.id
+    assert any(event.get("type") == "stale_blocked_run_reopened" for event in events)
+
+
+def test_ordinary_completed_blocked_run_is_not_reopened(tmp_path: Path) -> None:
+    from top_down_planning.orchestrator import RunEngine
+    from top_down_planning.orchestrator.run_transitions import complete_run_with_outcome
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    create_production_run(store, provider=provider)
+    run_id = "run-20260101T000501-000501"
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    updated = dict(production)
+    updated["revision"] = expected + 1
+    updated["blocker_report"] = {
+        "kind": BLOCKER_KIND_EXTERNAL,
+        "evidence": "Vendor API is down.",
+        "affected_refs": ["item-first"],
+        "summary": "external outage",
+    }
+    store.save_production(run_id, updated, expected)
+    complete_run_with_outcome(store, run_id, "blocked")
+    before = store.load_run(run_id)
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+    ).continue_run(run_id, until="completed")
+
+    after = store.load_run(run_id)
+    assert result.ok is False
+    assert after["status"] == "completed"
+    assert after["outcome"] == "blocked"
+    assert int(after["revision"]) == int(before["revision"])
+
+
 def test_legacy_review_bound_blocker_resolves_after_focused_approval(
     tmp_path: Path,
 ) -> None:

@@ -698,7 +698,27 @@ def handle_resume_command(args: Namespace) -> None:
         return
 
     phase = snapshot.phase
-    if is_terminal_resume_snapshot(snapshot) or snapshot.status == "completed":
+    repairable_completed = False
+    if snapshot.status == "completed":
+        from top_down_planning.domain.production_blockers import stale_blocked_run_is_repairable
+        from top_down_planning.domain.reviews import ReviewLoop
+
+        repairable_completed = (
+            stale_blocked_run_is_repairable(
+                run=run,
+                production=canonical.production
+                if isinstance(canonical.production, dict)
+                else None,
+                reviews=[
+                    ReviewLoop.from_dict(raw) for raw in (canonical.reviews or [])
+                ],
+                events=store.load_events(args.run),
+            )
+            is not None
+        )
+    if (
+        is_terminal_resume_snapshot(snapshot) or snapshot.status == "completed"
+    ) and not repairable_completed:
         if phase == OUTPUT_VALIDATED and snapshot.status == "completed":
             message = "run already completed with final outcome"
         else:

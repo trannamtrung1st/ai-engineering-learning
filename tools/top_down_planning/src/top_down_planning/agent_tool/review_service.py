@@ -304,6 +304,7 @@ class ReviewAgentService:
                             "review_type": review_type,
                             "scope": scope,
                             "target_revision": target_revision,
+                            "target_digest": requested_digest,
                             "requested_by": role,
                         },
                         request_audit,

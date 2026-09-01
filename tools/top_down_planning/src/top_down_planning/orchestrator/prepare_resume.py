@@ -35,6 +35,7 @@ from top_down_planning.domain.resume_plan import (
 )
 from top_down_planning.orchestrator.session_policy_execution import derive_session_policy
 from top_down_planning.domain.reviews import (
+    ReviewLoop,
     find_conflicting_active_review_loops,
     find_whole_output_approval,
     find_whole_plan_approval,
@@ -784,6 +785,34 @@ def prepare_resume(
         _raise_blocked("failed runs cannot be resumed", code="failed_run_not_resumable")
 
     if status == "completed" or outcome is not None:
+        from top_down_planning.domain.production_blockers import stale_blocked_run_is_repairable
+
+        repair = stale_blocked_run_is_repairable(
+            run=run,
+            production=production if isinstance(production, dict) else None,
+            reviews=[ReviewLoop.from_dict(raw) for raw in (reviews or [])],
+            events=store.load_events(run_id),
+        )
+        if repair is not None:
+            return ResumePlan(
+                run_id=run_id,
+                expected_run_revision=expected_revision,
+                state_transition=ResumeStateTransition(
+                    from_status="completed",
+                    to_status="running",
+                ),
+                config_changes={},
+                session_policy=derive_session_policy(run, reviews),
+                validation=ResumePlanValidation(
+                    contract_digest_valid=True,
+                    plan_binding_valid=True,
+                    approval_binding_valid=True,
+                    evidence_binding_valid=True,
+                    context_binding_valid=True,
+                ),
+                already_completed=False,
+                message="reopen stale blocked production after focused-review wait",
+            )
         return ResumePlan(
             run_id=run_id,
             expected_run_revision=expected_revision,

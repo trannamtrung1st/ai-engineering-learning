@@ -244,6 +244,42 @@ def test_untyped_legacy_external_blocker_stays_terminal_while_focused_review_ope
     assert evaluation.diagnostic_code == "ambiguous_legacy_blocker"
 
 
+def test_legacy_untyped_blocker_not_resolved_when_review_completed_before_blocker() -> None:
+    loop = _approved_focused_loop()
+    report = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    events = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+            "target_digest": "digest-a",
+        },
+        {
+            "type": "focused_review_approved",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "target_revision": 2,
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [loop], events=events)
+    assert evaluation.disposition == "active_terminal"
+    assert evaluation.report is not None
+    assert evaluation.report.get("status") != BLOCKER_STATUS_RESOLVED
+    assert evaluation.matching_loop_id != loop.id or evaluation.disposition != "resolved"
+
+
 def test_legacy_untyped_blocker_resolves_when_history_proves_satisfied_review_wait() -> None:
     loop = _approved_focused_loop()
     report = {

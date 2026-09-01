@@ -3293,7 +3293,7 @@ Paused runs resume through `prepare_resume()` (read-only) and
 - `tdp resume --run <id> --config <yaml>` — apply candidate config and continue
 - `tdp resume --run <id> --set limits.planning.max_agent_turns=40` — limit-only override
 - `tdp resume --run <id> --check ...` — print the resume plan; no writes or provider calls.
-  `--check` also reports semantic lifecycle diagnostics (stale review-bound production blockers, unsatisfiable review-bound waits whose matching loop is already terminal, ambiguous untyped legacy blockers, misclassified `provider_turn_failed` after a committed phase action, and
+  `--check` also reports semantic lifecycle diagnostics (stale review-bound production blockers, unsatisfiable review-bound waits whose matching loop is already terminal, ambiguous untyped legacy blockers, completed/blocked runs that can be reopened after a proven stale focused-review wait, misclassified `provider_turn_failed` after a committed phase action, and
   advisory handoff identity mismatches) with a proposed safe reconciliation. It does
   not mutate ambiguous state.
 - `tdp resume --run <id> --until plan|validated|completed` — loop `RunEngine` after apply
