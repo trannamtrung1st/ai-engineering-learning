@@ -122,10 +122,12 @@ from top_down_planning.orchestrator.review_loop_types import (
 )
 from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.review_commit import (
     review_record_revision,
     save_review_with_expected_revision,
 )
+from top_down_planning.domain.production_blockers import FOCUSED_REVIEW_RECHECK_REQUESTED
 from core_tools.provider import Provider
 
 
@@ -1269,23 +1271,50 @@ class ReviewLoopDriver:
         except SessionRecoveryPaused:
             raise
 
+    def _commit_recheck_transition(
+        self,
+        loop: ReviewLoop,
+        *,
+        prior_target_revision: int,
+        artifact_revision: int,
+        artifact_digest: str,
+    ) -> ReviewLoop:
+        transitioned = self._adapter.prepare_recheck_transition(loop, artifact_revision)
+        if loop.type not in {"focused_plan", "focused_output"}:
+            return self._persist_loop(transitioned)
+        stored = self._store.load_review(self._run_id, loop.id)
+        expected_revision = review_record_revision(stored)
+        payload = transitioned.to_dict()
+        payload["revision"] = expected_revision + 1
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                reviews=[payload],
+                review_expected_revisions={loop.id: expected_revision},
+                events=[
+                    {
+                        "type": FOCUSED_REVIEW_RECHECK_REQUESTED,
+                        "run_id": self._run_id,
+                        "loop_id": loop.id,
+                        "review_type": loop.type,
+                        "prior_target_revision": int(prior_target_revision),
+                        "target_revision": int(artifact_revision),
+                        "target_digest": str(artifact_digest),
+                    }
+                ],
+            ),
+        )
+        return self._reload_loop(loop.id)
+
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         loop = self._reload_loop(loop.id)
-        artifact_revision, _digest = self._adapter.current_artifact_binding()
+        prior_target_revision = int(loop.target_revision)
+        artifact_revision, artifact_digest = self._adapter.current_artifact_binding()
         run = self._store.load_run(self._run_id)
         phase = self._adapter.phase_for_session(loop, run)
         config = self._store.load_resolved_config(self._run_id)
         role_context = self._reviewer_activity_context(config, run, loop)
-        updated = self._persist_loop(
-            self._adapter.prepare_recheck_transition(loop, artifact_revision)
-        )
-        artifact_revision, artifact_digest = self._adapter.current_artifact_binding()
-        verification_request = verification_recheck_request(
-            phase=phase,
-            loop=updated,
-            target_revision=artifact_revision,
-            artifact_digest=artifact_digest,
-        )
+        replacement_session = False
         try:
             session_id = resolve_reviewer_session_for_recheck(
                 loop,
@@ -1295,15 +1324,22 @@ class ReviewLoopDriver:
         except ReviewerRecheckRequiresNewSession:
             current = self._reload_loop(loop.id)
             loop = self._persist_loop(current.with_reviewer_session_released())
-            updated = self._persist_loop(
-                self._adapter.prepare_recheck_transition(loop, artifact_revision)
-            )
-            verification_request = verification_recheck_request(
-                phase=phase,
-                loop=updated,
-                target_revision=artifact_revision,
-                artifact_digest=artifact_digest,
-            )
+            replacement_session = True
+            session_id = None
+
+        updated = self._commit_recheck_transition(
+            loop,
+            prior_target_revision=prior_target_revision,
+            artifact_revision=artifact_revision,
+            artifact_digest=artifact_digest,
+        )
+        verification_request = verification_recheck_request(
+            phase=phase,
+            loop=updated,
+            target_revision=artifact_revision,
+            artifact_digest=artifact_digest,
+        )
+        if replacement_session:
             session_id, self._capability_token = begin_reviewer_review(
                 self._provider,
                 self._store,

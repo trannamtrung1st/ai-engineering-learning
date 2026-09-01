@@ -355,7 +355,7 @@ def test_review_wait_is_artifact_identity_from_request_not_final_loop() -> None:
     assert evaluation.report is None or evaluation.report.get("status") != BLOCKER_STATUS_RESOLVED
 
 
-def test_later_request_on_same_loop_supersedes_artifact_wait_then_approval_resolves() -> None:
+def test_later_focused_review_requested_does_not_supersede_artifact_wait() -> None:
     loop = _approved_focused_loop(target_revision=3, target_digest="digest-b")
     report = _review_bound_blocker(target_revision=2, target_digest="digest-a")
     events = [
@@ -376,6 +376,41 @@ def test_later_request_on_same_loop_supersedes_artifact_wait_then_approval_resol
             "loop_id": loop.id,
             "review_type": "focused_output",
             "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 3,
+            "target_digest": "digest-b",
+        },
+        {
+            "type": "focused_review_approved",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "target_revision": 3,
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [loop], events=events)
+    assert evaluation.disposition != "resolved"
+
+
+def test_same_loop_recheck_event_supersedes_artifact_wait_then_approval_resolves() -> None:
+    loop = _approved_focused_loop(target_revision=3, target_digest="digest-b")
+    report = _review_bound_blocker(target_revision=2, target_digest="digest-a")
+    events = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+            "target_digest": "digest-a",
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+        {
+            "type": "focused_review_recheck_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "prior_target_revision": 2,
             "target_revision": 3,
             "target_digest": "digest-b",
         },
@@ -515,6 +550,38 @@ def test_stale_blocked_run_is_repairable_with_explicit_blocker_cause() -> None:
         events=events,
     )
     assert repair is not None
+
+
+def test_stale_blocked_run_not_repairable_when_blocker_cause_identity_mismatches() -> None:
+    loop = _approved_focused_loop()
+    report = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    events = _stale_review_wait_chain(
+        loop.id,
+        terminal={
+            "type": "production_failed",
+            "outcome": "blocked",
+            "message": "unrelated wording",
+            "cause": "production_blocker",
+            "blocker_kind": BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+            "review_loop_id": loop.id,
+            "target_revision": 9,
+            "target_digest": "digest-other",
+        },
+    )
+    assert evaluate_blocker_report(report, [loop], events=events).disposition == "resolved"
+    repair = stale_blocked_run_is_repairable(
+        run=_completed_blocked_run(),
+        production={"blocker_report": report},
+        reviews=[loop],
+        events=events,
+    )
+    assert repair is None
 
 
 def test_stale_blocked_run_not_repairable_when_later_terminal_is_deadlock() -> None:

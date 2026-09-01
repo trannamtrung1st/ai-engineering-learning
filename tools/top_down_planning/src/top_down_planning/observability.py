@@ -446,6 +446,10 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "planning_expansion_recorded": ("state", "planning expansion recorded"),
         "planning_limit_exceeded": ("warning", "planning limit exceeded"),
         "focused_review_approved": ("review", "focused review approved"),
+        "focused_review_recheck_requested": (
+            "review",
+            "focused review recheck requested",
+        ),
         "focused_review_failed": ("review", "focused review failed"),
         "phase_entry_attempted": ("state", "phase entry attempted"),
         "phase_entry_blocked": ("error", "phase entry blocked"),

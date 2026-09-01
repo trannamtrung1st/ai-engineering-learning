@@ -21,6 +21,7 @@ PRODUCTION_FAILED_CAUSE_BLOCKER = "production_blocker"
 PRODUCTION_FAILED_CAUSE_DEADLOCK = "deadlock"
 PRODUCTION_FAILED_CAUSE_EVIDENCE = "evidence_integrity"
 PRODUCTION_FAILED_CAUSE_CONTEXT_MUTATION = "context_mutation"
+FOCUSED_REVIEW_RECHECK_REQUESTED = "focused_review_recheck_requested"
 
 BlockerDisposition = Literal["none", "active_terminal", "active_wait", "resolved"]
 
@@ -340,6 +341,20 @@ def _unresolved_overlapping_loop_ids(
     ]
 
 
+def _last_rebind_for_loop(
+    events: Sequence[Mapping[str, Any]],
+    loop_id: str,
+) -> Mapping[str, Any] | None:
+    last: Mapping[str, Any] | None = None
+    for event in events:
+        if event.get("type") != FOCUSED_REVIEW_RECHECK_REQUESTED:
+            continue
+        if _event_loop_id(event) != loop_id:
+            continue
+        last = event
+    return last
+
+
 def _last_request_for_loop(
     events: Sequence[Mapping[str, Any]],
     loop_id: str,
@@ -416,7 +431,7 @@ def _apply_artifact_supersession(
         return bound
     approval_index = _approval_index_after(events, loop_id, blocked_index)
     window_end = approval_index if approval_index is not None else len(events)
-    latest = _last_request_for_loop(events[blocked_index + 1 : window_end], loop_id)
+    latest = _last_rebind_for_loop(events[blocked_index + 1 : window_end], loop_id)
     if latest is None:
         return bound
     return _apply_request_identity(bound, latest)
@@ -463,6 +478,17 @@ def _event_is_blocker_terminal(
         )
         if kind and kind not in _REVIEW_WAIT_KINDS:
             return False
+        report_identity = evaluation.report or {}
+        event_revision = _optional_int(event.get("target_revision"))
+        if event_revision is not None:
+            bound_revision = _optional_int(report_identity.get("target_revision"))
+            if bound_revision is None or event_revision != bound_revision:
+                return False
+        event_digest = _optional_text(event.get("target_digest"))
+        if event_digest:
+            bound_digest = _optional_text(report_identity.get("target_digest"))
+            if bound_digest is None or event_digest != bound_digest:
+                return False
         return True
     if cause:
         return False
