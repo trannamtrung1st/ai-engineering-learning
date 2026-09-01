@@ -3265,7 +3265,8 @@ boundary committed successfully). `provider_turn_failed` means an actual provide
 failed while that action was still active; persist the interrupted id in
 `stop.details.phase_action_id` with `domain_committed: false`. Orchestration or review
 state conflicts after a successful turn use `orchestrator_state_conflict` or
-`review_state_conflict`, not `provider_turn_failed`. Paused stops use `category: operational` with
+`review_state_conflict`, not `provider_turn_failed`. Provider session teardown failures
+on a running run also use `orchestrator_state_conflict`. Paused stops use `category: operational` with
 `code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
 `provider_turn_failed`, `orchestrator_state_conflict`, `review_state_conflict`,
 `focused_review_wait`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment)
@@ -3292,9 +3293,7 @@ Paused runs resume through `prepare_resume()` (read-only) and
 - `tdp resume --run <id> --config <yaml>` — apply candidate config and continue
 - `tdp resume --run <id> --set limits.planning.max_agent_turns=40` — limit-only override
 - `tdp resume --run <id> --check ...` — print the resume plan; no writes or provider calls.
-  `--check` also reports semantic lifecycle diagnostics (stale review-bound production
-  blockers, unsatisfiable review-bound waits whose matching loop is already terminal,
-  misclassified `provider_turn_failed` after a committed phase action, and
+  `--check` also reports semantic lifecycle diagnostics (stale review-bound production blockers, unsatisfiable review-bound waits whose matching loop is already terminal, ambiguous untyped legacy blockers, misclassified `provider_turn_failed` after a committed phase action, and
   advisory handoff identity mismatches) with a proposed safe reconciliation. It does
   not mutate ambiguous state.
 - `tdp resume --run <id> --until plan|validated|completed` — loop `RunEngine` after apply

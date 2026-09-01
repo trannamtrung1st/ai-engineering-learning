@@ -56,6 +56,7 @@ def collect_lifecycle_diagnostics(
     run: dict[str, Any],
     production: dict[str, Any] | None,
     reviews: list[dict[str, Any]] | None,
+    events: list[dict[str, Any]] | None = None,
 ) -> list[LifecycleDiagnostic]:
     """Detect cross-record lifecycle inconsistencies without mutating state."""
 
@@ -66,6 +67,7 @@ def collect_lifecycle_diagnostics(
     evaluation = evaluate_blocker_report(
         production_payload.get("blocker_report"),
         loops,
+        events=events,
     )
     if evaluation.disposition == "resolved":
         report = evaluation.report or {}
@@ -98,12 +100,18 @@ def collect_lifecycle_diagnostics(
             or matching.status in CLEAR_APPROVAL_STATUSES
         ):
             report = evaluation.report or {}
+            missing_digest = "missing review digest" in str(evaluation.reason or "")
             diagnostics.append(
                 LifecycleDiagnostic(
                     code="unsatisfiable_review_bound_blocker",
                     message=(
-                        "review-bound production blocker cannot be satisfied by "
-                        "the terminal matching loop"
+                        "review-bound production blocker cannot be satisfied; "
+                        "matching review is missing review digest"
+                        if missing_digest
+                        else (
+                            "review-bound production blocker cannot be satisfied by "
+                            "the terminal matching loop"
+                        )
                     ),
                     proposed_reconciliation=(
                         "do not auto-clear; inspect loop/revision/digest identity "
@@ -116,6 +124,28 @@ def collect_lifecycle_diagnostics(
                     target_digest=str(report.get("target_digest") or "") or None,
                 )
             )
+
+    if evaluation.diagnostic_code == "ambiguous_legacy_blocker":
+        report = evaluation.report or {}
+        diagnostics.append(
+            LifecycleDiagnostic(
+                code="ambiguous_legacy_blocker",
+                message=(
+                    "legacy production blocker coincides with focused review "
+                    "history but causal binding is ambiguous"
+                ),
+                proposed_reconciliation=(
+                    "do not auto-clear; inspect production_blocked_reported, "
+                    "focused-review request/approval, affected refs, and "
+                    "evidence, then bind explicitly or keep as external"
+                ),
+                loop_id=evaluation.matching_loop_id,
+                target_revision=report.get("target_revision")
+                if isinstance(report.get("target_revision"), int)
+                else None,
+                target_digest=str(report.get("target_digest") or "") or None,
+            )
+        )
 
     stop = run.get("stop") if isinstance(run.get("stop"), dict) else {}
     if str(stop.get("code") or "") == "provider_turn_failed":

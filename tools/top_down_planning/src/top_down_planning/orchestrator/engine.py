@@ -238,7 +238,7 @@ def _apply_provider_teardown_failure(
             store,
             run_id,
             stop=StopRecord(
-                code="provider_turn_failed",
+                code="orchestrator_state_conflict",
                 category="operational",
                 phase=phase,
                 message=str(teardown_failed),

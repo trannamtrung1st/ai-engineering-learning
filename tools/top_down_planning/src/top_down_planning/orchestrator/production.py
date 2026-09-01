@@ -431,7 +431,11 @@ class ProductionPhaseOrchestrator:
         reviews = [
             ReviewLoop.from_dict(raw) for raw in self._store.list_reviews(self._run_id)
         ]
-        return evaluate_blocker_report(production.get("blocker_report"), reviews)
+        return evaluate_blocker_report(
+            production.get("blocker_report"),
+            reviews,
+            events=self._store.load_events(self._run_id),
+        )
 
     def _persist_resolved_blocker(self, evaluation) -> None:
         if evaluation.disposition != "resolved" or evaluation.report is None:

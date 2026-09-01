@@ -82,6 +82,132 @@ def test_collects_unsatisfiable_review_bound_blocker_diagnostic() -> None:
     assert "do not auto-clear" in row.proposed_reconciliation
 
 
+def test_collects_stale_diagnostic_for_legacy_untyped_satisfied_review_wait() -> None:
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="approved",
+        reviewer_session_id="sess",
+        verification_result={"target_digest": "digest-a", "decision": "verified"},
+    )
+    diagnostics = collect_lifecycle_diagnostics(
+        run={"status": "completed", "outcome": "blocked", "stop": None},
+        production={
+            "blocker_report": {
+                "evidence": "Producer is waiting for focused review of item-first.",
+                "affected_refs": ["item-first"],
+                "summary": "waiting for focused review",
+                "plan_revision": 3,
+                "output_revision": 12,
+            }
+        },
+        reviews=[loop.to_dict()],
+        events=[
+            {
+                "type": "focused_review_requested",
+                "loop_id": loop.id,
+                "review_type": "focused_output",
+                "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+                "target_revision": 2,
+            },
+            {
+                "type": "production_blocked_reported",
+                "affected_refs": ["item-first"],
+            },
+            {
+                "type": "focused_review_approved",
+                "loop_id": loop.id,
+                "review_type": "focused_output",
+                "target_revision": 2,
+            },
+        ],
+    )
+    assert any(item.code == "stale_review_bound_blocker" for item in diagnostics)
+    row = next(item for item in diagnostics if item.code == "stale_review_bound_blocker")
+    assert row.loop_id == loop.id
+    assert "already satisfied" in row.message
+
+
+def test_collects_ambiguous_legacy_blocker_without_proposing_auto_clear() -> None:
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="approved",
+        reviewer_session_id="sess",
+        verification_result={"target_digest": "digest-a", "decision": "verified"},
+    )
+    diagnostics = collect_lifecycle_diagnostics(
+        run={"status": "completed", "outcome": "blocked", "stop": None},
+        production={
+            "blocker_report": {
+                "evidence": "Vendor API is down.",
+                "affected_refs": ["item-first"],
+                "summary": "external outage",
+                "plan_revision": 3,
+                "output_revision": 12,
+            }
+        },
+        reviews=[loop.to_dict()],
+        events=[
+            {
+                "type": "focused_review_requested",
+                "loop_id": loop.id,
+                "review_type": "focused_output",
+                "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+                "target_revision": 2,
+            },
+            {
+                "type": "production_blocked_reported",
+                "affected_refs": ["item-first"],
+            },
+            {
+                "type": "focused_review_approved",
+                "loop_id": loop.id,
+                "review_type": "focused_output",
+                "target_revision": 2,
+            },
+        ],
+    )
+    assert not any(item.code == "stale_review_bound_blocker" for item in diagnostics)
+    assert any(item.code == "ambiguous_legacy_blocker" for item in diagnostics)
+    row = next(item for item in diagnostics if item.code == "ambiguous_legacy_blocker")
+    assert "do not auto-clear" in row.proposed_reconciliation
+
+
+def test_collects_legacy_missing_digest_diagnostic_for_digest_bound_blocker() -> None:
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="approved",
+        reviewer_session_id="sess",
+    )
+    diagnostics = collect_lifecycle_diagnostics(
+        run={"status": "paused", "stop": None},
+        production={
+            "blocker_report": {
+                "kind": BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+                "status": BLOCKER_STATUS_ACTIVE,
+                "review_loop_id": loop.id,
+                "target_revision": 2,
+                "target_digest": "digest-a",
+                "evidence": "Waiting on focused review.",
+            }
+        },
+        reviews=[loop.to_dict()],
+    )
+    assert any(item.code == "unsatisfiable_review_bound_blocker" for item in diagnostics)
+    row = next(
+        item for item in diagnostics if item.code == "unsatisfiable_review_bound_blocker"
+    )
+    assert "missing review digest" in row.message or "cannot be satisfied" in row.message
+
+
 def test_collects_unsatisfiable_blocker_for_verified_digest_mismatch() -> None:
     loop = make_review_loop(
         id="review-focused-output-01",

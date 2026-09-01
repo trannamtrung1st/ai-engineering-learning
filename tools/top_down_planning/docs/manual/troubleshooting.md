@@ -37,7 +37,7 @@ Cross-process resume ownership uses POSIX `fcntl` flock on `.resume.lock.d/.owne
 | Notifications never appear | Optional `[notifications]` extra not installed, `CI=true`, or headless Linux. Silently skipped. |
 | Windows | Unsupported for multi-process locking and `CursorProvider`. |
 
-`tdp resume --check` prints the resume plan without mutating the run or calling the provider. It also reports semantic lifecycle diagnostics (stale or unsatisfiable review-bound production blockers, misclassified `provider_turn_failed` after a committed phase action, advisory handoff identity mismatches) and a proposed reconciliation. Prefer it before `--allow-config-drift` or limit increases.
+`tdp resume --check` prints the resume plan without mutating the run or calling the provider. It also reports semantic lifecycle diagnostics (stale or unsatisfiable review-bound production blockers, ambiguous untyped legacy blockers, misclassified `provider_turn_failed` after a committed phase action, advisory handoff identity mismatches) and a proposed reconciliation. Prefer it before `--allow-config-drift` or limit increases.
 
 ## Safe recovery
 

@@ -359,7 +359,11 @@ class FocusedReviewAdapter:
                 else ReviewLoop.from_dict(raw)
                 for raw in self._store.list_reviews(self._run_id)
             ]
-            evaluation = evaluate_blocker_report(production.get("blocker_report"), reviews)
+            evaluation = evaluate_blocker_report(
+                production.get("blocker_report"),
+                reviews,
+                events=self._store.load_events(self._run_id),
+            )
             if evaluation.disposition == "resolved" and evaluation.report is not None:
                 expected_production = int(production["revision"])
                 updated_production = dict(production)
@@ -401,7 +405,11 @@ class FocusedReviewAdapter:
             else ReviewLoop.from_dict(raw)
             for raw in self._store.list_reviews(self._run_id)
         ]
-        evaluation = evaluate_blocker_report(production.get("blocker_report"), reviews)
+        evaluation = evaluate_blocker_report(
+            production.get("blocker_report"),
+            reviews,
+            events=self._store.load_events(self._run_id),
+        )
         if evaluation.disposition != "resolved" or evaluation.report is None:
             return
         current = production.get("blocker_report")

@@ -39,6 +39,7 @@ from top_down_planning.config import (
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.domain.production_blockers import (
+    BLOCKER_KIND_EXTERNAL,
     bind_open_focused_review_to_blocker,
     normalize_blocker_report,
 )
@@ -674,6 +675,13 @@ class ProductionAgentService:
             output_digest=compute_output_digest(production),
         )
         report = normalize_blocker_report(report) or report
+        if not kind and not str(request.get("review_loop_id") or "").strip():
+            if (
+                str(report.get("kind") or "") == BLOCKER_KIND_EXTERNAL
+                and not str(report.get("review_loop_id") or "").strip()
+            ):
+                report = dict(report)
+                report.pop("kind", None)
 
         updated = dict(production)
         updated["revision"] = expected_revision + 1

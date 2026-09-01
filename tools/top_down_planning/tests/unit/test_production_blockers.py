@@ -162,7 +162,7 @@ def test_focused_review_wait_without_loop_id_is_not_terminal() -> None:
     assert evaluation.disposition == "active_wait"
 
 
-def test_approved_loop_without_digest_still_satisfies_review_bound_blocker() -> None:
+def test_approved_loop_without_digest_does_not_satisfy_digest_bound_blocker() -> None:
     report = _review_bound_blocker(target_digest="digest-a")
     loop = make_review_loop(
         id="review-focused-output-01",
@@ -172,12 +172,12 @@ def test_approved_loop_without_digest_still_satisfies_review_bound_blocker() -> 
         status="approved",
         reviewer_session_id="sess",
     )
-    assert review_satisfies_blocker(report, loop) is True
+    assert review_satisfies_blocker(report, loop) is False
     evaluation = evaluate_blocker_report(report, [loop])
-    assert evaluation.disposition == "resolved"
+    assert evaluation.disposition == "active_wait"
 
 
-def test_bind_legacy_blocker_to_single_open_focused_loop() -> None:
+def test_untyped_blocker_is_not_bound_to_single_open_focused_loop() -> None:
     pending = make_review_loop(
         id="review-focused-output-01",
         type="focused_output",
@@ -188,6 +188,148 @@ def test_bind_legacy_blocker_to_single_open_focused_loop() -> None:
     )
     bound = bind_open_focused_review_to_blocker(
         {
+            "evidence": "Vendor API is down.",
+            "affected_refs": ["item-first"],
+            "summary": "external outage",
+        },
+        [pending],
+        output_revision=2,
+        output_digest="digest-a",
+    )
+    assert bound.get("kind") != BLOCKER_KIND_FOCUSED_REVIEW_WAIT
+    assert "review_loop_id" not in bound
+
+
+def test_untyped_legacy_external_blocker_stays_terminal_while_focused_review_open() -> None:
+    pending = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="pending",
+        reviewer_session_id="sess",
+    )
+    report = {
+        "evidence": "Vendor API is down.",
+        "affected_refs": ["item-first"],
+        "summary": "external outage",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    bound = bind_open_focused_review_to_blocker(
+        report,
+        [pending],
+        output_revision=12,
+    )
+    evaluation = evaluate_blocker_report(
+        bound,
+        [pending],
+        events=[
+            {
+                "type": "focused_review_requested",
+                "loop_id": pending.id,
+                "review_type": "focused_output",
+                "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+                "target_revision": 2,
+            },
+            {
+                "type": "production_blocked_reported",
+                "affected_refs": ["item-first"],
+            },
+        ],
+    )
+    assert evaluation.disposition == "active_terminal"
+    assert evaluation.report is not None
+    assert evaluation.report["kind"] == BLOCKER_KIND_EXTERNAL
+    assert evaluation.diagnostic_code == "ambiguous_legacy_blocker"
+
+
+def test_legacy_untyped_blocker_resolves_when_history_proves_satisfied_review_wait() -> None:
+    loop = _approved_focused_loop()
+    report = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    events = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+        {
+            "type": "focused_review_approved",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "target_revision": 2,
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [loop], events=events)
+    assert evaluation.disposition == "resolved"
+    assert evaluation.matching_loop_id == loop.id
+    assert evaluation.report is not None
+    assert evaluation.report["kind"] == BLOCKER_KIND_FOCUSED_REVIEW_WAIT
+    assert evaluation.report["status"] == BLOCKER_STATUS_RESOLVED
+    assert evaluation.report["resolved_by"] == loop.id
+
+
+def test_legacy_untyped_blocker_is_not_auto_cleared_when_history_is_ambiguous() -> None:
+    first = _approved_focused_loop(loop_id="review-focused-output-01")
+    second = _approved_focused_loop(loop_id="review-focused-output-02")
+    report = {
+        "evidence": "Producer is waiting for focused review.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    events = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": first.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+        },
+        {
+            "type": "focused_review_requested",
+            "loop_id": second.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [first, second], events=events)
+    assert evaluation.disposition == "active_terminal"
+    assert evaluation.diagnostic_code == "ambiguous_legacy_blocker"
+    assert evaluation.report is not None
+    assert evaluation.report.get("status") != BLOCKER_STATUS_RESOLVED
+
+
+def test_explicit_focused_review_wait_binds_to_named_or_unique_open_loop() -> None:
+    pending = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="pending",
+        reviewer_session_id="sess",
+    )
+    bound = bind_open_focused_review_to_blocker(
+        {
+            "kind": BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
             "evidence": "Waiting on focused review.",
             "affected_refs": ["item-first"],
             "summary": "focused review pending",

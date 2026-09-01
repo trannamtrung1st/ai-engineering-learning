@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from top_down_planning.domain.reviews import (
     CLEAR_APPROVAL_STATUSES,
@@ -21,6 +22,11 @@ BlockerDisposition = Literal["none", "active_terminal", "active_wait", "resolved
 
 _REVIEW_WAIT_KINDS = frozenset({BLOCKER_KIND_FOCUSED_REVIEW_WAIT})
 _INACTIVE_STATUSES = frozenset({BLOCKER_STATUS_RESOLVED, BLOCKER_STATUS_SUPERSEDED})
+_REVIEW_WAIT_EVIDENCE_RE = re.compile(
+    r"waiting\s+(?:for|on)\s+(?:a\s+)?focused\s+review|focused\s+review",
+    re.IGNORECASE,
+)
+DIAGNOSTIC_AMBIGUOUS_LEGACY_BLOCKER = "ambiguous_legacy_blocker"
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,7 @@ class BlockerEvaluation:
     report: dict[str, Any] | None = None
     matching_loop_id: str | None = None
     reason: str | None = None
+    diagnostic_code: str | None = None
 
 
 def _optional_text(value: Any) -> str | None:
@@ -154,9 +161,10 @@ def review_satisfies_blocker(report: Mapping[str, Any], loop: ReviewLoop) -> boo
     if bound_revision is not None and int(loop.target_revision) != bound_revision:
         return False
     bound_digest = _optional_text(normalized.get("target_digest"))
-    loop_digest = loop_bound_digest(loop)
-    if bound_digest and loop_digest and bound_digest != loop_digest:
-        return False
+    if bound_digest:
+        loop_digest = loop_bound_digest(loop)
+        if loop_digest != bound_digest:
+            return False
     return True
 
 
@@ -176,42 +184,166 @@ def resolve_blocker_report(
     return updated
 
 
+def _scope_item_ids(scope: Any) -> set[str]:
+    if not isinstance(scope, Mapping):
+        return set()
+    raw = scope.get("item_ids")
+    if not isinstance(raw, list):
+        return set()
+    return {str(item) for item in raw if str(item)}
+
+
+def _looks_like_review_wait_evidence(report: Mapping[str, Any]) -> bool:
+    text = f"{report.get('evidence') or ''} {report.get('summary') or ''}"
+    return bool(_REVIEW_WAIT_EVIDENCE_RE.search(text))
+
+
+def _is_legacy_untyped(raw: Mapping[str, Any]) -> bool:
+    return (
+        _optional_text(raw.get("kind")) is None
+        and _optional_text(raw.get("review_loop_id")) is None
+    )
+
+
+def _overlapping_request_loop_ids(
+    events: Sequence[Mapping[str, Any]],
+    reviews: list[ReviewLoop],
+    report: Mapping[str, Any],
+) -> list[str]:
+    loop_by_id = {loop.id: loop for loop in reviews}
+    affected = {str(item) for item in (report.get("affected_refs") or []) if str(item)}
+    last_blocked_index: int | None = None
+    for index, event in enumerate(events):
+        if event.get("type") == "production_blocked_reported":
+            last_blocked_index = index
+    if last_blocked_index is None:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for event in events[:last_blocked_index]:
+        if event.get("type") != "focused_review_requested":
+            continue
+        review_type = str(event.get("review_type") or "")
+        if review_type and review_type != "focused_output":
+            continue
+        loop_id = str(event.get("loop_id") or "").strip()
+        if not loop_id or loop_id in seen:
+            continue
+        item_ids = _scope_item_ids(event.get("scope"))
+        loop = loop_by_id.get(loop_id)
+        if not item_ids and loop is not None:
+            item_ids = _scope_item_ids(loop.scope)
+        if affected and item_ids and affected.isdisjoint(item_ids):
+            continue
+        if affected and not item_ids:
+            continue
+        seen.add(loop_id)
+        candidates.append(loop_id)
+    return candidates
+
+
+def _bind_report_to_loop(
+    report: Mapping[str, Any],
+    loop: ReviewLoop,
+    *,
+    output_revision: int | None = None,
+    output_digest: str | None = None,
+) -> dict[str, Any]:
+    bound = dict(report)
+    bound["kind"] = BLOCKER_KIND_FOCUSED_REVIEW_WAIT
+    bound["status"] = BLOCKER_STATUS_ACTIVE
+    bound["review_loop_id"] = loop.id
+    bound["target_revision"] = int(loop.target_revision)
+    digest = loop_bound_digest(loop) or _optional_text(output_digest)
+    if digest:
+        bound["target_digest"] = digest
+    if output_revision is not None:
+        bound["reported_at_output_revision"] = int(output_revision)
+    return bound
+
+
+def _evaluate_review_bound(
+    normalized: dict[str, Any],
+    reviews: list[ReviewLoop],
+) -> BlockerEvaluation:
+    if not is_review_bound_blocker(normalized):
+        return BlockerEvaluation(
+            disposition="active_wait",
+            report=normalized,
+            reason="focused review wait is missing review_loop_id",
+        )
+    loop_id = str(normalized.get("review_loop_id") or "")
+    matching = next((loop for loop in reviews if loop.id == loop_id), None)
+    if matching is not None and review_satisfies_blocker(normalized, matching):
+        return BlockerEvaluation(
+            disposition="resolved",
+            report=resolve_blocker_report(normalized, resolved_by=matching.id),
+            matching_loop_id=matching.id,
+            reason=(
+                "stale review-bound production blocker; "
+                "blocking condition is already satisfied"
+            ),
+        )
+    reason = "focused review wait is still active"
+    if (
+        matching is not None
+        and _optional_text(normalized.get("target_digest"))
+        and loop_bound_digest(matching) is None
+        and matching.status in CLEAR_APPROVAL_STATUSES
+    ):
+        reason = (
+            "review-bound production blocker cannot be satisfied; "
+            "matching review is missing review digest"
+        )
+    return BlockerEvaluation(
+        disposition="active_wait",
+        report=normalized,
+        matching_loop_id=loop_id or None,
+        reason=reason,
+    )
+
+
 def evaluate_blocker_report(
     report: Mapping[str, Any] | None,
     reviews: list[ReviewLoop],
+    events: Sequence[Mapping[str, Any]] | None = None,
 ) -> BlockerEvaluation:
     """Classify a persisted blocker against current review-loop state."""
 
+    if not isinstance(report, Mapping):
+        return BlockerEvaluation(disposition="none")
     normalized = normalize_blocker_report(report)
     if normalized is None:
         return BlockerEvaluation(disposition="none")
     if str(normalized.get("status") or "") in _INACTIVE_STATUSES:
         return BlockerEvaluation(disposition="none", report=normalized)
     if str(normalized.get("kind") or "") in _REVIEW_WAIT_KINDS:
-        if not is_review_bound_blocker(normalized):
+        return _evaluate_review_bound(normalized, reviews)
+
+    history = [event for event in (events or []) if isinstance(event, Mapping)]
+    if _is_legacy_untyped(report) and history:
+        overlapping = _overlapping_request_loop_ids(history, reviews, normalized)
+        unique_loop = None
+        if len(overlapping) == 1:
+            unique_loop = next(
+                (loop for loop in reviews if loop.id == overlapping[0]),
+                None,
+            )
+        if unique_loop is not None and _looks_like_review_wait_evidence(normalized):
+            bound = _bind_report_to_loop(normalized, unique_loop)
+            return _evaluate_review_bound(bound, reviews)
+        if overlapping:
             return BlockerEvaluation(
-                disposition="active_wait",
+                disposition="active_terminal",
                 report=normalized,
-                reason="focused review wait is missing review_loop_id",
-            )
-        loop_id = str(normalized.get("review_loop_id") or "")
-        matching = next((loop for loop in reviews if loop.id == loop_id), None)
-        if matching is not None and review_satisfies_blocker(normalized, matching):
-            return BlockerEvaluation(
-                disposition="resolved",
-                report=resolve_blocker_report(normalized, resolved_by=matching.id),
-                matching_loop_id=matching.id,
+                matching_loop_id=overlapping[0] if len(overlapping) == 1 else None,
                 reason=(
-                    "stale review-bound production blocker; "
-                    "blocking condition is already satisfied"
+                    "legacy production blocker coincides with focused review "
+                    "history but causal binding is ambiguous"
                 ),
+                diagnostic_code=DIAGNOSTIC_AMBIGUOUS_LEGACY_BLOCKER,
             )
-        return BlockerEvaluation(
-            disposition="active_wait",
-            report=normalized,
-            matching_loop_id=loop_id or None,
-            reason="focused review wait is still active",
-        )
     return BlockerEvaluation(
         disposition="active_terminal",
         report=normalized,
@@ -226,17 +358,34 @@ def bind_open_focused_review_to_blocker(
     output_revision: int,
     output_digest: str | None = None,
 ) -> dict[str, Any]:
-    """Attach causal focused-review identity when exactly one open loop exists."""
+    """Attach causal focused-review identity from explicit kind or loop id only."""
 
     normalized = normalize_blocker_report(report)
     if normalized is None:
         raise ValueError("blocker report is missing")
-    if str(normalized.get("kind") or "") == BLOCKER_KIND_EXTERNAL:
-        raw_kind = _optional_text(report.get("kind"))
-        if raw_kind == BLOCKER_KIND_EXTERNAL:
-            return normalized
-    if _optional_text(normalized.get("review_loop_id")):
+    raw_kind = _optional_text(report.get("kind"))
+    raw_loop_id = _optional_text(report.get("review_loop_id"))
+    if raw_kind == BLOCKER_KIND_EXTERNAL:
         return normalized
+    if raw_loop_id:
+        matching = next((loop for loop in loops if loop.id == raw_loop_id), None)
+        if matching is None:
+            bound = dict(normalized)
+            bound["kind"] = BLOCKER_KIND_FOCUSED_REVIEW_WAIT
+            bound["review_loop_id"] = raw_loop_id
+            bound["reported_at_output_revision"] = int(output_revision)
+            return bound
+        return _bind_report_to_loop(
+            normalized,
+            matching,
+            output_revision=output_revision,
+            output_digest=output_digest,
+        )
+    if raw_kind != BLOCKER_KIND_FOCUSED_REVIEW_WAIT:
+        untyped = dict(normalized)
+        untyped.pop("review_loop_id", None)
+        untyped.pop("kind", None)
+        return untyped
     open_focused = [
         loop
         for loop in loops
@@ -244,16 +393,18 @@ def bind_open_focused_review_to_blocker(
         and loop.status != "blocked"
         and not is_terminal_review_loop(loop)
     ]
-    if len(open_focused) != 1:
+    affected = set(normalized.get("affected_refs") or [])
+    overlapping = [
+        loop
+        for loop in open_focused
+        if not affected or not _scope_item_ids(loop.scope).isdisjoint(affected)
+    ]
+    candidates = overlapping if len(overlapping) == 1 else open_focused
+    if len(candidates) != 1:
         return normalized
-    loop = open_focused[0]
-    bound = dict(normalized)
-    bound["kind"] = BLOCKER_KIND_FOCUSED_REVIEW_WAIT
-    bound["status"] = BLOCKER_STATUS_ACTIVE
-    bound["review_loop_id"] = loop.id
-    bound["target_revision"] = int(loop.target_revision)
-    digest = loop_bound_digest(loop) or _optional_text(output_digest)
-    if digest:
-        bound["target_digest"] = digest
-    bound["reported_at_output_revision"] = int(output_revision)
-    return bound
+    return _bind_report_to_loop(
+        normalized,
+        candidates[0],
+        output_revision=output_revision,
+        output_digest=output_digest,
+    )

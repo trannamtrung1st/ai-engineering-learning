@@ -795,6 +795,7 @@ def handle_resume_command(args: Namespace) -> None:
         allow_config_drift=allow_config_drift,
         production=canonical.production,
         reviews=canonical.reviews,
+        events=store.load_events(args.run),
     )
 
     if resume_plan.already_completed:

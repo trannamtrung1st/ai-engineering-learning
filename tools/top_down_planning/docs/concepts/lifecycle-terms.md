@@ -92,7 +92,7 @@ Stale revision fields return `revision_conflict`. Whole-plan and whole-output ap
 | `phase_action_domain_committed_id` | Last provider action whose domain boundary committed. Not a live action id. |
 | `provider_turn_failed` | The in-flight provider turn failed while `phase_action_id` was still active. Persist the interrupted id in `stop.details`. |
 
-A later orchestration or review-state error must not reuse `provider_turn_failed`. Those pauses use `orchestrator_state_conflict` or `review_state_conflict`.
+A later orchestration or review-state error must not reuse `provider_turn_failed`. Those pauses use `orchestrator_state_conflict` or `review_state_conflict`. Provider session teardown that leaves surviving processes on a running run is also `orchestrator_state_conflict`, not `provider_turn_failed`.
 
 ## Finding sets
 

@@ -133,6 +133,7 @@ def build_resume_plan_summary(
     allow_config_drift: bool = False,
     production: dict[str, Any] | None = None,
     reviews: list[dict[str, Any]] | None = None,
+    events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     consumed_limits = consumed_limits_from_run(run)
     effective_config = resume_plan.effective_config or candidate_config
@@ -166,6 +167,7 @@ def build_resume_plan_summary(
             run=run,
             production=production,
             reviews=reviews,
+            events=events,
         )
     ]
 

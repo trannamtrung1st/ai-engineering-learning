@@ -121,7 +121,39 @@ def test_engine_teardown_runtime_error_does_not_proceed(tmp_path: Path) -> None:
     assert "terminate_all_sessions exploded" in (result.reason or "")
     run = store.load_run(run_id)
     assert run["status"] == "paused"
+    assert run["stop"]["code"] == "orchestrator_state_conflict"
     assert run["stop"]["details"]["surviving_pids"] == [8888]
+
+
+def test_apply_provider_teardown_failure_does_not_use_provider_turn_failed(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.engine import _apply_provider_teardown_failure
+    from top_down_planning.orchestrator.errors import ProviderTeardownError
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T009151-009151"
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=PLANNING,
+        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
+    )
+
+    _apply_provider_teardown_failure(
+        store,
+        run_id,
+        phase=PLANNING,
+        teardown_failed=ProviderTeardownError(
+            "provider teardown left surviving agent processes: [6666]",
+            surviving_pids=(6666,),
+        ),
+    )
+
+    run = store.load_run(run_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "orchestrator_state_conflict"
+    assert run["stop"]["details"]["surviving_pids"] == [6666]
 
 
 def test_apply_provider_teardown_failure_escalates_completed_run(tmp_path: Path) -> None:
