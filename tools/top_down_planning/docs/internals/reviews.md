@@ -69,4 +69,32 @@ Successful focused review persists `status=approved` (terminal) and `focused_rev
 
 The stale `production.blocker_report` / focused-review recovery defect cluster is **closed**. Do not reopen it for redesign. The paragraph above is the accepted contract: artifact-identity waits, same-loop recheck supersession, causal legacy reconstruction, recoverable wait pause, proven blocker-caused terminalization before historical reopen, and external blockers that stay terminal.
 
+### Closure verification
+
+Verified `1120a53e6f1a18a52c866ab414ae0dc3705f089d` on 2026-09-02 from a clean detached checkout (`git clone` of `tool-dev`, then `git checkout --detach 1120a53e`) with a fresh venv (Python 3.14.3) and `pip install -e ../core_tools` then `pip install -e ".[dev]"` from `tools/top_down_planning`. Covered recovery scenarios use in-process store/event reconstruction; they do not require manual JSON state repair.
+
+This repository has no ruff/mypy/pre-commit config. The CI syntax gate is `compileall`.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Syntax | `python -m compileall -q src ../core_tools/src` (from the TDP package / sibling paths in the checkout) | pass |
+| Docs | `python scripts/check_docs.py` | pass |
+| Unit | `python -m pytest` | first run: 3 failed / 2996 passed / 2 skipped (`BoundaryWorker` xdist leftovers on one worker). Isolated rerun of those 3 with `-p no:xdist -o addopts=''`: 3 passed. Second full unit run: 1 failed / 2998 passed / 2 skipped (unrelated `BoundaryWorker` startup timing bound). Not a blocker/review contract failure. |
+| Integration | `python -m pytest -m integration` | pass, 33 passed |
+| Wheelhouse | `python scripts/build_packaging_wheelhouse.py $TDP_PACKAGING_WHEELHOUSE` | pass |
+| Full suite | `TDP_PACKAGING_WHEELHOUSE=… python -m pytest -o addopts='' tests` | pass, 3034 passed, 2 skipped |
+| Packaging | `TDP_PACKAGING_WHEELHOUSE=… python -m pytest -o addopts='' -m packaging --tb=short` | pass, 2 passed |
+| Wheel | `python -m build --wheel tools/top_down_planning` | pass (`top_down_planning-0.1.0-py3-none-any.whl`) |
+
+Focused stale-blocker / focused-review regressions (separate command, zero failures):
+
+```text
+python -m pytest tests/unit/test_production_blockers.py \
+  tests/unit/test_focused_review_lifecycle.py \
+  tests/unit/test_resume_lifecycle_diagnostics.py \
+  tests/unit/test_apply_resume.py::test_resume_focused_review_wait
+```
+
+Result: 58 passed.
+
 Related: [lifecycle architecture](../architecture/lifecycle.md), [agent CLI](../agents/cli.md).
