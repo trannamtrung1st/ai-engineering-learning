@@ -17,6 +17,20 @@ class ProviderRunError(OrchestratorError):
         super().__init__(message, code="provider_run_error")
 
 
+class OrchestratorStateConflict(OrchestratorError):
+    """Orchestration policy or lifecycle state conflict (not a provider-turn failure)."""
+
+    def __init__(self, message: str, *, code: str = "orchestrator_state_conflict") -> None:
+        super().__init__(message, code=code)
+
+
+class ReviewStateConflict(OrchestratorStateConflict):
+    """Review-loop lifecycle conflict such as an advisory handoff identity mismatch."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="review_state_conflict")
+
+
 class OrchestratorInvariantError(OrchestratorError):
     """Programming or policy invariant violated during orchestration."""
 

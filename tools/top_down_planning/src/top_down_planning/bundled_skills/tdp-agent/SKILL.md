@@ -55,7 +55,7 @@ Emit as the **final assistant line** or `done.signal` metadata when work is read
 | Planner | `candidate_plan_ready` |
 | Producer (amendment) | `amendment_revision_ready` |
 
-Producer batch turns close when `production apply` persists a batch; completion turns close when `submit-completion` persists a valid completion claim. Owner advisory turns close when `review record-actions` persists. No completion token is required. Stop working after submit-completion; no summary or cleanup turn is required.
+Producer batch turns close when `production apply` persists a batch; completion turns close when `submit-completion` persists a valid completion claim. Requesting focused output review also closes the current producer turn; end the turn after `tdp agent review request` and do not `report-blocked` merely because that review is pending. Owner advisory turns close when `review record-actions` persists. No completion token is required. Stop working after submit-completion; no summary or cleanup turn is required.
 
 ## Request files
 

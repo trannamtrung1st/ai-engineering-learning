@@ -27,6 +27,7 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
 from core_tools.provider.errors import ProviderTurnError
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
+    OrchestratorStateConflict,
     OrphanCleanupBlocked,
     ProviderRunError,
     ProviderTeardownError,
@@ -843,7 +844,7 @@ class RunEngine:
                 )
                 self._emit_done(result, started_at=started_at)
                 return result
-            except (ProviderRunError, ProviderTurnError) as exc:
+            except OrchestratorStateConflict as exc:
                 run = self._store.load_run(run_id)
                 if str(run.get("status") or "") != "running":
                     result = _continuation_result_from_run(
@@ -857,11 +858,56 @@ class RunEngine:
                     self._emit_done(result, started_at=started_at)
                     return result
                 stop = StopRecord(
-                    code="provider_turn_failed",
+                    code=exc.code,  # type: ignore[arg-type]
                     category="operational",
                     phase=phase,
                     message=str(exc),
                 )
+                pause_run(self._store, run_id, stop=stop)
+                run = self._store.load_run(run_id)
+                result = _continuation_result_from_run(
+                    run,
+                    run_id,
+                    until=until,
+                    steps=steps,
+                    ok=False,
+                    reason=str(exc),
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
+            except (ProviderRunError, ProviderTurnError) as exc:
+                run = self._store.load_run(run_id)
+                if str(run.get("status") or "") != "running":
+                    result = _continuation_result_from_run(
+                        run,
+                        run_id,
+                        until=until,
+                        steps=steps,
+                        ok=False,
+                        reason=str(exc),
+                    )
+                    self._emit_done(result, started_at=started_at)
+                    return result
+                phase_action_id = str(run.get("phase_action_id") or "").strip()
+                if isinstance(exc, ProviderTurnError) or phase_action_id:
+                    details: dict[str, Any] = {}
+                    if phase_action_id:
+                        details["phase_action_id"] = phase_action_id
+                        details["domain_committed"] = False
+                    stop = StopRecord(
+                        code="provider_turn_failed",
+                        category="operational",
+                        phase=phase,
+                        message=str(exc),
+                        details=details,
+                    )
+                else:
+                    stop = StopRecord(
+                        code="orchestrator_state_conflict",
+                        category="operational",
+                        phase=phase,
+                        message=str(exc),
+                    )
                 pause_run(self._store, run_id, stop=stop)
                 run = self._store.load_run(run_id)
                 result = _continuation_result_from_run(

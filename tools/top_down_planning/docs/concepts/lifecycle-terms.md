@@ -15,7 +15,7 @@ TDP uses several independent axes. Mixing them (for example treating a review st
 | `completed` | The run finished with a quality `outcome` (`accepted`, `rejected`, or `blocked`). `stop` is null. |
 | `failed` | The run hit an **invariant** stop. `outcome` is null. This is not a quality outcome. |
 
-Paused runs are **recoverable** in the lifecycle sense: they carry an operational `stop.code` (for example `limit_exhausted`, `user_cancelled`, `amendment_pending`, `provider_turn_failed`). Failed runs are **terminal** for that run: they carry an invariant `stop.code` (for example `orchestrator_invariant_failure`, `session_recovery_exhausted`, `sub_tdp_unit_permanently_failed`). Completed runs are also terminal.
+Paused runs are **recoverable** in the lifecycle sense: they carry an operational `stop.code` (for example `limit_exhausted`, `user_cancelled`, `amendment_pending`, `provider_turn_failed`, `orchestrator_state_conflict`, `review_state_conflict`, `focused_review_wait`). Failed runs are **terminal** for that run: they carry an invariant `stop.code` (for example `orchestrator_invariant_failure`, `session_recovery_exhausted`, `sub_tdp_unit_permanently_failed`). Completed runs are also terminal.
 
 Distinguish **continuation-command success** (`ok` on `tdp run` / `tdp resume`) from **terminal quality success**:
 
@@ -84,6 +84,20 @@ Revisions are monotonic counters on artifacts. They are not run status.
 
 Stale revision fields return `revision_conflict`. Whole-plan and whole-output approvals are bound to the current plan or output revision. The persisted completion claim is bound to those same current revisions.
 
+## Phase actions
+
+| Field | Meaning |
+| --- | --- |
+| `phase_action_id` | Live provider step. Null after the provider/domain boundary commits. |
+| `phase_action_domain_committed_id` | Last provider action whose domain boundary committed. Not a live action id. |
+| `provider_turn_failed` | The in-flight provider turn failed while `phase_action_id` was still active. Persist the interrupted id in `stop.details`. |
+
+A later orchestration or review-state error must not reuse `provider_turn_failed`. Those pauses use `orchestrator_state_conflict` or `review_state_conflict`.
+
+## Finding sets
+
+`finding_set_id` identifies **one discovery-result population**, not the lifetime of a scope-review stage. A fresh scope-review pass allocates a new id; retrying an interrupted/incomplete pass reuses the same id. At most one owner advisory handoff runs per `finding_set_id`. Do not clear `advisory_handoffs_completed` to make a later pass work.
+
 ## Recoverable versus terminal
 
 | Kind | Typical signals | What operators do |
@@ -92,6 +106,6 @@ Stale revision fields return `revision_conflict`. Whole-plan and whole-output ap
 | Terminal failure | `status=failed`, invariant `stop` | Treat as a broken run; do not expect resume to continue production |
 | Terminal completion | `status=completed` plus an `outcome` | Read the quality outcome; **terminal quality success** is `accepted` only |
 
-Amendment-pending and some Sub-TDP waits are pauses, not failures. Quality `blocked`/`rejected` are completion outcomes, not `status=failed`.
+Amendment-pending, focused-review wait (`focused_review_wait`), and some Sub-TDP waits are pauses, not failures. Quality `blocked`/`rejected` are completion outcomes, not `status=failed`.
 
 Related: [quality loop](quality-loop.md), [operations](../workflows/operations.md), [troubleshooting](../manual/troubleshooting.md).

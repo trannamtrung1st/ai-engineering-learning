@@ -793,6 +793,8 @@ def handle_resume_command(args: Namespace) -> None:
         config_path=str(config_path) if config_path is not None else None,
         config_overrides=config_overrides,
         allow_config_drift=allow_config_drift,
+        production=canonical.production,
+        reviews=canonical.reviews,
     )
 
     if resume_plan.already_completed:

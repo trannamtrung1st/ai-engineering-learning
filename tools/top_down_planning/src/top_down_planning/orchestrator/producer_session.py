@@ -15,6 +15,7 @@ from top_down_planning.persistence.session_bindings import (
 
 PRODUCER_BATCH_COMPLETE_SIGNAL = "batch_complete"
 PRODUCER_COMPLETION_COMPLETE_SIGNAL = "completion_claimed"
+PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL = "focused_review_requested"
 
 
 def primary_producer_provider_session_id(run: dict[str, Any]) -> str | None:
@@ -72,6 +73,7 @@ def build_producer_tool_instructions(run_id: str) -> dict[str, str]:
 __all__ = [
     "PRODUCER_BATCH_COMPLETE_SIGNAL",
     "PRODUCER_COMPLETION_COMPLETE_SIGNAL",
+    "PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL",
     "build_producer_protocol_instructions",
     "build_producer_tool_instructions",
     "primary_producer_binding",

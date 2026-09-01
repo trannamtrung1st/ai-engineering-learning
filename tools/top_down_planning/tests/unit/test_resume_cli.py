@@ -101,6 +101,71 @@ def test_resume_check_json_output(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert payload["config_changes"]["limits.production.max_batches"]["to"] == 99
 
 
+def test_resume_check_reports_lifecycle_diagnostics_without_writes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from top_down_planning.domain.production_blockers import (
+        BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+        BLOCKER_STATUS_ACTIVE,
+    )
+    from tests.helpers import make_review_loop, save_review_payload
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_paused_production_run(store)
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=0,
+        scope={"kind": "focused_output", "item_ids": ["item-root"]},
+        status="approved",
+        reviewer_session_id="sess",
+        verification_result={"target_digest": "digest-a", "decision": "verified"},
+    )
+    save_review_payload(store, run_id, loop.to_dict())
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    updated = dict(production)
+    updated["revision"] = expected + 1
+    updated["blocker_report"] = {
+        "kind": BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+        "status": BLOCKER_STATUS_ACTIVE,
+        "review_loop_id": loop.id,
+        "target_revision": 0,
+        "target_digest": "digest-a",
+        "evidence": "Waiting on focused review.",
+        "affected_refs": ["item-root"],
+        "summary": "focused review pending",
+    }
+    store.save_production(run_id, updated, expected)
+    run_dir = store.run_dir(run_id)
+    before = _run_dir_digest(run_dir)
+
+    with pytest.raises(SystemExit) as exit_info:
+        handle_resume_command(
+            Namespace(
+                run=run_id,
+                runs_dir=str(store.root),
+                stream_json=True,
+                check=True,
+                set=None,
+                config=None,
+                command="resume",
+            )
+        )
+    assert exit_info.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    codes = [row["code"] for row in payload.get("lifecycle_diagnostics") or []]
+    assert "stale_review_bound_blocker" in codes
+    row = next(
+        item
+        for item in payload["lifecycle_diagnostics"]
+        if item["code"] == "stale_review_bound_blocker"
+    )
+    assert row["loop_id"] == loop.id
+    assert row["proposed_reconciliation"]
+    assert _run_dir_digest(run_dir) == before
+
+
 def test_resume_check_rejects_unsupported_plan_schema(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -20,7 +20,9 @@ Schema: `tdp agent schema production-apply`
 
 Snapshot views: `tree`, `ready`, `dispositions`. Empty-output batches: `tdp agent example empty-output`.
 
-Producer batch turns close when `production apply` persists a batch; completion turns close when `submit-completion` persists a valid completion claim. In both cases the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then queues the next turn on the same session. A background poll also watches for persisted batches and completion claims while the turn is open so a stalled agent subprocess cannot block progress after apply or submit-completion.
+Producer batch turns close when `production apply` persists a batch; completion turns close when `submit-completion` persists a valid completion claim; focused-output review requests close the current producer turn when `tdp agent review request` persists. In those cases the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then queues the next turn on the same session (after the focused reviewer runs, when a review was requested). A background poll also watches for persisted batches, completion claims, and focused-review requests while the turn is open.
+
+After requesting focused review, **end the current turn**. Do not call `production report-blocked` merely because that review is pending. `report-blocked` is for genuine terminal blockers (external outages, missing credentials) where the task cannot be completed.
 
 Record **one production batch per provider turn**. Stop working after submit-completion; no summary or cleanup turn is required.
 
@@ -51,6 +53,6 @@ Record owner `family_fix` sweeps via `tdp agent review record-actions` when usin
 
 ## Amendment and blockers
 
-If the approved plan cannot be followed, `request-amendment` (`amendment-request`) or `report-blocked` (`blocker-report`). Do not expand the plan tree with `plan apply` in a producer session.
+If the approved plan cannot be followed, `request-amendment` (`amendment-request`) or `report-blocked` (`blocker-report`). Do not expand the plan tree with `plan apply` in a producer session. `report-blocked` is not the normal mechanism for waiting on a focused review. A leftover review-bound blocker pauses production (`focused_review_wait`) until that review is satisfied; genuine `kind=external` blockers still complete with `outcome=blocked`.
 
 Related: [agent CLI](cli.md), [troubleshooting](troubleshooting.md), [operator-visible sessions](../workflows/agent-sessions.md).

@@ -1685,7 +1685,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "blocker-report": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "BlockerReportRequest",
-        "description": "Production blocker report for `tdp agent production report-blocked`.",
+        "description": "Production blocker report for `tdp agent production report-blocked`. Use this for genuine terminal blockers (external outages, missing credentials), not as the normal wait for a pending focused review.",
         "type": "object",
         "required": ["production_revision", "evidence"],
         "properties": {
@@ -1696,6 +1696,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "items": {"type": "string"},
             },
             "summary": {"type": "string"},
+            "kind": {
+                "type": "string",
+                "enum": ["external", "focused_review_wait"],
+            },
+            "review_loop_id": {"type": "string"},
+            "package_item_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "target_digest": {"type": "string"},
         },
         "additionalProperties": False,
     },
@@ -2812,8 +2820,11 @@ observes store changes after each provider turn, runs pending review loops, and
 advances phases when agents emit explicit completion signals (`candidate_plan_ready`,
 `amendment_revision_ready`, etc.) as the final assistant line or `done.signal`
 metadata. Producer batch turns close when `production apply` persists a batch;
-completion turns close when `submit-completion` persists a valid completion claim.
-In both cases the orchestrator aborts the in-flight provider turn, waits for the
+completion turns close when `submit-completion` persists a valid completion claim;
+requesting focused output review also closes the current producer turn so the
+focused reviewer can run before the producer resumes. Do not call
+`production report-blocked` merely because that review is pending. In those cases
+the orchestrator aborts the in-flight provider turn, waits for the
 session collector to settle, then queues the next turn on the same session.
 Reviewer
 turns close when `review respond` persists a decision: the orchestrator aborts
@@ -2823,9 +2834,9 @@ advisory turns close when `review record-actions` persists. A
 turn that ends without `review respond` queues another reviewer turn with a nudge
 (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with
 `limit_exhausted`. A background poll watches for persisted batches, completion
-claims, owner record-actions, or review decisions while the turn is open so a
-stalled agent subprocess cannot block progress after apply, submit-completion,
-record-actions, or respond.
+claims, focused-review requests, owner record-actions, or review decisions while the
+turn is open so a stalled agent subprocess cannot block progress after apply,
+submit-completion, review request, record-actions, or respond.
 
 ## Session roles and authorization
 
@@ -3143,7 +3154,9 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    evidence revision also requires `focused_review_loop_id` bound to the loop's
    `target_revision`. Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
-   Focused plan reviewers receive the same embedded plan snapshot guidance as
+   A focused-output request closes the current producer turn; end the turn after
+   the request persists and do not `report-blocked` merely because that review is
+   pending. Focused plan reviewers receive the same embedded plan snapshot guidance as
    whole-plan review. Discovery may use flat `target_refs`, structured
    `instance_ref`, or optional `finding_families` within scope — see
    `review-respond`, `review-respond-focused-with-instance-ref`,
@@ -3245,10 +3258,17 @@ greater than zero (`provider_turn_stalled`). Replacement exhausted for the curre
 
 Run lifecycle fields on `run.json`: `status` (`running`, `paused`, `completed`, `failed`);
 `outcome` (non-null only when `status` is `completed`); `stop` (structured stop record
-when paused or failed, otherwise null); `phase_action_id` (stable logical action id for
-the current provider step, or null). Paused stops use `category: operational` with
+when paused or failed, otherwise null); `phase_action_id` (active logical action id for
+the current in-flight provider step, or null after the provider/domain boundary
+commits); `phase_action_domain_committed_id` (the last provider action whose domain
+boundary committed successfully). `provider_turn_failed` means an actual provider turn
+failed while that action was still active; persist the interrupted id in
+`stop.details.phase_action_id` with `domain_committed: false`. Orchestration or review
+state conflicts after a successful turn use `orchestrator_state_conflict` or
+`review_state_conflict`, not `provider_turn_failed`. Paused stops use `category: operational` with
 `code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
-`provider_turn_failed`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment
+`provider_turn_failed`, `orchestrator_state_conflict`, `review_state_conflict`,
+`focused_review_wait`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment)
 checkpoint); failed stops use `category: invariant` with
 `code` in `state_integrity_failure`, `evidence_integrity_failure`,
 `unsupported_phase_state`, `orchestrator_invariant_failure`, or
@@ -3271,7 +3291,12 @@ Paused runs resume through `prepare_resume()` (read-only) and
 
 - `tdp resume --run <id> --config <yaml>` — apply candidate config and continue
 - `tdp resume --run <id> --set limits.planning.max_agent_turns=40` — limit-only override
-- `tdp resume --run <id> --check ...` — print the resume plan; no writes or provider calls
+- `tdp resume --run <id> --check ...` — print the resume plan; no writes or provider calls.
+  `--check` also reports semantic lifecycle diagnostics (stale review-bound production
+  blockers, unsatisfiable review-bound waits whose matching loop is already terminal,
+  misclassified `provider_turn_failed` after a committed phase action, and
+  advisory handoff identity mismatches) with a proposed safe reconciliation. It does
+  not mutate ambiguous state.
 - `tdp resume --run <id> --until plan|validated|completed` — loop `RunEngine` after apply
   (default: one orchestrator step)
 - `tdp resume --run <id> --allow-config-drift --config <yaml>` — opt in to contract/model

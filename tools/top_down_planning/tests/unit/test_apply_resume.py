@@ -392,6 +392,31 @@ def test_resume_amendment_pending(tmp_path: Path) -> None:
     assert store.load_run(run_id)["status"] == "running"
 
 
+def test_resume_focused_review_wait(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_production_run(store, status="paused")
+    _set_paused_stop(
+        store,
+        run_id,
+        {
+            "code": "focused_review_wait",
+            "category": "operational",
+            "phase": PRODUCTION,
+            "message": "focused review wait is still active",
+            "details": {"review_loop_id": "review-focused-output-01"},
+        },
+    )
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored)
+    apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=stored,
+        invocation=store.load_invocation(run_id),
+    )
+    assert store.load_run(run_id)["status"] == "running"
+
+
 def test_resume_mandatory_review_incomplete_continue(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T001401-001401"

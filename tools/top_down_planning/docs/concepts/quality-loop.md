@@ -10,7 +10,7 @@ A producer records a batch against the current `production_revision`. The batch 
 
 Every changed snapshot-bound workspace path must appear in that batch’s `outputs`. The agent supplies `id`, `type`, and `ref`; the service captures hash, size, media type, and an immutable snapshot. Missing paths fail with `production_evidence_incomplete`. Skill/guidance drift is not authorizable through outputs (`production_context_mutation_unauthorized`).
 
-One production batch is recorded per producer provider turn. Persisting `production apply` closes that turn.
+One production batch is recorded per producer provider turn. Persisting `production apply` closes that turn. Requesting focused output review is the same kind of producer-turn boundary; do not `report-blocked` merely because that review is pending.
 
 ## Dispositions
 

@@ -67,6 +67,106 @@ def test_allocate_reuses_id_for_scope_review_stage() -> None:
     assert updated is loop
 
 
+def test_allocate_fresh_discovery_pass_gets_new_finding_set_id() -> None:
+    loop = _loop(
+        finding_set_id="review-focused-plan-01-fs-01",
+        active_stage="scope_review",
+        lifecycle_status="scope_review_pending",
+        advisory_handoffs_completed=["review-focused-plan-01-fs-01"],
+    )
+    updated, finding_set_id = allocate_discovery_finding_set_id(loop, fresh=True)
+    assert finding_set_id == "review-focused-plan-01-fs-02"
+    assert updated.finding_set_id == finding_set_id
+    assert updated.finding_set_id != loop.finding_set_id
+
+
+def test_prepare_scope_review_loop_allocates_new_finding_set_for_fresh_pass() -> None:
+    from top_down_planning.orchestrator.mandatory_review_stages import (
+        prepare_scope_review_loop,
+    )
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        lifecycle_status="review_pending",
+        finding_set_id="review-whole-plan-01-fs-01",
+        advisory_handoffs_completed=["review-whole-plan-01-fs-01"],
+        findings=[],
+        revise_at="blocker",
+    )
+    prepared = prepare_scope_review_loop(loop)
+    assert prepared.finding_set_id == "review-whole-plan-01-fs-02"
+    assert prepared.finding_set_id not in prepared.advisory_handoffs_completed
+
+
+def test_fresh_finding_set_allows_advisory_despite_prior_handoff() -> None:
+    from dataclasses import replace
+
+    from top_down_planning.domain.reviews import (
+        ReviewFinding,
+        advisory_handoff_allowed,
+        needs_advisory_handoff,
+    )
+    from top_down_planning.orchestrator.mandatory_review_stages import (
+        prepare_scope_review_loop,
+    )
+
+    loop = make_review_loop(
+        id="review-whole-output-01",
+        type="whole_output",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_output"},
+        status="advisory_pending",
+        lifecycle_status="review_pending",
+        finding_set_id="review-whole-output-01-fs-01",
+        advisory_handoffs_completed=["review-whole-output-01-fs-01"],
+        findings=[
+            {
+                "id": "finding-a",
+                "severity": "minor",
+                "category": "correctness",
+                "target_refs": ["item-root"],
+                "issue": "Optional polish A.",
+                "recommended_change": "Improve A.",
+                "status": "unresolved",
+            }
+        ],
+        finding_ids_by_set={"review-whole-output-01-fs-01": ["finding-a"]},
+        revise_at="blocker",
+    )
+    assert needs_advisory_handoff(loop) is True
+    assert advisory_handoff_allowed(loop) is False
+
+    prepared = prepare_scope_review_loop(loop)
+    later = replace(
+        prepared,
+        status="advisory_pending",
+        findings=[
+            ReviewFinding(
+                id="finding-b",
+                severity="minor",
+                category="correctness",
+                target_refs=["item-root"],
+                issue="Optional polish B.",
+                recommended_change="Improve B.",
+                status="unresolved",
+            )
+        ],
+        finding_ids_by_set={
+            "review-whole-output-01-fs-01": ["finding-a"],
+            prepared.finding_set_id: ["finding-b"],
+        },
+    )
+    assert later.finding_set_id == "review-whole-output-01-fs-02"
+    assert needs_advisory_handoff(later) is True
+    assert advisory_handoff_allowed(later) is True
+
+
 def test_echo_mismatch_rejected() -> None:
     loop = _loop()
     with pytest.raises(ValueError, match="finding_set_id mismatch"):

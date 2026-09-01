@@ -29,7 +29,7 @@ completed / failed → no lifecycle mutation
 
 The engine walks product phases (`planning`, `whole_plan_review`, `plan_validated`, `production`, `plan_amendment`, `sub_tdps`, `whole_output_review`, `output_validated`). Mandatory whole-plan/whole-output **stages** (`initial_review`, `finding_verification`, `scope_review`) live on the review loop, not on `run.status`. Review-loop mechanics: [review architecture](../internals/reviews.md).
 
-`phase_action_id` identifies the current provider step. Session replacement and some limits are scoped per `phase_action_id`.
+`phase_action_id` is the live provider step. When that step’s provider/domain boundary commits, `phase_action_domain_committed_id` records it and `phase_action_id` is cleared. Session replacement is scoped per live `phase_action_id`. `provider_turn_failed` means the in-flight provider turn failed while the action was still active; orchestration or review-state conflicts after a successful turn use `orchestrator_state_conflict` / `review_state_conflict`. Do not restore `phase_action_domain_committed_id` as a live `phase_action_id`. An active review-bound production wait pauses with `focused_review_wait` rather than completing `outcome=blocked`.
 
 Each lifecycle transition and its required audit event share one commit (`CommitSpec`: run/production state plus events). New split `save_run` + `append_event` lifecycle paths are not added. Persistence details: [persistence](../internals/persistence.md).
 

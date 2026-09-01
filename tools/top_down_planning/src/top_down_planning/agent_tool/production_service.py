@@ -38,6 +38,10 @@ from top_down_planning.config import (
     validate_run_production_snapshot_drift,
 )
 from top_down_planning.workspace import run_workspace
+from top_down_planning.domain.production_blockers import (
+    bind_open_focused_review_to_blocker,
+    normalize_blocker_report,
+)
 from top_down_planning.domain.reviews import (
     OUTPUT_REVIEW_TYPES,
     ReviewLoop,
@@ -639,13 +643,37 @@ class ProductionAgentService:
                 "production is paused while a plan amendment is pending"
             )
         expected_revision = _require_production_revision(request, production)
-        report = {
+        kind = str(request.get("kind") or "").strip()
+        report: dict[str, Any] = {
             "evidence": evidence,
             "affected_refs": affected_refs,
             "summary": summary,
             "plan_revision": plan.revision,
             "output_revision": int(production["output_revision"]),
+            "reported_at_output_revision": int(production["output_revision"]),
         }
+        if kind:
+            report["kind"] = kind
+        for field_name in (
+            "review_loop_id",
+            "package_item_id",
+            "target_digest",
+        ):
+            value = str(request.get(field_name) or "").strip()
+            if value:
+                report[field_name] = value
+        if request.get("target_revision") is not None:
+            report["target_revision"] = int(request["target_revision"])
+        loops = [
+            ReviewLoop.from_dict(raw) for raw in self._store.list_reviews(self._run_id)
+        ]
+        report = bind_open_focused_review_to_blocker(
+            report,
+            loops,
+            output_revision=int(production["output_revision"]),
+            output_digest=compute_output_digest(production),
+        )
+        report = normalize_blocker_report(report) or report
 
         updated = dict(production)
         updated["revision"] = expected_revision + 1

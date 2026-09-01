@@ -39,10 +39,10 @@ Use these instead of editing `run.json` / `plan.json` / `production.json`. [Run 
 
 ## Pause and resume
 
-A run **pauses** with an operational `stop` (Ctrl+C, limits, provider blips, amendment pending, Sub-TDP wait). That is not `status=failed`.
+A run **pauses** with an operational `stop` (Ctrl+C, limits, provider blips, amendment pending, focused-review wait, Sub-TDP wait). That is not `status=failed`.
 
 1. `tdp status` — read `stop.code` and `phase`.
-2. `tdp resume --check --run <id> --config cfg.yaml` — print the resume plan; **no writes**, no provider calls.
+2. `tdp resume --check --run <id> --config cfg.yaml` — print the resume plan and lifecycle diagnostics; **no writes**, no provider calls.
 3. `tdp resume --run <id> --config cfg.yaml` — apply and continue (add `--until` if you want a loop).
 
 Failed runs cannot be resumed. Owned Ctrl+C: [troubleshooting](../manual/troubleshooting.md#cancellation). Limit increases must be **strictly greater** than `consumed` when the stop tracks consumption.

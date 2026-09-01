@@ -21,6 +21,9 @@ PausedStopCode = Literal[
     "sub_tdp_child_failed",
     "sub_tdp_child_paused",
     "prepared_plan_amendment_required",
+    "orchestrator_state_conflict",
+    "review_state_conflict",
+    "focused_review_wait",
 ]
 
 FailedStopCode = Literal[
@@ -48,6 +51,9 @@ PAUSED_STOP_CODES: frozenset[str] = frozenset(
         "sub_tdp_child_failed",
         "sub_tdp_child_paused",
         "prepared_plan_amendment_required",
+        "orchestrator_state_conflict",
+        "review_state_conflict",
+        "focused_review_wait",
     }
 )
 

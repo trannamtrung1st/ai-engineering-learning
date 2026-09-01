@@ -87,7 +87,7 @@ This file is authoring machinery. It is not part of the public operator/agent la
 | [agents/README.md](../agents/README.md) | Runtime-agent start-here hub, role index, and links to protocol, CLI, and troubleshooting |
 | [agents/protocol.md](../agents/protocol.md) | Shared protocol, request files, revision safety, completion signals |
 | [agents/planner.md](../agents/planner.md) | Planner workflow and plan-mutation contracts |
-| [agents/producer.md](../agents/producer.md) | Producer batches, evidence, completion, amendments |
+| [agents/producer.md](../agents/producer.md) | Producer batches, evidence, completion, amendments, blockers |
 | [agents/reviewer.md](../agents/reviewer.md) | Reviewer respond, owner record-actions, focused and whole reviews |
 | [agents/cli.md](../agents/cli.md) | `tdp agent` discoverability, commands, published schemas/examples, authorization, capability tokens |
 | [agents/troubleshooting.md](../agents/troubleshooting.md) | Agent-facing error table and recovery hints |

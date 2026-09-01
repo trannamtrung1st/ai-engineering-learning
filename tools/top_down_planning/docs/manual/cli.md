@@ -84,7 +84,7 @@ tdp resume --run <run-id> --allow-config-drift --config cfg.yaml
 | Option | Meaning |
 | --- | --- |
 | `--run` | Run id |
-| `--check` | Print the resume plan; no writes or provider calls |
+| `--check` | Print the resume plan and semantic lifecycle diagnostics; no writes or provider calls. See [troubleshooting](troubleshooting.md). |
 | `--allow-config-drift` | Accept contract and model config changes on resume (see [configuration](configuration.md#resume-and-drift)) |
 | `--until {plan,validated,completed}` | Loop after apply. Omit to advance **one** orchestrator step (default). |
 

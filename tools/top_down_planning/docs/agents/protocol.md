@@ -57,12 +57,13 @@ Emit as the **final assistant line** or `done.signal` metadata when the protocol
 | Planner (amendment) | Emit `amendment_revision_ready` |
 | Producer (batch) | `production apply` persists a batch |
 | Producer (completion) | `submit-completion` persists a valid completion claim |
+| Producer (focused output) | `review request` persists a focused-output request |
 | Reviewer | `review respond` persists a decision |
 | Owner advisory | `review record-actions` persists |
 
-After `production apply` or `submit-completion`, stop working on that turn. No summary or cleanup turn is required. After `review respond`, the orchestrator releases the bounded reviewer session. A turn that ends without `review respond` queues another reviewer turn (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with `limit_exhausted`.
+After `production apply`, `submit-completion`, or a focused-output `review request`, stop working on that turn. No summary or cleanup turn is required. After `review respond`, the orchestrator releases the bounded reviewer session. A turn that ends without `review respond` queues another reviewer turn (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with `limit_exhausted`.
 
-A background poll watches for persisted batches, completion claims, owner record-actions, and review decisions while the turn is open so a stalled agent subprocess cannot block progress after the command succeeds.
+A background poll watches for persisted batches, completion claims, focused-review requests, owner record-actions, and review decisions while the turn is open so a stalled agent subprocess cannot block progress after the command succeeds.
 
 ## Session packages
 

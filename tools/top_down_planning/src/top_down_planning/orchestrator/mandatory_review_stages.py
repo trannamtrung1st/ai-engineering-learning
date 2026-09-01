@@ -231,7 +231,10 @@ def prepare_scope_review_loop(loop: ReviewLoop) -> ReviewLoop:
         approved_digests=None,
         scope_review_result=None,
     )
-    prepared, _finding_set_id = allocate_discovery_finding_set_id(prepared)
+    prepared, _finding_set_id = allocate_discovery_finding_set_id(
+        prepared,
+        fresh=True,
+    )
     return reset_gate_agent_turns(prepared.with_reviewer_session_released())
 
 

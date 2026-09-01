@@ -324,12 +324,25 @@ def validate_stop_for_resume_apply(
         return validate_review_incomplete_stop(store, run_id, stop, reviews=reviews)
     if code == "provider_unavailable":
         return None
-    if code == "provider_turn_failed":
-        if not str(run.get("phase_action_id") or "").strip():
-            raise ResumeStopValidationError(
-                "provider_turn_failed resume requires phase_action_id on run record"
-            )
+    if code in {
+        "orchestrator_state_conflict",
+        "review_state_conflict",
+        "focused_review_wait",
+    }:
         return None
+    if code == "provider_turn_failed":
+        active = str(run.get("phase_action_id") or "").strip()
+        details = stop.get("details") if isinstance(stop.get("details"), dict) else {}
+        details_action = str(details.get("phase_action_id") or "").strip()
+        committed = str(run.get("phase_action_domain_committed_id") or "").strip()
+        if active or details_action:
+            return None
+        if committed:
+            return None
+        raise ResumeStopValidationError(
+            "provider_turn_failed resume requires an interrupted phase_action_id "
+            "on the run record or stop.details"
+        )
     if code == "user_cancelled":
         return None
     if code == "orchestrator_interrupted":

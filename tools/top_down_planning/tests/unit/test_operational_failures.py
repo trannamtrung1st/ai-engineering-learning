@@ -144,7 +144,7 @@ def test_engine_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
     assert result.ok is False
     run = store.load_run("run-20260101T001701-001701")
     assert run["status"] == "paused"
-    assert run["stop"]["code"] == "provider_turn_failed"
+    assert run["stop"]["code"] == "orchestrator_state_conflict"
     events = store.load_events("run-20260101T001701-001701")
     assert any(event.get("type") == "run_paused" for event in events)
 

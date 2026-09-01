@@ -33,6 +33,7 @@ from top_down_planning.orchestrator.capability import (
 from top_down_planning.orchestrator.errors import (
     ProducerReplacementBlocked,
     ProviderRunError,
+    ReviewStateConflict,
     SessionRecoveryExhausted,
     SessionRecoveryPaused,
 )
@@ -50,11 +51,11 @@ from top_down_planning.orchestrator.recovery_manifest import (
 from top_down_planning.orchestrator.producer_session import (
     PRODUCER_BATCH_COMPLETE_SIGNAL,
     PRODUCER_COMPLETION_COMPLETE_SIGNAL,
+    PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
 )
 from top_down_planning.orchestrator.reviewer_session import (
     OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
     REVIEWER_DECISION_COMPLETE_SIGNAL,
-    reviewer_loop_provider_session_id,
 )
 from top_down_planning.orchestrator.run_transitions import generate_phase_action_id
 from top_down_planning.persistence.commit import CommitSpec
@@ -1705,6 +1706,16 @@ def production_completion_claim_count(store: RunStore, run_id: str) -> int:
     )
 
 
+def focused_review_request_count(store: RunStore, run_id: str) -> int:
+    """Count durable ``focused_review_requested`` audit events for a run."""
+
+    return sum(
+        1
+        for event in store.load_events(run_id)
+        if event.get("type") == "focused_review_requested"
+    )
+
+
 _OWNER_FINDING_ACTION_EVENT_TYPES = frozenset(
     {
         "review_finding_action_recorded",
@@ -1823,6 +1834,7 @@ class StoreBoundaryProbe:
     baseline_responds: int = 0
     baseline_decision: str | None = None
     baseline_actions: int = 0
+    baseline_focused_reviews: int = 0
 
     def __call__(self) -> str | None:
         from top_down_planning.persistence.file_store import FileRunStore
@@ -1835,6 +1847,8 @@ class StoreBoundaryProbe:
                 return None
             if production_completion_claim_count(store, self.run_id) > self.baseline_claims:
                 return PRODUCER_COMPLETION_COMPLETE_SIGNAL
+            if focused_review_request_count(store, self.run_id) > self.baseline_focused_reviews:
+                return PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL
             return None
         if self.kind == "producer_completion":
             if production_completion_claim_count(store, self.run_id) > self.baseline_claims:
@@ -1907,7 +1921,8 @@ def build_producer_turn_boundary_observer(
     store: RunStore,
     run_id: str,
 ) -> Callable[[], str | None]:
-    """Return a hook that closes producer turns on batch apply or completion claim.
+    """Return a hook that closes producer turns on batch apply, completion claim,
+    or focused-review request.
 
     Requires ``FileRunStore`` because the per-turn boundary worker reconstructs
     that concrete store in a child process from ``store.root``.
@@ -1919,6 +1934,7 @@ def build_producer_turn_boundary_observer(
         run_id=run_id,
         baseline_batches=production_batch_count(store, run_id),
         baseline_claims=production_completion_claim_count(store, run_id),
+        baseline_focused_reviews=focused_review_request_count(store, run_id),
     )
 
 
@@ -2070,14 +2086,12 @@ def find_pending_focused_review_loop_id(
     *,
     review_type: str,
 ) -> str | None:
-    """Return a focused review loop awaiting its first reviewer session."""
+    """Return a pending focused review loop that production should drive or resume."""
 
     for review in store.list_reviews(run_id):
         if str(review.get("type") or "") != review_type:
             continue
         if str(review.get("status") or "") != "pending":
-            continue
-        if reviewer_loop_provider_session_id(review) is not None:
             continue
         loop_id = review.get("id")
         if loop_id is None:
@@ -2110,7 +2124,7 @@ def run_pending_focused_review(
 
     result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
     if not result.ok:
-        raise ProviderRunError(
+        raise ReviewStateConflict(
             result.reason or f"{review_type} focused review did not complete successfully"
         )
     return True

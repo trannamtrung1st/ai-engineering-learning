@@ -11,6 +11,7 @@ from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     TurnTextAccumulator,
     clear_phase_action_id,
+    consume_provider_turn,
     ensure_phase_action_id,
     extract_completion_signal_from_text,
     find_pending_focused_review_loop_id,
@@ -63,6 +64,45 @@ def test_ensure_phase_action_id_assigns_and_reuses(tmp_path: Path) -> None:
     assert store.load_run(run_id)["phase_action_id"] is None
     events = store.load_events(run_id)
     assert any(event["type"] == "phase_action_assigned" for event in events)
+
+
+def test_successful_provider_turn_records_committed_phase_action(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000905-000905"
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={"item-root": root},
+    )
+    config = {
+        "run": {"output_goal": "Deliver the feature.", "input_refs": ["README.md"]},
+        "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
+        "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
+    }
+    store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
+    action_id = ensure_phase_action_id(store, run_id)
+    provider = StubProvider()
+    provider.script_turn(done_events(text="planner start"))
+    session_id = provider.start_primary_session(
+        "planner",
+        {"run_id": run_id, "phase": "planning"},
+    )
+    list(provider.stream_events(session_id))
+    provider.script_turn(done_events(text="planner turn"))
+
+    consume_provider_turn(
+        provider,
+        session_id,
+        allowed_signals=frozenset(),
+        store=store,
+        run_id=run_id,
+    )
+
+    run = store.load_run(run_id)
+    assert run["phase_action_id"] is None
+    assert run["phase_action_domain_committed_id"] == action_id
 
 
 def test_extract_completion_signal_from_exact_text() -> None:
@@ -138,6 +178,44 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
         ),
         capability_token=token,
     )
+
+    assert find_pending_focused_review_loop_id(
+        store,
+        run_id,
+        review_type="focused_plan",
+    ) == "review-focused-plan-01"
+
+
+def test_find_pending_focused_review_includes_in_progress_reviewer_session(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import make_review_loop, save_review_payload
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000901-000901"
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={"item-root": root},
+    )
+    config = {
+        "run": {"output_goal": "Deliver the feature.", "input_refs": ["README.md"]},
+        "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
+        "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
+        "review": {"focused_plan": {"enabled": True}, "focused_output": {"enabled": True}},
+    }
+    store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
+    loop = make_review_loop(
+        id="review-focused-plan-01",
+        type="focused_plan",
+        target_revision=0,
+        scope={"kind": "focused_plan", "item_ids": ["item-root"]},
+        status="pending",
+        reviewer_session_id="sess-fr",
+    )
+    save_review_payload(store, run_id, loop.to_dict())
 
     assert find_pending_focused_review_loop_id(
         store,
@@ -259,6 +337,40 @@ def test_build_producer_turn_boundary_observer_detects_completion_claim(
     )()
 
     assert observe() == PRODUCER_COMPLETION_COMPLETE_SIGNAL
+
+
+def test_build_producer_turn_boundary_observer_detects_focused_review_request(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.phases import PRODUCTION
+    from top_down_planning.orchestrator.producer_session import (
+        PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
+    )
+    from top_down_planning.orchestrator.provider_turns import (
+        build_producer_turn_boundary_observer,
+    )
+    from tests.helpers import request_focused_review
+    from tests.unit.test_focused_review import _create_production_run
+
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    run_id = "run-20260101T000501-000501"
+    observe = build_producer_turn_boundary_observer(store, run_id)
+
+    assert observe() is None
+
+    request_focused_review(
+        store,
+        run_id,
+        {
+            "type": "focused_output",
+            "scope": {"item_ids": ["item-first"]},
+        },
+        role="producer",
+        phase=PRODUCTION,
+    )()
+
+    assert observe() == PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL
 
 
 def test_build_owner_finding_action_boundary_observer_detects_record_actions(

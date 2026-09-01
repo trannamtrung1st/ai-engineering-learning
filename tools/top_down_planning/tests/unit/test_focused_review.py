@@ -271,7 +271,7 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
     assert result.phase == "whole_plan_review"
 
     review = store.load_review("run-20260101T000401-000401", "review-focused-plan-01")
-    assert review["status"] == "verified"
+    assert review["status"] == "approved"
     assert review["target_revision"] == 1
 
     run = store.load_run("run-20260101T000401-000401")

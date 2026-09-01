@@ -289,7 +289,7 @@ def test_tdp_resume_sigint_whole_output_revision_in_progress_then_resumes(
         run_id,
         loop_id,
         revision_cycles_expected=revision_cycles_before,
-        finding_set_id_expected=finding_set_id_before,
+        finding_set_id_expected=f"{loop_id}-fs-02",
         review_respond_count_expected=review_responds_before + 2,
     )
 
@@ -404,7 +404,7 @@ def test_tdp_resume_whole_output_artifact_advanced_skips_owner_rerun(
         run_id,
         loop_id,
         revision_cycles_expected=revision_cycles_before,
-        finding_set_id_expected=finding_set_id_before,
+        finding_set_id_expected=f"{loop_id}-fs-02",
         review_respond_count_expected=review_responds_before + 2,
     )
     review = store.load_review(run_id, loop_id)

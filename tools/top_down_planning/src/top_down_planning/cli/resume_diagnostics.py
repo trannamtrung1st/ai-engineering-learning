@@ -15,7 +15,9 @@ from top_down_planning.config.resume_policy import (
 )
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.run_lifecycle import continuation_ok_from_run
-from top_down_planning.domain.resume_plan import ResumePlan
+from top_down_planning.domain.resume_lifecycle_diagnostics import (
+    collect_lifecycle_diagnostics,
+)
 from top_down_planning.orchestrator.resume import RunResumeSnapshot
 
 
@@ -129,6 +131,8 @@ def build_resume_plan_summary(
     config_path: str | None = None,
     config_overrides: list[str] | None = None,
     allow_config_drift: bool = False,
+    production: dict[str, Any] | None = None,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     consumed_limits = consumed_limits_from_run(run)
     effective_config = resume_plan.effective_config or candidate_config
@@ -155,6 +159,15 @@ def build_resume_plan_summary(
     transition = None
     if resume_plan.state_transition is not None:
         transition = resume_plan.state_transition.to_dict()
+
+    lifecycle_diagnostics = [
+        item.to_dict()
+        for item in collect_lifecycle_diagnostics(
+            run=run,
+            production=production,
+            reviews=reviews,
+        )
+    ]
 
     return {
         "ok": continuation_ok_from_run(run) if resume_plan.already_completed else True,
@@ -183,6 +196,7 @@ def build_resume_plan_summary(
         "session_policy_text": session_policy_text,
         "validation": resume_plan.validation.to_dict(),
         "invocation": dict(invocation or {}),
+        "lifecycle_diagnostics": lifecycle_diagnostics,
     }
 
 
@@ -260,6 +274,36 @@ def format_resume_plan_summary_text(summary: dict[str, Any]) -> str:
         lines.append("Warnings:")
         for warning in warnings:
             lines.append(f"  {warning}")
+
+    lifecycle_rows = summary.get("lifecycle_diagnostics") or []
+    if lifecycle_rows:
+        lines.append("")
+        lines.append("Lifecycle diagnostics:")
+        for row in lifecycle_rows:
+            lines.append(f"  {row.get('code')}: {row.get('message')}")
+            loop_id = row.get("loop_id")
+            finding_set_id = row.get("finding_set_id")
+            details: list[str] = []
+            if loop_id:
+                details.append(f"loop={loop_id}")
+            if finding_set_id:
+                details.append(f"finding_set={finding_set_id}")
+            if row.get("target_revision") is not None:
+                details.append(f"revision={row.get('target_revision')}")
+            if row.get("target_digest"):
+                details.append(f"digest={row.get('target_digest')}")
+            if row.get("phase_action_id"):
+                details.append(f"active_phase_action={row.get('phase_action_id')}")
+            if row.get("phase_action_domain_committed_id"):
+                details.append(
+                    "committed_phase_action="
+                    f"{row.get('phase_action_domain_committed_id')}"
+                )
+            if details:
+                lines.append(f"    {', '.join(details)}")
+            proposed = row.get("proposed_reconciliation")
+            if proposed:
+                lines.append(f"    proposed: {proposed}")
 
     if summary.get("context_spec_may_change"):
         lines.append("")

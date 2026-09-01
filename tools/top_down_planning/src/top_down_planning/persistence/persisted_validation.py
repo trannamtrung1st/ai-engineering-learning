@@ -560,6 +560,31 @@ def _parse_persisted_blocker_report(value: dict[str, Any]) -> None:
         _require_strict_non_negative_int(value.get("plan_revision"), "plan_revision")
     if "output_revision" in value:
         _require_strict_non_negative_int(value.get("output_revision"), "output_revision")
+    kind = value.get("kind")
+    if kind is not None:
+        _require_strict_non_empty_str(kind, "kind")
+        if kind not in {"external", "focused_review_wait"}:
+            raise ValueError("kind must be external or focused_review_wait")
+    status = value.get("status")
+    if status is not None:
+        _require_strict_non_empty_str(status, "status")
+        if status not in {"active", "resolved", "superseded"}:
+            raise ValueError("status must be active, resolved, or superseded")
+    if "review_loop_id" in value and value.get("review_loop_id") is not None:
+        _require_strict_non_empty_str(value.get("review_loop_id"), "review_loop_id")
+    if "package_item_id" in value and value.get("package_item_id") is not None:
+        _require_strict_non_empty_str(value.get("package_item_id"), "package_item_id")
+    if "target_revision" in value:
+        _require_strict_non_negative_int(value.get("target_revision"), "target_revision")
+    if "target_digest" in value and value.get("target_digest") is not None:
+        _require_strict_non_empty_str(value.get("target_digest"), "target_digest")
+    if "reported_at_output_revision" in value:
+        _require_strict_non_negative_int(
+            value.get("reported_at_output_revision"),
+            "reported_at_output_revision",
+        )
+    if "resolved_by" in value and value.get("resolved_by") is not None:
+        _require_strict_non_empty_str(value.get("resolved_by"), "resolved_by")
 
 
 def _normalized_output_mirror(entry: dict[str, Any]) -> dict[str, Any]:

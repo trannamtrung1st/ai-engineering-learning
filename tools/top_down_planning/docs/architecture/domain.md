@@ -28,6 +28,8 @@ A completion claim that asserts the goal is met is persisted with `goal_met`, cu
 
 `production_revision` versions production state; `output_revision` versions the output snapshot used by review and claims.
 
+Structured `blocker_report` values are either `external` (genuine terminal blocked outcome) or `focused_review_wait` (recoverable pause). Before terminalizing, orchestration re-evaluates review-bound identity (loop, revision, digest). An active wait pauses with `stop.code=focused_review_wait` rather than `outcome=blocked`. Details: [review architecture](../internals/reviews.md).
+
 ## Reviews
 
 Loop types: `focused_plan`, `focused_output`, `whole_plan`, `whole_output`. Decisions include `approved`, `changes_requested`, `blocked`. Mandatory whole-artifact loops add stages and finding families. Approval identity is the plan versus whole-output digest key sets (not a single contract digest): [review architecture](../internals/reviews.md) and [split-digest decision](../decisions/split-config-digests.md). Unresolved required findings block acceptance.

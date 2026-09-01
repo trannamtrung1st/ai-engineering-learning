@@ -22,7 +22,8 @@ from top_down_planning.domain.production import (
     latest_reconciliation_report,
 )
 from top_down_planning.domain.readiness import detect_deadlock
-from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.production_blockers import evaluate_blocker_report
+from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
     RUN_KIND_SUB_TDP_EXECUTION,
@@ -32,6 +33,7 @@ from top_down_planning.package.lineage import unwrap_upstream_accepted_result
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.producer_session import (
     PRODUCER_BATCH_COMPLETE_SIGNAL,
+    PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
     build_producer_protocol_instructions,
     build_producer_tool_instructions,
     primary_producer_provider_session_id,
@@ -57,6 +59,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     pause_for_limit_exhausted,
+    pause_run,
     reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.provider_turns import (
@@ -171,7 +174,6 @@ class ProductionPhaseOrchestrator:
                 from top_down_planning.orchestrator.plan_amendment import (
                     PlanAmendmentOrchestrator,
                 )
-                from top_down_planning.orchestrator.run_transitions import pause_run
 
                 run = self._store.load_run(self._run_id)
                 kind = resolve_run_kind(run)
@@ -221,9 +223,23 @@ class ProductionPhaseOrchestrator:
                 _persist_batch_agent_turns(self._store, self._run_id, 0)
                 continue
 
-            if self._has_blocker_report():
-                return self._terminate_from_blocker_report(session_id)
+            self._capability_token = restore_primary_capability_after_focused_review(
+                self._store,
+                self._run_id,
+                self._provider,
+                review_type="focused_output",
+                role="producer",
+                current_token=self._capability_token,
+            )
 
+            blocker = self._evaluate_blocker_report()
+            if blocker.disposition == "resolved":
+                self._persist_resolved_blocker(blocker)
+                continue
+            if blocker.disposition == "active_terminal":
+                return self._terminate_from_blocker_report(session_id)
+            if blocker.disposition == "active_wait":
+                return self._pause_for_focused_review_wait(session_id, blocker)
             if self._has_completion_claim():
                 return self._complete_production(session_id)
 
@@ -247,15 +263,6 @@ class ProductionPhaseOrchestrator:
                     configured=int(loop_limits["max_batches"]),
                     session_id=session_id,
                 )
-
-            self._capability_token = restore_primary_capability_after_focused_review(
-                self._store,
-                self._run_id,
-                self._provider,
-                review_type="focused_output",
-                role="producer",
-                current_token=self._capability_token,
-            )
 
             if batch_agent_turns >= loop_limits["max_agent_turns_per_batch"]:
                 return self._pause_for_limit(
@@ -316,9 +323,16 @@ class ProductionPhaseOrchestrator:
                 role="producer",
                 current_token=self._capability_token,
             )
+            blocker = self._evaluate_blocker_report()
+            if blocker.disposition == "resolved":
+                self._persist_resolved_blocker(blocker)
+            elif blocker.disposition == "active_terminal":
+                return self._terminate_from_blocker_report(session_id)
             agent_turns = 1 if turn_outcome.domain_budget_committed else 0
             batch_agent_turns += agent_turns
             _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
+            if blocker.disposition == "active_wait":
+                return self._pause_for_focused_review_wait(session_id, blocker)
 
             if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0
@@ -328,6 +342,10 @@ class ProductionPhaseOrchestrator:
                     and self._batch_count() < loop_limits["max_batches"]
                 ):
                     self._resume_producer_turn(session_id, role_context)
+                continue
+
+            if turn_signal == PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL:
+                self._resume_producer_turn(session_id, role_context)
                 continue
 
             if batch_agent_turns >= loop_limits["max_agent_turns_per_batch"]:
@@ -408,10 +426,79 @@ class ProductionPhaseOrchestrator:
             request["reconciliation"] = reconciliation
         return request
 
-    def _has_blocker_report(self) -> bool:
+    def _evaluate_blocker_report(self):
         production = self._store.load_production(self._run_id)
-        report = production.get("blocker_report")
-        return isinstance(report, dict)
+        reviews = [
+            ReviewLoop.from_dict(raw) for raw in self._store.list_reviews(self._run_id)
+        ]
+        return evaluate_blocker_report(production.get("blocker_report"), reviews)
+
+    def _persist_resolved_blocker(self, evaluation) -> None:
+        if evaluation.disposition != "resolved" or evaluation.report is None:
+            return
+        production = self._store.load_production(self._run_id)
+        current = production.get("blocker_report")
+        if isinstance(current, dict) and str(current.get("status") or "") in {
+            "resolved",
+            "superseded",
+        }:
+            return
+        expected_revision = int(production["revision"])
+        updated = dict(production)
+        updated["revision"] = expected_revision + 1
+        updated["blocker_report"] = evaluation.report
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                production=updated,
+                production_expected_revision=expected_revision,
+                events=[
+                    {
+                        "type": "production_blocker_resolved",
+                        "run_id": self._run_id,
+                        "review_loop_id": evaluation.matching_loop_id,
+                        "resolved_by": evaluation.matching_loop_id,
+                    }
+                ],
+            ),
+        )
+
+    def _pause_for_focused_review_wait(
+        self,
+        session_id: str,
+        evaluation,
+    ) -> ProductionPhaseResult:
+        report = evaluation.report or {}
+        message = str(
+            evaluation.reason
+            or report.get("evidence")
+            or "production is waiting on focused review"
+        )
+        stop = StopRecord(
+            code="focused_review_wait",
+            category="operational",
+            phase=PRODUCTION,
+            message=message,
+            role="producer",
+            details={
+                "review_loop_id": evaluation.matching_loop_id,
+                "kind": report.get("kind"),
+            },
+        )
+        pause_run(
+            self._store,
+            self._run_id,
+            stop=stop,
+            revoke_phase=PRODUCTION,
+            event_type="run_paused",
+            session_id=session_id,
+        )
+        return self._result_from_run(
+            self._store.load_run(self._run_id),
+            ok=False,
+            session_id=session_id,
+            reason=message,
+        )
 
     def _terminate_from_blocker_report(self, session_id: str) -> ProductionPhaseResult:
         production = self._store.load_production(self._run_id)

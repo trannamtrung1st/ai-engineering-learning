@@ -82,6 +82,7 @@ from top_down_planning.orchestrator.reviewer_session import (
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
     ProviderRunError,
+    ReviewStateConflict,
     SessionRecoveryPaused,
 )
 from top_down_planning.orchestrator.failure import apply_review_incomplete_run_transition
@@ -1161,7 +1162,7 @@ class ReviewLoopDriver:
                 complete_advisory_handoff_if_owner_responses_recorded(loop)
             )
         if not advisory_handoff_allowed(loop):
-            raise ProviderRunError(
+            raise ReviewStateConflict(
                 f"advisory handoff already completed for finding_set_id "
                 f"{loop.finding_set_id!r}"
             )

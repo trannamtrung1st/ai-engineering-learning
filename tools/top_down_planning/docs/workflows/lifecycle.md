@@ -42,7 +42,7 @@ Phase `plan_validated`. Deterministic plan validation must pass before productio
 
 ## Production
 
-Phase `production`. The producer records batches with evidence until applicable work items are terminal, then `submit-completion`. Optional focused output review may run. If the approved plan cannot be followed, the producer requests an amendment (`plan_amendment`) or reports blocked. [Producer protocol](../agents/producer.md).
+Phase `production`. The producer records batches with evidence until applicable work items are terminal, then `submit-completion`. Optional focused output review may run (that request is a producer-turn boundary). If the approved plan cannot be followed, the producer requests an amendment (`plan_amendment`) or reports a genuine terminal blocker. A leftover review-bound wait pauses with `focused_review_wait` instead of completing `outcome=blocked`. [Producer protocol](../agents/producer.md).
 
 ## Output review and acceptance
 

@@ -1105,6 +1105,24 @@ def is_terminal_review_loop(loop: ReviewLoop) -> bool:
     return loop.status == "approved"
 
 
+def normalize_focused_review_success(loop: ReviewLoop) -> ReviewLoop:
+    """Canonical focused-review success is ``status=approved`` (terminal).
+
+    Finding verification may persist ``verified`` internally; successful focused
+    review must not remain nonterminal after the approval transition.
+    """
+
+    if is_mandatory_review_loop(loop):
+        raise ValueError("mandatory review loops do not use focused success normalization")
+    if loop.status not in CLEAR_APPROVAL_STATUSES:
+        raise ValueError(
+            f"focused review success requires approved or verified status, got {loop.status!r}"
+        )
+    if loop.status == "approved":
+        return loop
+    return replace(loop, status="approved")
+
+
 def is_review_respond_closed(loop: ReviewLoop) -> bool:
     """True when ``review respond`` must reject further reviewer decisions."""
 
@@ -2063,21 +2081,30 @@ def next_finding_set_id(loop: ReviewLoop) -> str:
     return f"{base}-fs-{suffix:02d}"
 
 
-def allocate_discovery_finding_set_id(loop: ReviewLoop) -> tuple[ReviewLoop, str]:
+def allocate_discovery_finding_set_id(
+    loop: ReviewLoop,
+    *,
+    fresh: bool = False,
+) -> tuple[ReviewLoop, str]:
     """Ensure a discovery finding_set_id is allocated on the loop.
 
-    Reuses the existing id when the loop is marked review_incomplete so retries
-    echo the same identifier, or when a finding_verification / scope_review
-    stage already allocated an id. Otherwise allocates a new id for a fresh
-    discovery pass.
+    A finding_set_id identifies one discovery-result population. Reuse the
+    existing id when retrying the same interrupted/incomplete discovery pass,
+    or when the current finding_verification / scope_review stage is still
+    mid-pass. Pass ``fresh=True`` for a genuinely new discovery population
+    (for example entering a new scope-review round).
     """
 
     if loop.review_incomplete is not None and loop.finding_set_id:
         return loop, loop.finding_set_id
-    if loop.finding_set_id and loop.active_stage in {
-        "finding_verification",
-        SCOPE_REVIEW_STAGE,
-    }:
+    if (
+        not fresh
+        and loop.finding_set_id
+        and loop.active_stage in {
+            "finding_verification",
+            SCOPE_REVIEW_STAGE,
+        }
+    ):
         return loop, loop.finding_set_id
     finding_set_id = next_finding_set_id(loop)
     return replace(loop, finding_set_id=finding_set_id), finding_set_id

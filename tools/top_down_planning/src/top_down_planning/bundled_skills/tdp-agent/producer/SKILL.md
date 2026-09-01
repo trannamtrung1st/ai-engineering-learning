@@ -46,7 +46,7 @@ Discover schema: `tdp agent schema production-apply`
 ## Workflow
 
 1. `production snapshot --view ready` → pick `ready_item_ids` / `ready_items`.
-2. Implement work in the workspace → `production apply` with evidence (one batch per provider turn; the orchestrator closes the turn when apply persists, waits for the provider session to settle, then queues the next turn).
+2. Implement work in the workspace → `production apply` with evidence (one batch per provider turn; the orchestrator closes the turn when apply persists, waits for the provider session to settle, then queues the next turn). Requesting focused output review also closes the current turn — end the turn after `tdp agent review request`. Do not `report-blocked` merely because a focused review is pending.
 3. When all applicable items have terminal dispositions, `submit-completion` with `goal_assessment`. The orchestrator closes that turn when the completion claim persists; stop immediately afterward.
 
 ## Evidence revision

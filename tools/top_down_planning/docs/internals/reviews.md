@@ -13,7 +13,7 @@ Reviewer protocol (payloads, examples): [reviewer](../agents/reviewer.md). Vocab
 | `whole_plan` | Mandatory after `candidate_plan_ready` | Entire plan revision |
 | `whole_output` | Mandatory after completion claim | Entire output revision |
 
-Focused loops use `approved` / `changes_requested` / `blocked`. They omit mandatory audit attestation and `scope_review`. Whole-plan/output packages include `rubric_items`, `required_audit_passes`, and `analysis_context`.
+Focused loops use `approved` / `changes_requested` / `blocked` as canonical terminal statuses. Finding verification may persist `verified` internally; successful focused review is then normalized to `status=approved` in the same commit as `focused_review_approved`. They omit mandatory audit attestation and `scope_review`. Whole-plan/output packages include `rubric_items`, `required_audit_passes`, and `analysis_context`.
 
 Whole-plan and focused-plan reviewer packages embed a plan snapshot; refresh with `tdp agent plan snapshot --view active` if the plan may have changed.
 
@@ -25,7 +25,7 @@ On `whole_plan` / `whole_output`:
 2. `finding_verification` — `verified` / `needs_revision` / `blocked` per finding/family
 3. `scope_review` — fresh look without prior finding framing; still requires audit attestation and families (empty when clear)
 
-Owner advisory handoff uses `tdp agent review record-actions`. `next_required_actor` is planner or producer during advisory, reviewer when scope_review approval is still required. Status reflects finding disposition policy, not gate clearance.
+Owner advisory handoff uses `tdp agent review record-actions`. `finding_set_id` identifies **one discovery-result population**, not the lifetime of a scope-review stage. A fresh scope-review pass that may report new findings allocates a new `finding_set_id`; the same id is reused only when retrying an interrupted/incomplete discovery pass. At most one advisory handoff runs per `finding_set_id`. Do not clear `advisory_handoffs_completed` to recover a later pass. `next_required_actor` is planner or producer during advisory, reviewer when scope_review approval is still required. Status reflects finding disposition policy, not gate clearance.
 
 ## Finding families and `rule_id`
 
@@ -62,5 +62,7 @@ Exact-N semantics (maximum allowed attempts, not N+1). Package defaults:
 | `limits.review.max_agent_turns_per_gate` | 5 | Reviewer turns without `review respond` |
 
 Review-driver enforcement: increment on `changes_requested` / `needs_revision`, then block when `revision_cycles > max` before the next owner revision. Gate turns pause with `limit_exhausted` when `gate_agent_turns` reaches the max; resume requires the candidate limit **strictly above** consumed. Raising the limit revives the **same** loop; it does not reset counters.
+
+Successful focused review persists `status=approved` (terminal) and `focused_review_approved` in one commit. Historical `production.blocker_report` values that wait on that loop are resolved only when the same loop, target revision, and digest (when both sides recorded one) are satisfied. External blockers stay active. An active review-bound wait pauses production (`status=paused`, `stop.code=focused_review_wait`, `outcome=null`) instead of completing `outcome=blocked`. `tdp resume --check` reports stale or unsatisfiable review-bound blockers without mutating them.
 
 Related: [lifecycle architecture](../architecture/lifecycle.md), [agent CLI](../agents/cli.md).

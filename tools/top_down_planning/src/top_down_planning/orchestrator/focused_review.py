@@ -17,6 +17,7 @@ from top_down_planning.domain.reviews import (
     build_active_findings_view,
     build_primary_owner_finding_guidance,
     focused_review_revision_limit_from_config,
+    normalize_focused_review_success,
     primary_review_resume_fields,
     reviewer_package_policy_guidance,
     loop_uses_finding_families,
@@ -29,7 +30,7 @@ from top_down_planning.orchestrator.agent_context import (
     attach_activity_context_to_manifest,
 )
 from top_down_planning.orchestrator.capability import revoke_capabilities_for_loop
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, ReviewStateConflict
 from top_down_planning.orchestrator.mandatory_review_stages import (
     _focused_verification_package_fields,
     prepare_focused_verification_recheck,
@@ -57,10 +58,12 @@ from top_down_planning.orchestrator.review_loop_types import MandatoryWholeRevie
 from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
 from top_down_planning.persistence.digests import compute_output_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.review_commit import (
     review_record_revision,
     save_review_with_expected_revision,
 )
+from top_down_planning.domain.production_blockers import evaluate_blocker_report
 from core_tools.provider import Provider
 
 
@@ -312,20 +315,119 @@ class FocusedReviewAdapter:
         )
 
     def complete_success(self, loop: ReviewLoop) -> FocusedReviewResult:
-        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
-        if self._driver is not None:
-            self._driver.append_event(
-                "focused_review_approved",
-                loop_id=loop.id,
-                review_type=loop.type,
-                target_revision=loop.target_revision,
+        stored = self._store.load_review(self._run_id, loop.id)
+        expected_revision = review_record_revision(stored)
+        stored_loop = ReviewLoop.from_dict(stored)
+        events = self._store.load_events(self._run_id)
+        already_emitted = any(
+            event.get("type") == "focused_review_approved"
+            and str(event.get("loop_id") or "") == stored_loop.id
+            for event in events
+        )
+        if stored_loop.status == "approved" and already_emitted:
+            self._commit_resolved_blocker_if_satisfied(stored_loop)
+            revoke_capabilities_for_loop(self._store, self._run_id, stored_loop.id)
+            return FocusedReviewResult(
+                ok=True,
+                loop_id=stored_loop.id,
+                status=stored_loop.status,
+                reviewer_session_id=reviewer_loop_provider_session_id(stored_loop),
+                revision_cycles=stored_loop.revision_cycles,
             )
+        canonical_source = loop
+        if loop.status not in {"approved", "verified"}:
+            canonical_source = stored_loop
+        approved = normalize_focused_review_success(canonical_source)
+        spec = CommitSpec(
+            reviews=[approved.to_dict()],
+            review_expected_revisions={approved.id: expected_revision},
+            events=[
+                {
+                    "type": "focused_review_approved",
+                    "run_id": self._run_id,
+                    "loop_id": approved.id,
+                    "review_type": approved.type,
+                    "target_revision": approved.target_revision,
+                }
+            ],
+        )
+        if approved.type == "focused_output":
+            production = self._store.load_production(self._run_id)
+            reviews = [
+                approved
+                if str(raw.get("id") or "") == approved.id
+                else ReviewLoop.from_dict(raw)
+                for raw in self._store.list_reviews(self._run_id)
+            ]
+            evaluation = evaluate_blocker_report(production.get("blocker_report"), reviews)
+            if evaluation.disposition == "resolved" and evaluation.report is not None:
+                expected_production = int(production["revision"])
+                updated_production = dict(production)
+                updated_production["revision"] = expected_production + 1
+                updated_production["blocker_report"] = evaluation.report
+                spec = CommitSpec(
+                    reviews=spec.reviews,
+                    review_expected_revisions=spec.review_expected_revisions,
+                    production=updated_production,
+                    production_expected_revision=expected_production,
+                    events=[
+                        *spec.events,
+                        {
+                            "type": "production_blocker_resolved",
+                            "run_id": self._run_id,
+                            "review_loop_id": approved.id,
+                            "resolved_by": approved.id,
+                        },
+                    ],
+                )
+        self._store.commit(self._run_id, spec)
+        revoke_capabilities_for_loop(self._store, self._run_id, approved.id)
+        persisted = ReviewLoop.from_dict(self._store.load_review(self._run_id, approved.id))
         return FocusedReviewResult(
             ok=True,
-            loop_id=loop.id,
-            status=loop.status,
-            reviewer_session_id=reviewer_loop_provider_session_id(loop),
-            revision_cycles=loop.revision_cycles,
+            loop_id=persisted.id,
+            status=persisted.status,
+            reviewer_session_id=reviewer_loop_provider_session_id(persisted),
+            revision_cycles=persisted.revision_cycles,
+        )
+
+    def _commit_resolved_blocker_if_satisfied(self, approved: ReviewLoop) -> None:
+        if approved.type != "focused_output":
+            return
+        production = self._store.load_production(self._run_id)
+        reviews = [
+            approved
+            if str(raw.get("id") or "") == approved.id
+            else ReviewLoop.from_dict(raw)
+            for raw in self._store.list_reviews(self._run_id)
+        ]
+        evaluation = evaluate_blocker_report(production.get("blocker_report"), reviews)
+        if evaluation.disposition != "resolved" or evaluation.report is None:
+            return
+        current = production.get("blocker_report")
+        if isinstance(current, dict) and str(current.get("status") or "") in {
+            "resolved",
+            "superseded",
+        }:
+            return
+        expected_production = int(production["revision"])
+        updated_production = dict(production)
+        updated_production["revision"] = expected_production + 1
+        updated_production["blocker_report"] = evaluation.report
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                production=updated_production,
+                production_expected_revision=expected_production,
+                events=[
+                    {
+                        "type": "production_blocker_resolved",
+                        "run_id": self._run_id,
+                        "review_loop_id": approved.id,
+                        "resolved_by": approved.id,
+                    }
+                ],
+            ),
         )
 
     def handle_blocked(self, loop: ReviewLoop) -> FocusedReviewResult:
@@ -444,9 +546,21 @@ class FocusedReviewOrchestrator:
         driver = ReviewLoopDriver(self._store, self._run_id, self._provider, adapter)
         adapter.bind_driver(driver)
         result = driver.run(loop_id)
-        if not isinstance(result, FocusedReviewResult):
-            raise ProviderRunError("focused review driver returned unexpected result")
-        return result
+        if isinstance(result, FocusedReviewResult):
+            return result
+        run = self._store.load_run(self._run_id)
+        if str(run.get("status") or "") != "running":
+            return FocusedReviewResult(
+                ok=False,
+                loop_id=loop_id,
+                status=str(run.get("status") or ""),
+                reviewer_session_id=getattr(result, "reviewer_session_id", None),
+                revision_cycles=int(getattr(result, "revision_cycles", 0) or 0),
+                reason=str(getattr(result, "reason", "") or "").strip() or None,
+            )
+        raise ReviewStateConflict(
+            "focused review driver returned unexpected result"
+        )
 
 
 def build_focused_review_package(
