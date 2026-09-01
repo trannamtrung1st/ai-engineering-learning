@@ -390,6 +390,165 @@ def test_later_focused_review_requested_does_not_supersede_artifact_wait() -> No
     assert evaluation.disposition != "resolved"
 
 
+def test_legacy_blocker_binds_pre_blocker_recheck_identity_then_approval_resolves() -> None:
+    loop = _approved_focused_loop(target_revision=3, target_digest="digest-b")
+    report = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    events = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+            "target_digest": "digest-a",
+        },
+        {
+            "type": "focused_review_recheck_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "prior_target_revision": 2,
+            "target_revision": 3,
+            "target_digest": "digest-b",
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+        {
+            "type": "focused_review_approved",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "target_revision": 3,
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [loop], events=events)
+    assert evaluation.disposition == "resolved"
+    assert evaluation.report is not None
+    assert evaluation.report["target_revision"] == 3
+    assert evaluation.report["target_digest"] == "digest-b"
+
+
+def test_legacy_blocker_binds_identity_at_blocker_then_supersedes_later_recheck() -> None:
+    loop_id = "review-focused-output-01"
+    report = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    request_and_recheck_to_b = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": loop_id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+            "target_digest": "digest-a",
+        },
+        {
+            "type": "focused_review_recheck_requested",
+            "loop_id": loop_id,
+            "review_type": "focused_output",
+            "prior_target_revision": 2,
+            "target_revision": 3,
+            "target_digest": "digest-b",
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+    ]
+    pending_at_b = make_review_loop(
+        id=loop_id,
+        type="focused_output",
+        target_revision=3,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="pending",
+        reviewer_session_id="sess",
+        verification_result={"target_digest": "digest-b", "decision": "changes_requested"},
+    )
+    at_blocker = evaluate_blocker_report(report, [pending_at_b], events=request_and_recheck_to_b)
+    assert at_blocker.disposition == "active_wait"
+    assert at_blocker.report is not None
+    assert at_blocker.report["target_revision"] == 3
+    assert at_blocker.report["target_digest"] == "digest-b"
+
+    approved_at_c = _approved_focused_loop(target_revision=4, target_digest="digest-c")
+    events = [
+        *request_and_recheck_to_b,
+        {
+            "type": "focused_review_recheck_requested",
+            "loop_id": loop_id,
+            "review_type": "focused_output",
+            "prior_target_revision": 3,
+            "target_revision": 4,
+            "target_digest": "digest-c",
+        },
+        {
+            "type": "focused_review_approved",
+            "loop_id": loop_id,
+            "review_type": "focused_output",
+            "target_revision": 4,
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [approved_at_c], events=events)
+    assert evaluation.disposition == "resolved"
+    assert evaluation.report is not None
+    assert evaluation.report["target_revision"] == 4
+    assert evaluation.report["target_digest"] == "digest-c"
+
+
+def test_legacy_blocker_not_auto_cleared_when_recheck_prior_revision_breaks_chain() -> None:
+    loop = _approved_focused_loop(target_revision=3, target_digest="digest-b")
+    report = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    events = [
+        {
+            "type": "focused_review_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+            "target_revision": 2,
+            "target_digest": "digest-a",
+        },
+        {
+            "type": "focused_review_recheck_requested",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "prior_target_revision": 9,
+            "target_revision": 3,
+            "target_digest": "digest-b",
+        },
+        {
+            "type": "production_blocked_reported",
+            "affected_refs": ["item-first"],
+        },
+        {
+            "type": "focused_review_approved",
+            "loop_id": loop.id,
+            "review_type": "focused_output",
+            "target_revision": 3,
+        },
+    ]
+    evaluation = evaluate_blocker_report(report, [loop], events=events)
+    assert evaluation.disposition == "active_terminal"
+    assert evaluation.diagnostic_code == "ambiguous_legacy_blocker"
+    assert evaluation.report is not None
+    assert evaluation.report.get("status") != BLOCKER_STATUS_RESOLVED
+
+
 def test_same_loop_recheck_event_supersedes_artifact_wait_then_approval_resolves() -> None:
     loop = _approved_focused_loop(target_revision=3, target_digest="digest-b")
     report = _review_bound_blocker(target_revision=2, target_digest="digest-a")
