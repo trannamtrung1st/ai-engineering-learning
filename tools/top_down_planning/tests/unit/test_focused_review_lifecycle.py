@@ -170,6 +170,7 @@ def test_historical_untyped_blocker_does_not_terminalize_after_approved_review(
                     "review_type": "focused_output",
                     "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
                     "target_revision": 2,
+                    "target_digest": "digest-a",
                 },
                 {
                     "type": "production_blocked_reported",
@@ -292,6 +293,7 @@ def test_completed_blocked_stale_review_wait_is_reopened_and_continues(
                     "review_type": "focused_output",
                     "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
                     "target_revision": 2,
+                    "target_digest": "digest-a",
                 },
                 {
                     "type": "production_blocked_reported",
@@ -309,7 +311,13 @@ def test_completed_blocked_stale_review_wait_is_reopened_and_continues(
             ],
         ),
     )
-    complete_run_with_outcome(store, run_id, "blocked")
+    complete_run_with_outcome(
+        store,
+        run_id,
+        "blocked",
+        event_type="production_failed",
+        message="Producer is waiting for focused review of item-first.",
+    )
     run = store.load_run(run_id)
     assert run["status"] == "completed"
     assert run["outcome"] == "blocked"
@@ -333,6 +341,107 @@ def test_completed_blocked_stale_review_wait_is_reopened_and_continues(
     assert report.get("status") == BLOCKER_STATUS_RESOLVED
     assert report.get("resolved_by") == loop.id
     assert any(event.get("type") == "stale_blocked_run_reopened" for event in events)
+
+
+def test_completed_blocked_run_is_not_reopened_after_later_deadlock(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.production_blockers import stale_blocked_run_is_repairable
+    from top_down_planning.orchestrator import RunEngine
+    from top_down_planning.orchestrator.run_transitions import complete_run_with_outcome
+    from tests.helpers import make_review_loop, save_review_payload
+    from top_down_planning.persistence.commit import CommitSpec
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    create_production_run(store, provider=provider)
+    run_id = "run-20260101T000501-000501"
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=2,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="approved",
+        reviewer_session_id="sess-fr",
+        verification_result={"target_digest": "digest-a", "decision": "verified"},
+    )
+    save_review_payload(store, run_id, loop.to_dict())
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    updated = dict(production)
+    updated["revision"] = expected + 1
+    updated["blocker_report"] = {
+        "evidence": "Producer is waiting for focused review of item-first.",
+        "affected_refs": ["item-first"],
+        "summary": "waiting for focused review",
+        "plan_revision": 3,
+        "output_revision": 12,
+    }
+    store.commit(
+        run_id,
+        CommitSpec(
+            production=updated,
+            production_expected_revision=expected,
+            events=[
+                {
+                    "type": "focused_review_requested",
+                    "run_id": run_id,
+                    "loop_id": loop.id,
+                    "review_type": "focused_output",
+                    "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+                    "target_revision": 2,
+                    "target_digest": "digest-a",
+                },
+                {
+                    "type": "production_blocked_reported",
+                    "run_id": run_id,
+                    "affected_refs": ["item-first"],
+                    "production_revision": updated["revision"],
+                },
+                {
+                    "type": "focused_review_approved",
+                    "run_id": run_id,
+                    "loop_id": loop.id,
+                    "review_type": "focused_output",
+                    "target_revision": 2,
+                },
+            ],
+        ),
+    )
+    complete_run_with_outcome(
+        store,
+        run_id,
+        "blocked",
+        event_type="production_failed",
+        message=(
+            "All remaining applicable items are waiting and none are ready "
+            "because dependency cycle: item-a -> item-b -> item-a"
+        ),
+        cause="deadlock",
+    )
+    run = store.load_run(run_id)
+    revision_before = int(run["revision"])
+    reviews = [ReviewLoop.from_dict(raw) for raw in store.list_reviews(run_id)]
+    repair = stale_blocked_run_is_repairable(
+        run=run,
+        production=store.load_production(run_id),
+        reviews=reviews,
+        events=store.load_events(run_id),
+    )
+    assert repair is None
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+    ).continue_run(run_id, until="validated")
+
+    run = store.load_run(run_id)
+    events = store.load_events(run_id)
+    assert result.ok is False
+    assert run["status"] == "completed"
+    assert run["outcome"] == "blocked"
+    assert int(run["revision"]) == revision_before
+    assert not any(event.get("type") == "stale_blocked_run_reopened" for event in events)
 
 
 def test_ordinary_completed_blocked_run_is_not_reopened(tmp_path: Path) -> None:
@@ -491,6 +600,14 @@ def test_external_blocker_still_terminals_production(tmp_path: Path) -> None:
     run = store.load_run(run_id)
     assert run["status"] == "completed"
     assert run["outcome"] == "blocked"
+    failed = next(
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "production_failed"
+    )
+    assert failed.get("cause") == "production_blocker"
+    assert failed.get("blocker_kind") == BLOCKER_KIND_EXTERNAL
+    assert failed.get("message") == "Vendor API is down."
 
 
 def test_focused_success_commit_crash_does_not_emit_event_without_approved(

@@ -22,7 +22,14 @@ from top_down_planning.domain.production import (
     latest_reconciliation_report,
 )
 from top_down_planning.domain.readiness import detect_deadlock
-from top_down_planning.domain.production_blockers import evaluate_blocker_report
+from top_down_planning.domain.production_blockers import (
+    PRODUCTION_FAILED_CAUSE_BLOCKER,
+    PRODUCTION_FAILED_CAUSE_CONTEXT_MUTATION,
+    PRODUCTION_FAILED_CAUSE_DEADLOCK,
+    PRODUCTION_FAILED_CAUSE_EVIDENCE,
+    evaluate_blocker_report,
+    normalize_blocker_report,
+)
 from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
@@ -249,6 +256,7 @@ class ProductionPhaseOrchestrator:
                     "blocked",
                     deadlock.explanation,
                     session_id=session_id,
+                    cause=PRODUCTION_FAILED_CAUSE_DEADLOCK,
                 )
 
             batch_count = self._batch_count()
@@ -507,8 +515,18 @@ class ProductionPhaseOrchestrator:
     def _terminate_from_blocker_report(self, session_id: str) -> ProductionPhaseResult:
         production = self._store.load_production(self._run_id)
         report = production.get("blocker_report") or {}
-        evidence = str(report.get("evidence") or "producer reported blocked")
-        return self._terminate("blocked", evidence, session_id=session_id)
+        normalized = normalize_blocker_report(report) or dict(report)
+        evidence = str(normalized.get("evidence") or "producer reported blocked")
+        return self._terminate(
+            "blocked",
+            evidence,
+            session_id=session_id,
+            cause=PRODUCTION_FAILED_CAUSE_BLOCKER,
+            blocker_kind=normalized.get("kind"),
+            review_loop_id=normalized.get("review_loop_id"),
+            target_revision=normalized.get("target_revision"),
+            target_digest=normalized.get("target_digest"),
+        )
 
     def _enter_production_phase(self) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
@@ -579,6 +597,7 @@ class ProductionPhaseOrchestrator:
                             "blocked",
                             str(exc),
                             session_id=session_id,
+                            cause=PRODUCTION_FAILED_CAUSE_CONTEXT_MUTATION,
                         )
                 changed_paths = validate_production_snapshot_rebase(
                     old_binding,
@@ -603,6 +622,7 @@ class ProductionPhaseOrchestrator:
                         "blocked",
                         str(exc),
                         session_id=session_id,
+                        cause=PRODUCTION_FAILED_CAUSE_CONTEXT_MUTATION,
                     )
 
         except ValueError as exc:
@@ -610,6 +630,7 @@ class ProductionPhaseOrchestrator:
                 "blocked",
                 str(exc),
                 session_id=session_id,
+                cause=PRODUCTION_FAILED_CAUSE_EVIDENCE,
             )
 
         snapshot_rebased = new_snapshot_digest != old_snapshot_digest
@@ -704,15 +725,22 @@ class ProductionPhaseOrchestrator:
         message: str,
         *,
         session_id: str | None,
+        cause: str | None = None,
+        **event_fields: Any,
     ) -> ProductionPhaseResult:
+        payload: dict[str, Any] = {"message": message, "session_id": session_id}
+        if cause:
+            payload["cause"] = cause
+        for key, value in event_fields.items():
+            if value is not None:
+                payload[key] = value
         complete_run_with_outcome(
             self._store,
             self._run_id,
             outcome,
             revoke_phase=PRODUCTION,
             event_type="production_failed",
-            message=message,
-            session_id=session_id,
+            **payload,
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=False, session_id=session_id, reason=message)

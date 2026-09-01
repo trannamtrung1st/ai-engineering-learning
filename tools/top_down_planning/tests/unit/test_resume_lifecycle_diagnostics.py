@@ -127,6 +127,11 @@ def test_collects_stale_diagnostic_for_legacy_untyped_satisfied_review_wait() ->
                 "review_type": "focused_output",
                 "target_revision": 2,
             },
+            {
+                "type": "production_failed",
+                "outcome": "blocked",
+                "message": "Producer is waiting for focused review of item-first.",
+            },
         ],
     )
     assert any(item.code == "stale_review_bound_blocker" for item in diagnostics)

@@ -17,11 +17,30 @@ BLOCKER_KIND_FOCUSED_REVIEW_WAIT = "focused_review_wait"
 BLOCKER_STATUS_ACTIVE = "active"
 BLOCKER_STATUS_RESOLVED = "resolved"
 BLOCKER_STATUS_SUPERSEDED = "superseded"
+PRODUCTION_FAILED_CAUSE_BLOCKER = "production_blocker"
+PRODUCTION_FAILED_CAUSE_DEADLOCK = "deadlock"
+PRODUCTION_FAILED_CAUSE_EVIDENCE = "evidence_integrity"
+PRODUCTION_FAILED_CAUSE_CONTEXT_MUTATION = "context_mutation"
 
 BlockerDisposition = Literal["none", "active_terminal", "active_wait", "resolved"]
 
 _REVIEW_WAIT_KINDS = frozenset({BLOCKER_KIND_FOCUSED_REVIEW_WAIT})
 _INACTIVE_STATUSES = frozenset({BLOCKER_STATUS_RESOLVED, BLOCKER_STATUS_SUPERSEDED})
+_NON_BLOCKER_TERMINAL_CAUSES = frozenset(
+    {
+        PRODUCTION_FAILED_CAUSE_DEADLOCK,
+        PRODUCTION_FAILED_CAUSE_EVIDENCE,
+        PRODUCTION_FAILED_CAUSE_CONTEXT_MUTATION,
+    }
+)
+_MEANINGFUL_PRODUCTION_EVENT_TYPES = frozenset(
+    {
+        "production_blocked_reported",
+        "production_failed",
+        "run_completed",
+        "production_blocker_resolved",
+    }
+)
 _REVIEW_WAIT_EVIDENCE_RE = re.compile(
     r"waiting\s+(?:for|on)\s+(?:a\s+)?focused\s+review|focused\s+review",
     re.IGNORECASE,
@@ -321,6 +340,171 @@ def _unresolved_overlapping_loop_ids(
     ]
 
 
+def _last_request_for_loop(
+    events: Sequence[Mapping[str, Any]],
+    loop_id: str,
+) -> Mapping[str, Any] | None:
+    last: Mapping[str, Any] | None = None
+    for event in events:
+        if _is_focused_output_request(event) and _event_loop_id(event) == loop_id:
+            last = event
+    return last
+
+
+def _approval_index_after(
+    events: Sequence[Mapping[str, Any]],
+    loop_id: str,
+    blocked_index: int,
+) -> int | None:
+    for index, event in enumerate(events[blocked_index + 1 :], start=blocked_index + 1):
+        if _event_loop_id(event) != loop_id:
+            continue
+        if event.get("type") == "focused_review_approved":
+            return index
+    return None
+
+
+def _request_index_before(
+    events: Sequence[Mapping[str, Any]],
+    loop_id: str,
+    blocked_index: int,
+) -> int | None:
+    last: int | None = None
+    for index, event in enumerate(events[:blocked_index]):
+        if _is_focused_output_request(event) and _event_loop_id(event) == loop_id:
+            last = index
+    return last
+
+
+def _last_index_of_type(
+    events: Sequence[Mapping[str, Any]],
+    event_type: str,
+) -> int | None:
+    last: int | None = None
+    for index, event in enumerate(events):
+        if event.get("type") == event_type:
+            last = index
+    return last
+
+
+def _apply_request_identity(
+    report: dict[str, Any],
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
+    bound = dict(report)
+    revision = _optional_int(request.get("target_revision"))
+    if revision is not None:
+        bound["target_revision"] = revision
+    else:
+        bound.pop("target_revision", None)
+    digest = _optional_text(request.get("target_digest"))
+    if digest:
+        bound["target_digest"] = digest
+    else:
+        bound.pop("target_digest", None)
+    return bound
+
+
+def _apply_artifact_supersession(
+    report: Mapping[str, Any],
+    events: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    bound = dict(report)
+    loop_id = _optional_text(bound.get("review_loop_id"))
+    blocked_index = _last_blocked_index(events)
+    if loop_id is None or blocked_index is None:
+        return bound
+    approval_index = _approval_index_after(events, loop_id, blocked_index)
+    window_end = approval_index if approval_index is not None else len(events)
+    latest = _last_request_for_loop(events[blocked_index + 1 : window_end], loop_id)
+    if latest is None:
+        return bound
+    return _apply_request_identity(bound, latest)
+
+
+def _bind_report_from_history(
+    report: Mapping[str, Any],
+    loop: ReviewLoop,
+    events: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    blocked_index = _last_blocked_index(events)
+    bound = dict(report)
+    bound["kind"] = BLOCKER_KIND_FOCUSED_REVIEW_WAIT
+    bound["status"] = BLOCKER_STATUS_ACTIVE
+    bound["review_loop_id"] = loop.id
+    bound.pop("target_revision", None)
+    bound.pop("target_digest", None)
+    if blocked_index is not None:
+        request = _last_request_for_loop(events[:blocked_index], loop.id)
+        if request is not None:
+            bound = _apply_request_identity(bound, request)
+        bound = _apply_artifact_supersession(bound, events)
+    return bound
+
+
+def _event_is_blocker_terminal(
+    event: Mapping[str, Any],
+    report: Mapping[str, Any],
+    evaluation: BlockerEvaluation,
+) -> bool:
+    if event.get("type") != "production_failed":
+        return False
+    if str(event.get("outcome") or "") != "blocked":
+        return False
+    cause = _optional_text(event.get("cause"))
+    if cause in _NON_BLOCKER_TERMINAL_CAUSES:
+        return False
+    if cause == PRODUCTION_FAILED_CAUSE_BLOCKER:
+        event_loop = _optional_text(event.get("review_loop_id"))
+        if event_loop and event_loop != evaluation.matching_loop_id:
+            return False
+        kind = _optional_text(event.get("blocker_kind")) or _optional_text(
+            event.get("kind")
+        )
+        if kind and kind not in _REVIEW_WAIT_KINDS:
+            return False
+        return True
+    if cause:
+        return False
+    evidence = str(report.get("evidence") or "").strip()
+    message = str(event.get("message") or event.get("evidence") or "").strip()
+    if not evidence or message != evidence:
+        return False
+    if message.startswith("All remaining applicable items are waiting"):
+        return False
+    return True
+
+
+def _terminal_caused_by_stale_blocker(
+    events: Sequence[Mapping[str, Any]],
+    report: Mapping[str, Any],
+    evaluation: BlockerEvaluation,
+) -> bool:
+    loop_id = evaluation.matching_loop_id
+    if not loop_id:
+        return False
+    blocked_index = _last_blocked_index(events)
+    if blocked_index is None:
+        return False
+    request_index = _request_index_before(events, loop_id, blocked_index)
+    approval_index = _approval_index_after(events, loop_id, blocked_index)
+    terminal_index = _last_index_of_type(events, "production_failed")
+    if request_index is None or approval_index is None or terminal_index is None:
+        return False
+    if not (request_index < blocked_index < approval_index < terminal_index):
+        return False
+    if not _event_is_blocker_terminal(events[terminal_index], report, evaluation):
+        return False
+    for event in events[blocked_index + 1 : terminal_index]:
+        event_type = str(event.get("type") or "")
+        if event_type in {"production_blocked_reported", "production_failed", "run_completed"}:
+            return False
+    for event in events[terminal_index + 1 :]:
+        if event.get("type") in _MEANINGFUL_PRODUCTION_EVENT_TYPES:
+            return False
+    return True
+
+
 def _bind_report_to_loop(
     report: Mapping[str, Any],
     loop: ReviewLoop,
@@ -344,19 +528,23 @@ def _bind_report_to_loop(
 def _evaluate_review_bound(
     normalized: dict[str, Any],
     reviews: list[ReviewLoop],
+    events: Sequence[Mapping[str, Any]] | None = None,
 ) -> BlockerEvaluation:
-    if not is_review_bound_blocker(normalized):
+    report = dict(normalized)
+    if events:
+        report = _apply_artifact_supersession(report, events)
+    if not is_review_bound_blocker(report):
         return BlockerEvaluation(
             disposition="active_wait",
-            report=normalized,
+            report=report,
             reason="focused review wait is missing review_loop_id",
         )
-    loop_id = str(normalized.get("review_loop_id") or "")
+    loop_id = str(report.get("review_loop_id") or "")
     matching = next((loop for loop in reviews if loop.id == loop_id), None)
-    if matching is not None and review_satisfies_blocker(normalized, matching):
+    if matching is not None and review_satisfies_blocker(report, matching):
         return BlockerEvaluation(
             disposition="resolved",
-            report=resolve_blocker_report(normalized, resolved_by=matching.id),
+            report=resolve_blocker_report(report, resolved_by=matching.id),
             matching_loop_id=matching.id,
             reason=(
                 "stale review-bound production blocker; "
@@ -366,7 +554,7 @@ def _evaluate_review_bound(
     reason = "focused review wait is still active"
     if (
         matching is not None
-        and _optional_text(normalized.get("target_digest"))
+        and _optional_text(report.get("target_digest"))
         and loop_bound_digest(matching) is None
         and matching.status in CLEAR_APPROVAL_STATUSES
     ):
@@ -376,7 +564,7 @@ def _evaluate_review_bound(
         )
     return BlockerEvaluation(
         disposition="active_wait",
-        report=normalized,
+        report=report,
         matching_loop_id=loop_id or None,
         reason=reason,
     )
@@ -396,10 +584,14 @@ def evaluate_blocker_report(
         return BlockerEvaluation(disposition="none")
     if str(normalized.get("status") or "") in _INACTIVE_STATUSES:
         return BlockerEvaluation(disposition="none", report=normalized)
-    if str(normalized.get("kind") or "") in _REVIEW_WAIT_KINDS:
-        return _evaluate_review_bound(normalized, reviews)
-
     history = [event for event in (events or []) if isinstance(event, Mapping)]
+    if str(normalized.get("kind") or "") in _REVIEW_WAIT_KINDS:
+        return _evaluate_review_bound(
+            normalized,
+            reviews,
+            events=history or None,
+        )
+
     if _is_legacy_untyped(report) and history:
         overlapping = _overlapping_request_loop_ids(history, reviews, normalized)
         unresolved = _unresolved_overlapping_loop_ids(history, reviews, normalized)
@@ -415,9 +607,9 @@ def evaluate_blocker_report(
             and blocked_index is not None
             and _looks_like_review_wait_evidence(normalized)
         ):
-            bound = _bind_report_to_loop(normalized, unique_loop)
+            bound = _bind_report_from_history(normalized, unique_loop, history)
             if _approval_follows_blocked(history, unique_loop.id, blocked_index):
-                return _evaluate_review_bound(bound, reviews)
+                return _evaluate_review_bound(bound, reviews, events=history)
             if unique_loop.status in CLEAR_APPROVAL_STATUSES or is_terminal_review_loop(
                 unique_loop
             ):
@@ -431,7 +623,7 @@ def evaluate_blocker_report(
                     ),
                     diagnostic_code=DIAGNOSTIC_AMBIGUOUS_LEGACY_BLOCKER,
                 )
-            return _evaluate_review_bound(bound, reviews)
+            return _evaluate_review_bound(bound, reviews, events=history)
         if overlapping:
             return BlockerEvaluation(
                 disposition="active_terminal",
@@ -474,6 +666,9 @@ def stale_blocked_run_is_repairable(
         return None
     evaluation = evaluate_blocker_report(report, reviews, events=events)
     if evaluation.disposition != "resolved":
+        return None
+    history = [event for event in (events or []) if isinstance(event, Mapping)]
+    if not _terminal_caused_by_stale_blocker(history, report, evaluation):
         return None
     return evaluation
 

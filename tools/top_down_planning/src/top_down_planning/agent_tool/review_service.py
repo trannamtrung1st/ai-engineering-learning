@@ -703,6 +703,18 @@ class ReviewAgentService:
                         f"target_digest does not match current {artifact_key} digest"
                     )
 
+        elif loop.type in {"focused_plan", "focused_output"} and decision == "approved":
+            if loop.type == "focused_output":
+                from top_down_planning.persistence.digests import compute_output_digest
+
+                production = self._store.load_production(self._run_id)
+                approved_digests = {"output": compute_output_digest(production)}
+            else:
+                from top_down_planning.persistence.digests import compute_plan_digest
+
+                plan = self._store.load_plan_model(self._run_id)
+                approved_digests = {"plan": compute_plan_digest(plan)}
+
         if updated is None:
             assert decision is not None
             try:

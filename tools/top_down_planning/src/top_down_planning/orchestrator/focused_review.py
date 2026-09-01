@@ -325,7 +325,9 @@ class FocusedReviewAdapter:
             for event in events
         )
         if stored_loop.status == "approved" and already_emitted:
-            self._commit_resolved_blocker_if_satisfied(stored_loop)
+            self._commit_resolved_blocker_if_satisfied(
+                self._with_current_artifact_digest(stored_loop)
+            )
             revoke_capabilities_for_loop(self._store, self._run_id, stored_loop.id)
             return FocusedReviewResult(
                 ok=True,
@@ -337,7 +339,9 @@ class FocusedReviewAdapter:
         canonical_source = loop
         if loop.status not in {"approved", "verified"}:
             canonical_source = stored_loop
-        approved = normalize_focused_review_success(canonical_source)
+        approved = self._with_current_artifact_digest(
+            normalize_focused_review_success(canonical_source)
+        )
         spec = CommitSpec(
             reviews=[approved.to_dict()],
             review_expected_revisions={approved.id: expected_revision},
@@ -395,9 +399,33 @@ class FocusedReviewAdapter:
             revision_cycles=persisted.revision_cycles,
         )
 
+    def _with_current_artifact_digest(self, loop: ReviewLoop) -> ReviewLoop:
+        from top_down_planning.domain.production_blockers import loop_bound_digest
+        from top_down_planning.persistence.digests import (
+            compute_output_digest,
+            compute_plan_digest,
+        )
+
+        if loop_bound_digest(loop):
+            return loop
+        if loop.type == "focused_output":
+            production = self._store.load_production(self._run_id)
+            return replace(
+                loop,
+                approved_digests={"output": compute_output_digest(production)},
+            )
+        if loop.type == "focused_plan":
+            plan = self._store.load_plan_model(self._run_id)
+            return replace(
+                loop,
+                approved_digests={"plan": compute_plan_digest(plan)},
+            )
+        return loop
+
     def _commit_resolved_blocker_if_satisfied(self, approved: ReviewLoop) -> None:
         if approved.type != "focused_output":
             return
+        approved = self._with_current_artifact_digest(approved)
         production = self._store.load_production(self._run_id)
         reviews = [
             approved
@@ -422,21 +450,30 @@ class FocusedReviewAdapter:
         updated_production = dict(production)
         updated_production["revision"] = expected_production + 1
         updated_production["blocker_report"] = evaluation.report
-        self._store.commit(
-            self._run_id,
-            CommitSpec(
-                production=updated_production,
-                production_expected_revision=expected_production,
-                events=[
-                    {
-                        "type": "production_blocker_resolved",
-                        "run_id": self._run_id,
-                        "review_loop_id": approved.id,
-                        "resolved_by": approved.id,
-                    }
-                ],
-            ),
+        stored = ReviewLoop.from_dict(self._store.load_review(self._run_id, approved.id))
+        spec = CommitSpec(
+            production=updated_production,
+            production_expected_revision=expected_production,
+            events=[
+                {
+                    "type": "production_blocker_resolved",
+                    "run_id": self._run_id,
+                    "review_loop_id": approved.id,
+                    "resolved_by": approved.id,
+                }
+            ],
         )
+        if stored.approved_digests != approved.approved_digests:
+            spec = CommitSpec(
+                reviews=[approved.to_dict()],
+                review_expected_revisions={
+                    approved.id: review_record_revision(stored.to_dict())
+                },
+                production=spec.production,
+                production_expected_revision=spec.production_expected_revision,
+                events=spec.events,
+            )
+        self._store.commit(self._run_id, spec)
 
     def handle_blocked(self, loop: ReviewLoop) -> FocusedReviewResult:
         revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
