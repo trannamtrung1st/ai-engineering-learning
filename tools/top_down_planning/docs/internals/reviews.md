@@ -97,4 +97,6 @@ python -m pytest tests/unit/test_production_blockers.py \
 
 Result: 58 passed.
 
+GitHub Actions TDP workflow [33540051404](https://github.com/trannamtrung1st/ai-engineering-learning/actions/runs/33540051404) on `d8ff02da` completed with failure: blocker-focused regression gates passed; one unrelated Darwin reliability failure (`darwin-janitor` Python 3.13, `test_blank_line_then_silence_stalls_within_idle_deadline` wall-clock 0.769s vs 0.75s bound). Subsequent TDP workflow [33582476583](https://github.com/trannamtrung1st/ai-engineering-learning/actions/runs/33582476583) on `77a07d1e` is fully green (test 3.11/3.13, linux-process-lifecycle 3.11/3.13, darwin-janitor 3.11/3.13).
+
 Related: [lifecycle architecture](../architecture/lifecycle.md), [agent CLI](../agents/cli.md).
