@@ -15,12 +15,14 @@ from core_tools.provider.errors import ProviderTurnError, ProviderTurnStalledErr
 from core_tools.provider.process_identity import terminate_verified_process_identity
 from tests.conftest import close_and_reap_iterator, reap_process_group, spawn_sigterm_ignoring_leader_with_child
 
+_IDLE_SECONDS = 0.08
+
 
 def _idle_config() -> dict:
     return {
         "limits": {
             "provider": {
-                "turn_idle_timeout_seconds": 0.08,
+                "turn_idle_timeout_seconds": _IDLE_SECONDS,
                 "max_retries_per_call": 0,
             }
         }
@@ -51,15 +53,49 @@ def _stream(provider: CursorProvider, session_id: str) -> list[str]:
     return list(provider.stream_events(session_id))
 
 
+def _idle_line_wait_budgets() -> tuple[object, list[float]]:
+    """Record remaining idle wait passed into stdout fills during line reads."""
+
+    budgets: list[float] = []
+    real_fill = _SubprocessStdoutIterator._fill_stdout_buffer
+    real_read = _SubprocessStdoutIterator.read_nonempty_line
+    collecting = {"on": False}
+
+    def recording_fill(self, timeout: float | None) -> bool:
+        if collecting["on"] and timeout is not None:
+            budgets.append(timeout)
+        return real_fill(self, timeout)
+
+    def recording_read(self, timeout: float) -> str | None:
+        collecting["on"] = True
+        try:
+            return real_read(self, timeout)
+        finally:
+            collecting["on"] = False
+
+    return patch.multiple(
+        _SubprocessStdoutIterator,
+        _fill_stdout_buffer=recording_fill,
+        read_nonempty_line=recording_read,
+    ), budgets
+
+
+def _assert_idle_wait_budget(budgets: list[float], *, idle: float = _IDLE_SECONDS) -> None:
+    assert budgets
+    assert max(budgets) <= idle
+    assert min(budgets) <= 0.02
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX pipe idle watchdog")
 def test_blank_line_then_silence_stalls_within_idle_deadline(tmp_path: Path) -> None:
     script = "print('', flush=True)\nimport time\ntime.sleep(60)\n"
+    recording, budgets = _idle_line_wait_budgets()
     provider = _provider(tmp_path, _script_runner(script))
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    started = time.monotonic()
-    with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
-        _stream(provider, session_id)
-    assert time.monotonic() - started <= 0.75
+    with recording:
+        with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
+            _stream(provider, session_id)
+    _assert_idle_wait_budget(budgets)
     assert provider._tracked_turn_procs == {}
 
 
@@ -74,14 +110,14 @@ def test_two_lines_in_one_write_are_consumed_then_stall(tmp_path: Path) -> None:
         "import time\n"
         "time.sleep(60)\n"
     )
+    recording, budgets = _idle_line_wait_budgets()
     provider = _provider(tmp_path, _script_runner(script))
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    started = time.monotonic()
-    with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
-        events = list(provider.stream_events(session_id))
-        del events
-    elapsed = time.monotonic() - started
-    assert elapsed <= 0.75
+    with recording:
+        with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
+            events = list(provider.stream_events(session_id))
+            del events
+    _assert_idle_wait_budget(budgets)
 
 
 def test_windows_silent_stdout_wait_readable_times_out(tmp_path: Path) -> None:
