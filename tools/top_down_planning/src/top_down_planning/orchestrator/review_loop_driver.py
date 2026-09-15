@@ -28,13 +28,15 @@ from top_down_planning.domain.reviews import (
     prepare_limit_reached_retry,
     prepare_review_incomplete_retry,
     pending_unconsumed_revision_cycle_entry,
-    pending_verification_owner_cycle_charge,
     required_open_findings,
     reset_gate_agent_turns,
     review_gate_limits_from_config,
     scope_review_budget_exhausted,
     verification_required_for_loop,
     verification_revision_budget_exhausted,
+)
+from top_down_planning.orchestrator.mandatory_review_recovery import (
+    pending_verification_owner_cycle_charge,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     approved_means_final_approval,
@@ -343,7 +345,13 @@ class ReviewLoopDriver:
                     self._store, self._run_id, loop
                 )
             ):
-                loop = self._charge_pending_verification_owner_cycle(loop)
+                loop, limit_pause = self._enter_next_owner_revision_cycle(
+                    loop,
+                    limits,
+                    reopen_findings=False,
+                )
+                if limit_pause is not None:
+                    return limit_pause
                 run = self._store.load_run(self._run_id)
                 if str(run.get("status") or "") != "running":
                     return self.result_from_run(run, ok=False, loop=loop)
@@ -352,16 +360,22 @@ class ReviewLoopDriver:
                 self.profile.is_mandatory_gate
                 and loop.status == "pending"
                 and loop.lifecycle_status == "revision_in_progress"
-                and (
+            ):
+                if self._owner_revision_ready_for_recheck(loop):
+                    loop = self._prepare_recheck(loop)
+                    continue
+                if (
                     not self._owner_revision_complete(loop)
                     or pending_unconsumed_revision_cycle_entry(loop)
-                )
-            ):
-                loop = self._resume_interrupted_owner_revision(loop)
-                run = self._store.load_run(self._run_id)
-                if str(run.get("status") or "") != "running":
-                    return self.result_from_run(run, ok=False, loop=loop)
-                continue
+                ):
+                    resumed = self._resume_interrupted_owner_revision(loop, limits)
+                    if isinstance(resumed, MandatoryWholeReviewResult):
+                        return resumed
+                    loop = resumed
+                    run = self._store.load_run(self._run_id)
+                    if str(run.get("status") or "") != "running":
+                        return self.result_from_run(run, ok=False, loop=loop)
+                    continue
             if loop.status == "pending":
                 consumed_persisted_decision = False
                 if self.profile.is_mandatory_gate:
@@ -547,7 +561,10 @@ class ReviewLoopDriver:
                         self.profile.is_mandatory_gate
                         and loop.lifecycle_status == "revision_in_progress"
                     ):
-                        loop = self._resume_interrupted_owner_revision(loop)
+                        resumed = self._resume_interrupted_owner_revision(loop, limits)
+                        if isinstance(resumed, MandatoryWholeReviewResult):
+                            return resumed
+                        loop = resumed
                         continue
                     stage_decision = "changes_requested"
                 elif verification_required_for_loop(loop):
@@ -581,46 +598,29 @@ class ReviewLoopDriver:
                 if pending_verification_owner_cycle_charge(
                     self._store, self._run_id, loop
                 ):
-                    loop = self._charge_pending_verification_owner_cycle(loop)
+                    loop, limit_pause = self._enter_next_owner_revision_cycle(
+                        loop,
+                        limits,
+                        reopen_findings=False,
+                    )
+                    if limit_pause is not None:
+                        return limit_pause
                     continue
                 if loop.lifecycle_status == "revision_in_progress":
-                    loop = self._resume_interrupted_owner_revision(loop)
+                    resumed = self._resume_interrupted_owner_revision(loop, limits)
+                    if isinstance(resumed, MandatoryWholeReviewResult):
+                        return resumed
+                    loop = resumed
                     continue
 
-            max_cycles = (
-                limits.max_revision_cycles
-                if self.profile.is_mandatory_gate
-                else int(limits)
-            )
-            if loop.revision_cycles >= max_cycles:
-                if self.profile.is_mandatory_gate:
-                    loop = self._persist_loop(
-                        mark_limit_reached_loop(
-                            loop,
-                            limits=limits,
-                            exhausted="verification_revision",
-                        )
-                    )
-                    return self._pause_for_limit(
-                        limit_message(
-                            limits,
-                            exhausted="verification_revision",
-                            review_label=spec.review_label,
-                        ),
-                        loop=loop,
-                        exhausted="verification_revision",
-                        limits=limits,
-                    )
-                return self._focused_adapter().handle_limit_exhausted(
-                    loop,
-                    loop.revision_cycles,
-                )
-
-            revision_cycles = loop.revision_cycles + 1
             if self.profile.is_mandatory_gate:
-                loop = self._persist_loop(
-                    begin_next_owner_revision_cycle(loop, revision_cycles)
+                loop, limit_pause = self._enter_next_owner_revision_cycle(
+                    loop,
+                    limits,
+                    reopen_findings=True,
                 )
+                if limit_pause is not None:
+                    return limit_pause
                 if was_scope_review_stage:
                     self._append_event(
                         f"{spec.event_prefix}_scope_review_changes_requested",
@@ -631,10 +631,19 @@ class ReviewLoopDriver:
                         prior_finding_set_id=prior_finding_set_id,
                         finding_count=len(loop.findings),
                     )
-            else:
-                loop = self._persist_loop(
-                    self._adapter.enter_revision_cycle(loop, revision_cycles)
+                continue
+
+            max_cycles = int(limits)
+            if loop.revision_cycles >= max_cycles:
+                return self._focused_adapter().handle_limit_exhausted(
+                    loop,
+                    loop.revision_cycles,
                 )
+
+            revision_cycles = loop.revision_cycles + 1
+            loop = self._persist_loop(
+                self._adapter.enter_revision_cycle(loop, revision_cycles)
+            )
 
             self._resume_owner_with_findings(loop)
             loop = self._reload_loop(loop.id)
@@ -817,7 +826,7 @@ class ReviewLoopDriver:
                 self._store, self._run_id, loop
             ):
                 return loop, False
-            if self._owner_revision_complete(loop):
+            if self._owner_revision_ready_for_recheck(loop):
                 return self._prepare_recheck(loop), True
             return loop, False
 
@@ -1202,6 +1211,33 @@ class ReviewLoopDriver:
     def _owner_revision_complete(self, loop: ReviewLoop) -> bool:
         return owner_revision_complete(self._store, self._run_id, loop.id)
 
+    def _owner_revision_ready_for_recheck(self, loop: ReviewLoop) -> bool:
+        if pending_verification_owner_cycle_charge(
+            self._store, self._run_id, loop
+        ):
+            return False
+        if self._owner_revision_complete(loop):
+            return True
+        if (
+            loop.lifecycle_status != "revision_in_progress"
+            or loop.status != "pending"
+            or pending_unconsumed_revision_cycle_entry(loop)
+            or int(loop.revision_cycles) > 1
+        ):
+            return False
+        artifact_revision, _artifact_digest = self._adapter.current_artifact_binding()
+        if int(artifact_revision) <= int(loop.target_revision):
+            return False
+        from top_down_planning.domain.production import completion_claim_is_current
+
+        production = self._store.load_production(self._run_id)
+        claim = production.get("completion_claim")
+        return completion_claim_is_current(
+            claim if isinstance(claim, dict) else None,
+            production=production,
+            plan=self._store.load_plan_model(self._run_id),
+        )
+
     def _pause_completion_claim_required(
         self,
         exc: CompletionClaimRequired,
@@ -1227,22 +1263,78 @@ class ReviewLoopDriver:
         run = self._store.load_run(self._run_id)
         return self.result_from_run(run, ok=False, reason=str(exc))
 
-    def _charge_pending_verification_owner_cycle(self, loop: ReviewLoop) -> ReviewLoop:
-        revision_cycles = int(loop.revision_cycles) + 1
+    def _verification_revision_limit_exhausted(
+        self,
+        loop: ReviewLoop,
+        limits: Any,
+    ) -> bool:
+        return int(loop.revision_cycles) >= int(limits.max_revision_cycles)
+
+    def _pause_verification_revision_limit(
+        self,
+        loop: ReviewLoop,
+        limits: Any,
+    ) -> MandatoryWholeReviewResult:
+        spec = self.spec
         loop = self._persist_loop(
-            self._adapter.enter_revision_cycle(loop, revision_cycles)
+            mark_limit_reached_loop(
+                loop,
+                limits=limits,
+                exhausted="verification_revision",
+            )
         )
+        return self._pause_for_limit(
+            limit_message(
+                limits,
+                exhausted="verification_revision",
+                review_label=spec.review_label,
+            ),
+            loop=loop,
+            exhausted="verification_revision",
+            limits=limits,
+        )
+
+    def _enter_next_owner_revision_cycle(
+        self,
+        loop: ReviewLoop,
+        limits: Any,
+        *,
+        reopen_findings: bool,
+    ) -> tuple[ReviewLoop, MandatoryWholeReviewResult | None]:
+        if self._verification_revision_limit_exhausted(loop, limits):
+            return loop, self._pause_verification_revision_limit(loop, limits)
+
+        revision_cycles = int(loop.revision_cycles) + 1
+        if reopen_findings:
+            updated = begin_next_owner_revision_cycle(loop, revision_cycles)
+        else:
+            updated = self._adapter.enter_revision_cycle(loop, revision_cycles)
+        loop = self._persist_loop(updated)
         self._resume_owner_with_findings(loop)
         loop = self._reload_loop(loop.id)
         if self._owner_revision_complete(loop):
-            return self._prepare_recheck(loop)
-        return loop
+            return self._prepare_recheck(loop), None
+        return loop, None
 
-    def _resume_interrupted_owner_revision(self, loop: ReviewLoop) -> ReviewLoop:
+    def _resume_interrupted_owner_revision(
+        self,
+        loop: ReviewLoop,
+        limits: Any | None = None,
+    ) -> ReviewLoop | MandatoryWholeReviewResult:
+        if limits is None:
+            config = self._store.load_resolved_config(self._run_id)
+            limits = mandatory_review_limits_from_config(config, self.spec.limits_key)
         if pending_verification_owner_cycle_charge(
             self._store, self._run_id, loop
         ):
-            return self._charge_pending_verification_owner_cycle(loop)
+            loop, limit_pause = self._enter_next_owner_revision_cycle(
+                loop,
+                limits,
+                reopen_findings=False,
+            )
+            if limit_pause is not None:
+                return limit_pause
+            return loop
         if pending_unconsumed_revision_cycle_entry(loop):
             # Limit-extension resume: charge the next cycle once, then run owner.
             # Do not treat prior-cycle owner actions as completing this cycle,

@@ -140,7 +140,6 @@ def test_production_does_not_complete_on_integration_pending_claim(
 
 
 def test_whole_output_review_requires_goal_met_claim(tmp_path: Path) -> None:
-    from top_down_planning.orchestrator.errors import ProviderRunError
     from top_down_planning.orchestrator.whole_output_review import (
         WholeOutputReviewOrchestrator,
     )
@@ -164,8 +163,11 @@ def test_whole_output_review_requires_goal_met_claim(tmp_path: Path) -> None:
     run["phase"] = WHOLE_OUTPUT_REVIEW
     store.save_run(parent_id, run, expected_run)
 
-    with pytest.raises(ProviderRunError, match="goal_met"):
-        WholeOutputReviewOrchestrator(store, parent_id, StubProvider()).run()
+    result = WholeOutputReviewOrchestrator(store, parent_id, StubProvider()).run()
+    assert result.ok is False
+    run = store.load_run(parent_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "completion_claim_required"
 
 
 def test_producer_manifest_includes_prepared_execution_for_child(

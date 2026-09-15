@@ -49,9 +49,7 @@ from tests.integration.e2e_helpers import (
     queue_turn,
     write_e2e_config,
 )
-from tests.unit.test_whole_output_review import (
-    _create_run_at_whole_output_review as create_run_at_whole_output_review,
-)
+from tests.support.whole_output_review import create_run_at_whole_output_review
 
 
 @pytest.fixture

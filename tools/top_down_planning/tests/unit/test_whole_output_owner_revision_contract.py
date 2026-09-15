@@ -36,7 +36,7 @@ from tests.helpers import (
     respond_review,
     save_review_payload,
 )
-from tests.unit.test_whole_output_review import _create_run_at_whole_output_review
+from tests.support.whole_output_review import create_run_at_whole_output_review as _create_run_at_whole_output_review
 
 
 _RUN_ID = "run-20260101T000801-000801"
@@ -398,6 +398,43 @@ def _seed_verification_needs_revision_crash_window(store: FileRunStore) -> None:
         verification_result={"decision": "needs_revision"},
     )
     save_review_payload(store, _RUN_ID, loop.to_dict())
+
+
+def test_resume_crash_window_at_revision_limit_pauses_without_producer(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    _create_run_at_whole_output_review(
+        store,
+        provider=provider,
+        limits={"max_revision_cycles": 1},
+    )
+    _seed_cycle_one_owner_revision_complete(store)
+    _seed_verification_needs_revision_crash_window(store)
+
+    owner_turn_started = False
+
+    def _unexpected_owner_turn() -> None:
+        nonlocal owner_turn_started
+        owner_turn_started = True
+
+    provider.script_turn(
+        done_events(text="should not run"),
+        mutate_store=_unexpected_owner_turn,
+    )
+
+    result = WholeOutputReviewOrchestrator(store, _RUN_ID, provider).run()
+
+    assert owner_turn_started is False
+    assert result.ok is False
+    review = store.load_review(_RUN_ID, _LOOP_ID)
+    assert review["revision_cycles"] == 1
+    assert review["lifecycle_status"] == "limit_reached"
+    assert review["exhausted_budget"] == "verification_revision"
+    run = store.load_run(_RUN_ID)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
 
 
 def test_resume_after_verification_needs_revision_crash_window_runs_cycle_two_producer(
