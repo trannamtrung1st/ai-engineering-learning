@@ -459,6 +459,7 @@ def test_owner_revision_boundary_waits_for_claim_and_required_actions(
             **dict(store.load_review(run_id, loop_id)),
             "lifecycle_status": "revision_in_progress",
             "status": "pending",
+            "revision_cycles": 1,
             "finding_set_id": "review-whole-output-01-fs-01",
             "findings": [
                 {
@@ -560,6 +561,7 @@ def test_owner_revision_boundary_closes_when_actions_precede_claim(
             **dict(store.load_review(run_id, loop_id)),
             "lifecycle_status": "revision_in_progress",
             "status": "pending",
+            "revision_cycles": 1,
             "finding_set_id": "review-whole-output-01-fs-01",
             "findings": [
                 {

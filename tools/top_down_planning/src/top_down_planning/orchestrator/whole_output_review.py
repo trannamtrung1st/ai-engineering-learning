@@ -432,17 +432,18 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
         )
 
     def _require_completion_claim(self) -> None:
+        from top_down_planning.domain.production import completion_claim_is_current
+
         production = self._store.load_production(self._run_id)
+        plan = self._store.load_plan_model(self._run_id)
         claim = production.get("completion_claim")
-        if not isinstance(claim, dict):
+        if not completion_claim_is_current(
+            claim if isinstance(claim, dict) else None,
+            production=production,
+            plan=plan,
+        ):
             raise CompletionClaimRequired(
-                "whole-output review requires a production completion claim",
-                output_revision=int(production["output_revision"]),
-            )
-        if claim.get("goal_met") is not True:
-            raise CompletionClaimRequired(
-                "whole-output review requires a completion claim with goal_met=true; "
-                f"got status={claim.get('status')!r} goal_met={claim.get('goal_met')!r}",
+                "whole-output review requires a current production completion claim",
                 output_revision=int(production["output_revision"]),
             )
 

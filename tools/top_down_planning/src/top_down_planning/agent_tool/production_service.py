@@ -49,6 +49,7 @@ from top_down_planning.domain.reviews import (
     blocking_focused_findings_for_items,
     find_whole_plan_approval,
     focused_output_revision_target_ids,
+    mandatory_owner_revision_in_progress_loop,
     whole_output_revision_target_ids,
 )
 from top_down_planning.domain.production import (
@@ -415,6 +416,9 @@ class ProductionAgentService:
                         "output_revision": int(updated["output_revision"]),
                         "all_applicable_items_processed": True,
                     }
+                    owner_cycle = self._completion_claim_owner_revision_cycle()
+                    if owner_cycle is not None:
+                        claim["owner_revision_cycle"] = owner_cycle
                     updated["completion_claim"] = claim
                     events.append(
                         apply_request_audit_fields(
@@ -625,6 +629,9 @@ class ProductionAgentService:
             "output_revision": int(production["output_revision"]),
             "all_applicable_items_processed": True,
         }
+        owner_cycle = self._completion_claim_owner_revision_cycle()
+        if owner_cycle is not None:
+            claim["owner_revision_cycle"] = owner_cycle
 
         updated = dict(production)
         updated["revision"] = expected_revision + 1
@@ -799,6 +806,12 @@ class ProductionAgentService:
         updated["output_evidence"] = evidence
         updated["output_revision"] = int(updated.get("output_revision") or 0) + 1
         return updated
+
+    def _completion_claim_owner_revision_cycle(self) -> int | None:
+        loop = mandatory_owner_revision_in_progress_loop(self._store, self._run_id)
+        if loop is None:
+            return None
+        return int(loop.revision_cycles)
 
     def _require_production_context(self, plan) -> None:
         run = self._store.load_run(self._run_id)

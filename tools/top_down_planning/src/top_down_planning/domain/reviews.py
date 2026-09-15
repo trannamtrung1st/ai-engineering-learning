@@ -483,6 +483,7 @@ class FindingAction:
     proposed_disposition: ChallengeProposedDisposition | None = None
     challenge_reason: ChallengeReason | None = None
     superseded_by_finding_id: str | None = None
+    owner_revision_cycle: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -492,6 +493,8 @@ class FindingAction:
             "artifact_revision": self.artifact_revision,
             "finding_set_id": self.finding_set_id,
         }
+        if self.owner_revision_cycle is not None:
+            payload["owner_revision_cycle"] = int(self.owner_revision_cycle)
         if self.rationale is not None:
             payload["rationale"] = self.rationale
         if self.proposed_disposition is not None:
@@ -603,6 +606,14 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
                 "for challenge actions"
             )
 
+    owner_revision_cycle_raw = payload.get("owner_revision_cycle")
+    owner_revision_cycle: int | None = None
+    if owner_revision_cycle_raw is not None:
+        owner_revision_cycle = require_non_negative_int(
+            owner_revision_cycle_raw,
+            "owner_revision_cycle",
+        )
+
     return FindingAction(
         finding_id=finding_id,
         action=action,
@@ -613,6 +624,7 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
         proposed_disposition=proposed_disposition,
         challenge_reason=challenge_reason if action == "challenge" else None,
         superseded_by_finding_id=superseded_by_finding_id,
+        owner_revision_cycle=owner_revision_cycle,
     )
 
 
@@ -1265,18 +1277,28 @@ def required_open_findings(
     ]
 
 
+def action_owner_revision_cycle(action: FindingAction) -> int:
+    """Return the owner revision cycle an action belongs to."""
+
+    if action.owner_revision_cycle is not None:
+        return int(action.owner_revision_cycle)
+    return 1
+
+
 def required_findings_missing_owner_response(
     findings: Sequence[ReviewFinding],
     finding_actions: Sequence[FindingAction],
     threshold: ReviewSeverity,
     *,
     finding_set_id: str | None = None,
+    owner_revision_cycle: int | None = None,
 ) -> list[ReviewFinding]:
     """Required open findings lacking a fix or challenge for the active finding set."""
 
     effective = effective_owner_actions(
         finding_actions,
         finding_set_id=finding_set_id,
+        owner_revision_cycle=owner_revision_cycle,
     )
     responded = {
         finding_id
@@ -1336,11 +1358,15 @@ def effective_owner_actions(
     finding_actions: Sequence[FindingAction],
     *,
     finding_set_id: str | None = None,
+    owner_revision_cycle: int | None = None,
 ) -> dict[str, FindingAction]:
     """Latest owner action per finding within the scoped finding set."""
 
     effective: dict[str, FindingAction] = {}
     for action in scoped_finding_actions(finding_actions, finding_set_id):
+        if owner_revision_cycle is not None:
+            if action_owner_revision_cycle(action) != int(owner_revision_cycle):
+                continue
         effective[action.finding_id] = action
     return effective
 
@@ -1351,12 +1377,14 @@ def open_optional_findings_missing_owner_response(
     threshold: ReviewSeverity,
     *,
     finding_set_id: str | None = None,
+    owner_revision_cycle: int | None = None,
 ) -> list[ReviewFinding]:
     """Optional open findings lacking any owner response for the active finding set."""
 
     effective = effective_owner_actions(
         finding_actions,
         finding_set_id=finding_set_id,
+        owner_revision_cycle=owner_revision_cycle,
     )
     responded = {
         finding_id
@@ -1640,6 +1668,28 @@ def required_unresolved_finding_ids(
     """Return open finding ids at or above ``revise_at``."""
 
     return required_open_finding_ids(findings, revise_at)
+
+
+def mandatory_owner_revision_in_progress_loop(
+    store: Any,
+    run_id: str,
+) -> ReviewLoop | None:
+    """Return the active mandatory owner-revision loop for the run phase, if any."""
+
+    run = store.load_run(run_id)
+    phase = str(run.get("phase") or "")
+    if phase not in {"whole_plan_review", "whole_output_review"}:
+        return None
+    for payload in reversed(store.list_reviews(run_id)):
+        loop = ReviewLoop.from_dict(payload)
+        if loop.type not in {"whole_plan", "whole_output"}:
+            continue
+        if (
+            loop.lifecycle_status == "revision_in_progress"
+            and int(loop.revision_cycles) > 0
+        ):
+            return loop
+    return None
 
 
 def pending_interrupted_owner_revision(
@@ -2770,10 +2820,12 @@ def apply_owner_finding_actions(
         raise ValueError("actor_role must be planner or producer")
     threshold = loop_revise_at(loop)
     finding_set_id = str(loop.finding_set_id or "").strip()
+    current_owner_revision_cycle = int(loop.revision_cycles)
     scoped_existing_ids = {
         action.finding_id
         for action in loop.finding_actions
-        if not finding_set_id or action.finding_set_id == finding_set_id
+        if (not finding_set_id or action.finding_set_id == finding_set_id)
+        and action_owner_revision_cycle(action) == current_owner_revision_cycle
     }
     parsed: list[FindingAction] = []
     batch_action_ids: set[str] = set()
@@ -2786,6 +2838,8 @@ def apply_owner_finding_actions(
         if finding_set_id and not str(payload.get("finding_set_id") or "").strip():
             payload["finding_set_id"] = finding_set_id
         action = parse_finding_action(payload)
+        if action.owner_revision_cycle is None:
+            action = replace(action, owner_revision_cycle=current_owner_revision_cycle)
         if action.finding_id in scoped_existing_ids:
             raise ValueError(
                 f"finding {action.finding_id!r} already has an owner action "

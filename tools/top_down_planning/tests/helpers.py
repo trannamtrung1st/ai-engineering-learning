@@ -2400,11 +2400,13 @@ def record_mandatory_owner_revision_complete(
         loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
 
     threshold = loop_revise_at(loop)
+    owner_revision_cycle = int(loop.revision_cycles)
     leftover = required_findings_missing_owner_response(
         loop.findings,
         loop.finding_actions,
         threshold,
         finding_set_id=loop.finding_set_id,
+        owner_revision_cycle=owner_revision_cycle,
     )
     finding_actions: list[dict[str, Any]] = [
         {
@@ -2427,6 +2429,7 @@ def record_mandatory_owner_revision_complete(
             loop.finding_actions,
             threshold,
             finding_set_id=loop.finding_set_id,
+            owner_revision_cycle=owner_revision_cycle,
         )
     )
     if finding_actions:

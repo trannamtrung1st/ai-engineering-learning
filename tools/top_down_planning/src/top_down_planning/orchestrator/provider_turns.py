@@ -26,7 +26,7 @@ from core_tools.provider.errors import (
     ProviderUnsupportedPlatformError,
 )
 from core_tools.provider.process_cleanup import posix_spawn_session_leader
-from top_down_planning.domain.production import completion_claim_is_current
+from top_down_planning.domain.production import completion_claim_satisfies_owner_revision
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     loop_revise_at,
@@ -1770,11 +1770,13 @@ def owner_revision_complete(store: RunStore, run_id: str, loop_id: str) -> bool:
 
     loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
     threshold = loop_revise_at(loop)
+    owner_revision_cycle = int(loop.revision_cycles)
     if required_findings_missing_owner_response(
         loop.findings,
         loop.finding_actions,
         threshold,
         finding_set_id=loop.finding_set_id,
+        owner_revision_cycle=owner_revision_cycle,
     ):
         return False
     if not required_open_findings(loop.findings, threshold):
@@ -1783,16 +1785,18 @@ def owner_revision_complete(store: RunStore, run_id: str, loop_id: str) -> bool:
             loop.finding_actions,
             threshold,
             finding_set_id=loop.finding_set_id,
+            owner_revision_cycle=owner_revision_cycle,
         ):
             return False
     if loop.type != "whole_output":
         return True
     production = store.load_production(run_id)
     claim = production.get("completion_claim")
-    return completion_claim_is_current(
+    return completion_claim_satisfies_owner_revision(
         claim if isinstance(claim, dict) else None,
         production=production,
         plan=store.load_plan_model(run_id),
+        owner_revision_cycle=owner_revision_cycle,
     )
 
 

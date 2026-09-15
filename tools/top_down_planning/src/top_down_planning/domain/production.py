@@ -239,6 +239,43 @@ def is_live_completed_batch(batch: dict[str, Any]) -> bool:
     return str(batch.get("status") or "") == COMPLETED_BATCH_STATUS
 
 
+def completion_claim_owner_revision_cycle(claim: dict[str, Any] | None) -> int | None:
+    """Return the owner revision cycle stamped on a completion claim, if any."""
+
+    if not isinstance(claim, dict):
+        return None
+    raw = claim.get("owner_revision_cycle")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def completion_claim_satisfies_owner_revision(
+    claim: dict[str, Any] | None,
+    *,
+    production: dict[str, Any],
+    plan: Plan,
+    owner_revision_cycle: int,
+) -> bool:
+    """Return whether a claim is current and belongs to the active owner revision cycle."""
+
+    if not completion_claim_is_current(
+        claim,
+        production=production,
+        plan=plan,
+    ):
+        return False
+    claim_cycle = completion_claim_owner_revision_cycle(
+        claim if isinstance(claim, dict) else None
+    )
+    if claim_cycle is None:
+        return int(owner_revision_cycle) == 1
+    return int(claim_cycle) == int(owner_revision_cycle)
+
+
 def completion_claim_is_current(
     claim: dict[str, Any] | None,
     *,
