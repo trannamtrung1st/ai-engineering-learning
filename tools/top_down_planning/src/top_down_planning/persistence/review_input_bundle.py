@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core_tools.persistence import PersistenceError, digest_bytes
+from core_tools.persistence import PersistenceError, digest_bytes, exclusive_create_bytes
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.path_containment import lexical_run_owned_path
@@ -101,14 +101,17 @@ def review_attempt_id(loop: ReviewLoop | dict[str, Any]) -> str:
         stage = str(loop.active_stage or "initial_review")
         target_revision = int(loop.target_revision)
         revision_cycles = int(loop.revision_cycles)
+        finding_set_id = str(loop.finding_set_id or "").strip()
     else:
         stage = str(loop.get("active_stage") or "initial_review").strip() or "initial_review"
         target_revision = int(loop.get("target_revision") or 0)
         revision_cycles = int(loop.get("revision_cycles") or 0)
-    return validate_store_id(
-        f"{stage}-rev{target_revision}-cycle{revision_cycles}",
-        label="review_attempt_id",
-    )
+        finding_set_id = str(loop.get("finding_set_id") or "").strip()
+    base = f"{stage}-rev{target_revision}-cycle{revision_cycles}"
+    if finding_set_id:
+        validate_store_id(finding_set_id, label="finding_set_id")
+        return validate_store_id(f"{base}-{finding_set_id}", label="review_attempt_id")
+    return validate_store_id(base, label="review_attempt_id")
 
 
 def review_inputs_dir(store: RunStore, run_id: str) -> Path:
@@ -198,6 +201,10 @@ def materialize_review_input_bundle(
             workspace=workspace,
             reused=True,
         )
+    if dest.exists():
+        raise PersistenceError(
+            "review-input bundle directory exists without a published manifest"
+        )
 
     material = split_review_material(review_package)
     trusted = extract_trusted_bootstrap_fields(review_package)
@@ -216,7 +223,7 @@ def materialize_review_input_bundle(
             filename = filename_by_kind.get(kind, f"{kind}.json")
             data = _canonical_json_bytes(payload)
             file_path = staging / filename
-            file_path.write_bytes(data)
+            exclusive_create_bytes(file_path, data)
             inputs.append(
                 {
                     "kind": kind,
@@ -237,8 +244,14 @@ def materialize_review_input_bundle(
             "target_revision": int(loop.target_revision),
             "inputs": inputs,
         }
-        (staging / "manifest.json").write_bytes(_canonical_json_bytes(manifest))
-        (staging / BOOTSTRAP_SIDECAR_NAME).write_bytes(_canonical_json_bytes(trusted))
+        exclusive_create_bytes(
+            staging / "manifest.json",
+            _canonical_json_bytes(manifest),
+        )
+        exclusive_create_bytes(
+            staging / BOOTSTRAP_SIDECAR_NAME,
+            _canonical_json_bytes(trusted),
+        )
         loop_dir.mkdir(parents=True, exist_ok=True)
         try:
             os.rename(staging, dest)
@@ -284,6 +297,9 @@ def _load_bundle(
 ) -> ReviewInputBundle:
     manifest_path = dest / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise PersistenceError("review-input manifest must be an object")
+    _verify_bundle_inputs(dest, manifest)
     sidecar = dest / BOOTSTRAP_SIDECAR_NAME
     bootstrap_fields: dict[str, Any] = {}
     if sidecar.is_file():
@@ -303,6 +319,37 @@ def _load_bundle(
         reused=reused,
         bootstrap_fields=bootstrap_fields,
     )
+
+
+def _verify_bundle_inputs(dest: Path, manifest: dict[str, Any]) -> None:
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, list):
+        raise PersistenceError("review-input manifest is missing inputs")
+    for entry in inputs:
+        if not isinstance(entry, dict):
+            raise PersistenceError("review-input manifest input is invalid")
+        relative = str(entry.get("path") or "")
+        if (
+            not relative
+            or "/" in relative
+            or "\\" in relative
+            or relative.startswith(".")
+        ):
+            raise PersistenceError("review-input path must be a plain filename")
+        path = dest / relative
+        if not path.is_file() or path.is_symlink():
+            raise PersistenceError(f"review-input {relative!r} is missing")
+        data = path.read_bytes()
+        expected_size = int(entry.get("size_bytes") or -1)
+        expected_hash = str(entry.get("sha256") or "")
+        if expected_size != len(data):
+            raise PersistenceError(
+                f"review-input {relative!r} size does not match the manifest"
+            )
+        if expected_hash != digest_bytes(data):
+            raise PersistenceError(
+                f"review-input {relative!r} hash does not match the manifest"
+            )
 
 
 def _canonical_json_bytes(payload: Any) -> bytes:

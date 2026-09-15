@@ -2806,9 +2806,9 @@ Review:
   package; built-in rule_id list in tdp agent readme (Built-in finding-family
   rule_id values)
 
-Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
-review package; call `tdp agent plan snapshot --run <run-id> --view active` to
-refresh before responding when the plan may have changed.
+Whole-plan and focused_plan reviewers receive a review-input bundle (manifest plus
+plan snapshot files); call `tdp agent plan snapshot --run <run-id> --view active`
+to refresh before responding when the plan may have changed.
 
 Run status:
   tdp agent run status --run <run-id>
@@ -2818,8 +2818,8 @@ run-YYYYMMDDTHHMMSS-<6hex> (UTC creation time plus random suffix). Provider
 subprocesses receive TDP_RUNS_DIR, TDP_RUN_ID, TDP_AGENT_REQUESTS_DIR, and a
 session-scoped TDP_CAPABILITY_TOKEN_FILE before turns that may call mutating commands.
 Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR.
-Reviewer sessions allocate a provider session id, bind the token, then deliver the
-review package on the next turn. Mutating commands require the token; authorization
+Reviewer sessions allocate a provider session id, bind the token, then deliver a
+compact bootstrap that references the review-input bundle. Mutating commands require the token; authorization
 is bound to run phase and session role, not a self-declared flag.
 
 Published schemas: """ + ", ".join(PUBLIC_SCHEMAS) + """
@@ -3142,7 +3142,7 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    `target_digest` on discovery stages — see `review-respond-family-discovery`,
    `review-respond-family-verification`, and `review-respond-scope`, plus readme
    sections Audit attestation and Built-in finding-family rule_id values.
-   Review packages include an embedded plan tree, `review_policy.category_definitions`,
+   Review-input bundles include a plan snapshot, `review_policy.category_definitions`,
    `rubric_items` and `required_audit_passes` on every stage, and optional configured
    rubric themes on initial review; adapt example payloads using package ids
    (do not copy rubric ids from static examples). Refresh with
@@ -3178,7 +3178,7 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
    A focused-output request closes the current producer turn; end the turn after
    the request persists and do not `report-blocked` merely because that review is
-   pending. Focused plan reviewers receive the same embedded plan snapshot guidance as
+   pending. Focused plan reviewers receive the same review-input bundle guidance as
    whole-plan review. Discovery may use flat `target_refs`, structured
    `instance_ref`, or optional `finding_families` within scope — see
    `review-respond`, `review-respond-focused-with-instance-ref`,

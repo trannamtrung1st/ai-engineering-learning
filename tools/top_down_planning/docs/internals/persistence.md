@@ -31,7 +31,7 @@ The run directory and listed children must not be symlinks. Paths must stay unde
 
 Initial reviewer sessions do not serialize plan/production/evidence into the provider prompt. TDP materializes those payloads under `review-inputs/<loop-id>/<attempt-id>/` with `manifest.json` (schema version, kinds, relative paths, sha256, byte sizes) and hashed JSON files (`plan.json`, `production.json`, `evidence.json`, and other large fields). Capability tokens are never written into a bundle.
 
-Attempt identity is `<stage>-rev<target_revision>-cycle<revision_cycles>`. Pause/resume of the same attempt reuses the existing snapshot; a new stage/revision/cycle writes a new directory. Bundles are retained with the run as audit evidence and are not deleted while the loop can resume. Incomplete writes use `.stage-review-input-*` staging directories (same doctor leftover class as other `.stage-*` dirs).
+Attempt identity is `<stage>-rev<target_revision>-cycle<revision_cycles>` plus `-<finding_set_id>` when a discovery set is allocated. Pause/resume of the same attempt reuses the existing snapshot (hashes are re-checked); a new stage, revision, cycle, or finding set writes a new directory. The bootstrap prompt references the manifest with a workspace-relative path (including `..` when `runtime.runs_dir` is outside the project workspace). Bundles are retained with the run as audit evidence and are not deleted while the loop can resume. Incomplete writes use `.stage-review-input-*` staging directories (same doctor leftover class as other `.stage-*` dirs).
 
 Operators debugging a failed review can open:
 
