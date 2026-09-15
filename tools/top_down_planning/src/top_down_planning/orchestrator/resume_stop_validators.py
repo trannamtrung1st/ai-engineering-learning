@@ -330,7 +330,7 @@ def validate_stop_for_resume_apply(
         "focused_review_wait",
     }:
         return None
-    if code == "provider_turn_failed":
+    if code in {"provider_turn_failed", "provider_quota_exhausted"}:
         active = str(run.get("phase_action_id") or "").strip()
         details = stop.get("details") if isinstance(stop.get("details"), dict) else {}
         details_action = str(details.get("phase_action_id") or "").strip()
@@ -340,7 +340,7 @@ def validate_stop_for_resume_apply(
         if committed:
             return None
         raise ResumeStopValidationError(
-            "provider_turn_failed resume requires an interrupted phase_action_id "
+            f"{code} resume requires an interrupted phase_action_id "
             "on the run record or stop.details"
         )
     if code == "user_cancelled":

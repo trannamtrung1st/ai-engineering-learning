@@ -779,6 +779,15 @@ def test_provider_idle_timeout_default_matches_documented_contract() -> None:
     ]["properties"]["turn_idle_timeout_seconds"]
     assert idle_schema["default"] == 300
     assert "the default is 300" in idle_schema["description"]
+    progress_schema = show_schema("config")["properties"]["limits"]["properties"][
+        "provider"
+    ]["properties"]["turn_progress_timeout_seconds"]
+    assert progress_schema["default"] == 300
+    assert DEFAULT_CONFIG["limits"]["provider"]["turn_progress_timeout_seconds"] == 300.0
+    assert (
+        resolve_config(None)["limits"]["provider"]["turn_progress_timeout_seconds"]
+        == 300.0
+    )
     assert DEFAULT_CONFIG["limits"]["provider"]["max_stream_json_record_bytes"] == 1048576
     assert (
         resolve_config(None)["limits"]["provider"]["max_stream_json_record_bytes"]

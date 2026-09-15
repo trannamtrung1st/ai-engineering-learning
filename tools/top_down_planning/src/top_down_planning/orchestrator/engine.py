@@ -24,7 +24,11 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
     finalize_user_cancel,
     kill_orphan_agents,
 )
-from core_tools.provider.errors import ProviderTurnError
+from core_tools.provider.cursor_session_errors import (
+    ACTION_REQUIRED_QUOTA_EXHAUSTED,
+    classify_cursor_failure,
+)
+from core_tools.provider.errors import ProviderActionRequiredError, ProviderTurnError
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
     OrchestratorStateConflict,
@@ -912,26 +916,75 @@ class RunEngine:
                     self._emit_done(result, started_at=started_at)
                     return result
                 phase_action_id = str(run.get("phase_action_id") or "").strip()
-                if isinstance(exc, ProviderTurnError) or phase_action_id:
-                    details: dict[str, Any] = {}
+                stop_phase = str(run.get("phase") or phase)
+                action_required = (
+                    exc if isinstance(exc, ProviderActionRequiredError) else None
+                )
+                if action_required is None:
+                    classified = classify_cursor_failure(
+                        str(exc),
+                        session_id=getattr(exc, "session_id", None),
+                    )
+                    if isinstance(classified, ProviderActionRequiredError):
+                        action_required = classified
+                if (
+                    action_required is not None
+                    and action_required.reason == ACTION_REQUIRED_QUOTA_EXHAUSTED
+                ):
+                    details: dict[str, Any] = {
+                        "provider_failure": ACTION_REQUIRED_QUOTA_EXHAUSTED,
+                        "replacement_attempted": False,
+                        "resume_eligible": True,
+                        "domain_committed": False,
+                    }
+                    if phase_action_id:
+                        details["phase_action_id"] = phase_action_id
+                    session_id = getattr(action_required, "session_id", None)
+                    if session_id:
+                        details["session_id"] = session_id
+                    stop = StopRecord(
+                        code="provider_quota_exhausted",
+                        category="operational",
+                        phase=stop_phase,
+                        message=str(exc),
+                        details=details,
+                    )
+                    pause_run(
+                        self._store,
+                        run_id,
+                        stop=stop,
+                        additional_events=[
+                            {
+                                "type": "provider_action_required",
+                                "reason": ACTION_REQUIRED_QUOTA_EXHAUSTED,
+                                "phase": stop_phase,
+                                "phase_action_id": phase_action_id or None,
+                                "session_id": session_id,
+                                "replacement_attempted": False,
+                            }
+                        ],
+                    )
+                elif isinstance(exc, ProviderTurnError) or phase_action_id:
+                    details = {}
                     if phase_action_id:
                         details["phase_action_id"] = phase_action_id
                         details["domain_committed"] = False
                     stop = StopRecord(
                         code="provider_turn_failed",
                         category="operational",
-                        phase=phase,
+                        phase=stop_phase,
                         message=str(exc),
                         details=details,
                     )
+                    pause_run(self._store, run_id, stop=stop)
                 else:
                     stop = StopRecord(
                         code="orchestrator_state_conflict",
                         category="operational",
-                        phase=phase,
+                        phase=stop_phase,
                         message=str(exc),
                     )
-                pause_run(self._store, run_id, stop=stop)
+                    pause_run(self._store, run_id, stop=stop)
                 run = self._store.load_run(run_id)
                 result = _continuation_result_from_run(
                     run,

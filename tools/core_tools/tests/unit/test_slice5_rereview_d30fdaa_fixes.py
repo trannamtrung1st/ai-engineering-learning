@@ -62,7 +62,9 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
 
     real_iter = CursorProvider._iter_stream_with_idle_timeout
 
-    def recording_iter(*args, idle_timeout, on_idle, session_id=None, deadline=None):
+    def recording_iter(
+        *args, idle_timeout, on_idle, session_id=None, deadline=None, watchdogs=None
+    ):
         stream = args[-1]
         seen_deadline["value"] = deadline
         seen_deadline["wrap_mono"] = clock["t"]
@@ -72,6 +74,7 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
             on_idle=on_idle,
             session_id=session_id,
             deadline=deadline,
+            watchdogs=watchdogs,
         )
 
     def mark_stall(*args, **kwargs):

@@ -19,7 +19,7 @@ Approvals and resume bind **split** digests (schema v3). The monolithic `digests
 | Digest | Projection | Typical use |
 | --- | --- | --- |
 | `config_contract` | Semantic config minus `limits`, `observability`, `notifications`, and `runtime.runs_dir` | Plan **and** whole-output approval identity (with the other keys below). Whole-output approval additionally binds `output` and `context_snapshot`; plan approval does not. |
-| `config_execution` | `limits` only (including `limits.provider.max_retries_per_call`, `turn_idle_timeout_seconds`, and `max_stream_json_record_bytes`) | Limit changes on resume without invalidating approvals |
+| `config_execution` | `limits` only (including `limits.provider.max_retries_per_call`, `turn_idle_timeout_seconds`, `turn_progress_timeout_seconds`, and `max_stream_json_record_bytes`) | Limit changes on resume without invalidating approvals |
 | `context_spec` | Declarations: models, guidance entries, resource/skill selection (including packaged `tdp:builtin:` keys), snapshot exclusion policy | Resume of non-model context; session identity |
 | `context_snapshot` | Materialized resource bytes, skill contents, guidance text/file digests | Drift detection during production. Bound on **whole-output** approval when present; not a plan-approval key. |
 | `input` / `output_goal` | Run contracts | Creation and resume of goal/input files |

@@ -67,6 +67,24 @@ class ProviderTurnStalledError(ProviderTurnError):
     """A provider turn produced no stream output within the configured idle window."""
 
 
+class ProviderTurnProgressStalledError(ProviderTurnStalledError):
+    """A provider turn produced no meaningful progress within the configured window."""
+
+
+class ProviderActionRequiredError(ProviderTurnError):
+    """Provider reports a condition that requires user or administrator action."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str,
+        session_id: str | None = None,
+    ) -> None:
+        super().__init__(message, session_id=session_id)
+        self.reason = str(reason).strip() or "action_required"
+
+
 class ProviderStreamRecordTooLargeError(ProviderTurnError):
     """A stream-json record exceeded the bounded line-assembly limit."""
 

@@ -1365,7 +1365,25 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "description": (
                                     "Seconds without Cursor stream-json stdout before "
                                     "the provider ends the turn. 0 disables idle timeout "
-                                    "and is an explicit opt-out; the default is 300."
+                                    "and is an explicit opt-out; the default is 300. "
+                                    "This is a transport/raw-pipe watchdog and is reset "
+                                    "by any stdout line, including non-progress records."
+                                ),
+                            },
+                            "turn_progress_timeout_seconds": {
+                                "type": "number",
+                                "default": 300,
+                                "description": (
+                                    "Seconds without meaningful Cursor turn progress "
+                                    "before the provider ends the turn. Progress includes "
+                                    "assistant or thinking text, tool_call started/completed, "
+                                    "terminal result/error, and the first durable session id. "
+                                    "System, unknown, empty thinking, and other non-progress "
+                                    "records do not reset this deadline. 0 disables the "
+                                    "logical-progress watchdog (explicit opt-out); the "
+                                    "default is 300. Disabling both this and "
+                                    "turn_idle_timeout_seconds removes all stream liveness "
+                                    "guarantees."
                                 ),
                             },
                             "max_stream_json_record_bytes": {
@@ -3245,7 +3263,9 @@ rejected — recreate the run; there is no migrator. Prefer snapshot excludes ov
 `digests.config_contract` binds approval-meaning configuration (input/output goal semantics,
 boundaries, acceptance, review policy, context declarations). `digests.config_execution`
 binds operational limits and execution budgets (including `limits.provider.max_retries_per_call`,
-`limits.provider.turn_idle_timeout_seconds` for Cursor stream idle detection, and
+`limits.provider.turn_idle_timeout_seconds` for Cursor stream idle detection,
+`limits.provider.turn_progress_timeout_seconds` for meaningful turn-progress
+stalls, and
 `limits.provider.max_stream_json_record_bytes` for the assembled stream-json line cap, including the terminating newline).
 Approvals bind to `config_contract`, not
 `config_execution`. The monolithic `digests.config` field is not accepted on schema v3.
@@ -3253,8 +3273,12 @@ Approvals bind to `config_contract`, not
 Provider session replacement (one attempt per `phase_action_id`) runs when Cursor reports a
 missing remote session (`provider_session_not_found`) or when a turn stalls with no
 stream-json stdout within `limits.provider.turn_idle_timeout_seconds` when that limit is
-greater than zero (`provider_turn_stalled`). Replacement exhausted for the current
-`phase_action_id` fails the run with `session_recovery_exhausted`.
+greater than zero (`provider_turn_stalled`), including logical-progress stalls
+(`ProviderTurnProgressStalledError`). Replacement exhausted for the current
+`phase_action_id` fails the run with `session_recovery_exhausted`. Account/provider quota
+exhaustion (`You're out of usage` and equivalent classified wording) is
+`provider_quota_exhausted`: an operational pause that does **not** consume session-replacement
+budget and does not create a replacement session.
 
 Run lifecycle fields on `run.json`: `status` (`running`, `paused`, `completed`, `failed`);
 `outcome` (non-null only when `status` is `completed`); `stop` (structured stop record
@@ -3268,7 +3292,7 @@ state conflicts after a successful turn use `orchestrator_state_conflict` or
 `review_state_conflict`, not `provider_turn_failed`. Provider session teardown failures
 on a running run also use `orchestrator_state_conflict`. Paused stops use `category: operational` with
 `code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
-`provider_turn_failed`, `orchestrator_state_conflict`, `review_state_conflict`,
+`provider_turn_failed`, `provider_quota_exhausted`, `orchestrator_state_conflict`, `review_state_conflict`,
 `focused_review_wait`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment)
 checkpoint); failed stops use `category: invariant` with
 `code` in `state_integrity_failure`, `evidence_integrity_failure`,

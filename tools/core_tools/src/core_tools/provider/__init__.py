@@ -11,6 +11,7 @@ from core_tools.provider.cursor import (
     resolve_provider_cli_model,
 )
 from core_tools.provider.errors import (
+    ProviderActionRequiredError,
     ProviderBinaryNotFoundError,
     ProviderError,
     ProviderSessionError,
@@ -19,6 +20,7 @@ from core_tools.provider.errors import (
     ProviderSessionTerminationError,
     ProviderTurnError,
     ProviderTurnCleanupError,
+    ProviderTurnProgressStalledError,
     ProviderTurnStalledError,
     ProviderTurnStartupError,
     ProviderStreamRecordTooLargeError,
@@ -41,8 +43,10 @@ __all__ = [
     "ProviderSessionMismatchError",
     "ProviderSessionNotFoundError",
     "ProviderSessionTerminationError",
+    "ProviderActionRequiredError",
     "ProviderTurnError",
     "ProviderTurnCleanupError",
+    "ProviderTurnProgressStalledError",
     "ProviderTurnStalledError",
     "ProviderTurnStartupError",
     "ProviderStreamRecordTooLargeError",

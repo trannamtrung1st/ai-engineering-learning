@@ -218,6 +218,28 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def cursor_record_indicates_turn_progress(
+    raw: dict[str, Any],
+    normalized: dict[str, Any] | None = None,
+) -> bool:
+    """Return True when a Cursor record is evidence the turn is advancing."""
+
+    raw_type = str(raw.get("type") or "")
+    if raw_type in {"result", "error"}:
+        return True
+    event = normalized if normalized is not None else normalize_cursor_event(raw)
+    if event is None:
+        return False
+    event_type = str(event.get("type") or "")
+    if event_type in {"assistant", "thinking"}:
+        return bool(str(event.get("text") or "").strip())
+    if event_type == "tool_call":
+        return str(event.get("subtype") or "") in {"started", "completed"}
+    if event_type in {"done", "error"}:
+        return True
+    return False
+
+
 def _enrich_tool_event(normalized: dict[str, Any], raw: dict[str, Any]) -> None:
     request = raw.get("request")
     if not isinstance(request, dict):

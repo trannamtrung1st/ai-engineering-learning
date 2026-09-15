@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.provider.cursor_session_errors import (
-    classify_cursor_session_failure,
+    classify_cursor_failure,
     reclassify_provider_turn_error,
 )
 from core_tools.provider.errors import (
+    ProviderActionRequiredError,
     ProviderBinaryNotFoundError,
     ProviderError,
     ProviderSessionError,
@@ -32,6 +33,7 @@ from core_tools.provider.errors import (
     ProviderSessionTerminationError,
     ProviderTurnCleanupError,
     ProviderTurnError,
+    ProviderTurnProgressStalledError,
     ProviderTurnStalledError,
     ProviderTurnStartupError,
     ProviderStreamRecordTooLargeError,
@@ -39,6 +41,7 @@ from core_tools.provider.errors import (
     ProviderUnsupportedPlatformError,
 )
 from core_tools.provider.events import (
+    cursor_record_indicates_turn_progress,
     format_manifest_prompt,
     format_request_prompt,
     normalize_cursor_event,
@@ -79,6 +82,7 @@ from core_tools.provider.session_janitor import (
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 300.0
+DEFAULT_TURN_PROGRESS_TIMEOUT_SECONDS = 300.0
 DEFAULT_AGENT_START_TIMEOUT_SECONDS = 5.0
 DEFAULT_TURN_TREE_CLEANUP_SECONDS = 2.0
 MAX_STREAM_JSON_RECORD_BYTES = 256 * 1024
@@ -967,6 +971,69 @@ class _SessionSurvival:
 
 
 @dataclass
+class _TurnWatchdogs:
+    """Separate raw-transport idle from meaningful turn progress."""
+
+    idle_timeout: float
+    progress_timeout: float
+    idle_deadline: float | None = None
+    progress_deadline: float | None = None
+
+    def __post_init__(self) -> None:
+        now = time.monotonic()
+        if self.idle_timeout > 0:
+            self.idle_deadline = now + self.idle_timeout
+        if self.progress_timeout > 0:
+            self.progress_deadline = now + self.progress_timeout
+
+    def mark_raw_line(self) -> None:
+        if self.idle_timeout > 0:
+            self.idle_deadline = time.monotonic() + self.idle_timeout
+
+    def mark_progress(self) -> None:
+        if self.progress_timeout > 0:
+            self.progress_deadline = time.monotonic() + self.progress_timeout
+
+    def wait_seconds(self) -> float | None:
+        now = time.monotonic()
+        waits: list[float] = []
+        if self.idle_timeout > 0 and self.idle_deadline is not None:
+            waits.append(max(0.0, self.idle_deadline - now))
+        if self.progress_timeout > 0 and self.progress_deadline is not None:
+            waits.append(max(0.0, self.progress_deadline - now))
+        if not waits:
+            return None
+        return min(waits)
+
+    def expired_error(self, session_id: str | None) -> ProviderTurnError | None:
+        now = time.monotonic()
+        progress_expired = (
+            self.progress_timeout > 0
+            and self.progress_deadline is not None
+            and now >= self.progress_deadline
+        )
+        idle_expired = (
+            self.idle_timeout > 0
+            and self.idle_deadline is not None
+            and now >= self.idle_deadline
+        )
+        if progress_expired:
+            return ProviderTurnProgressStalledError(
+                (
+                    "provider turn produced no meaningful progress for "
+                    f"{self.progress_timeout:g}s"
+                ),
+                session_id=session_id,
+            )
+        if idle_expired:
+            return ProviderTurnStalledError(
+                f"provider turn produced no stream output for {self.idle_timeout:g}s",
+                session_id=session_id,
+            )
+        return None
+
+
+@dataclass
 class _TrackedTurnProc:
     session_id: str
     role: str
@@ -1780,13 +1847,19 @@ class CursorProvider:
                         ProviderTurnStartupError,
                         ProviderTurnCleanupError,
                         ProviderStreamRecordTooLargeError,
+                        ProviderActionRequiredError,
                     ),
                 ):
                     raise exc
                 classified = reclassify_provider_turn_error(exc, session_id=session_id)
-                if isinstance(classified, ProviderSessionNotFoundError):
-                    raise classified from exc
-                if isinstance(classified, ProviderTurnCleanupError):
+                if isinstance(
+                    classified,
+                    (
+                        ProviderSessionNotFoundError,
+                        ProviderActionRequiredError,
+                        ProviderTurnCleanupError,
+                    ),
+                ):
                     raise classified from exc
                 if self._session_turn_aborted(session):
                     raise ProviderTurnError(
@@ -1826,16 +1899,22 @@ class CursorProvider:
         ):
             expected_durable_id = session_id
         self._set_collect_context(session_id, session.role)
+        stream: Iterator[str] | None = None
         try:
             try:
                 stream = self._runner(argv, self._workspace)
             except ProviderTurnError as exc:
                 classified = reclassify_provider_turn_error(exc, session_id=session_id)
-                if isinstance(classified, ProviderSessionNotFoundError):
+                if isinstance(
+                    classified,
+                    (ProviderSessionNotFoundError, ProviderActionRequiredError),
+                ):
                     raise classified from exc
                 raise
 
+            first_durable_session = True
             for line in stream:
+                watchdogs = getattr(self._collect_context, "watchdogs", None)
                 try:
                     raw = json.loads(line)
                 except json.JSONDecodeError as exc:
@@ -1854,9 +1933,12 @@ class CursorProvider:
                     provider_session_id = observed_id
                     expected_durable_id = observed_id
                     session.pinned_durable_id = observed_id
+                    if first_durable_session and watchdogs is not None:
+                        watchdogs.mark_progress()
+                    first_durable_session = False
                 if raw.get("type") == "error":
                     detail = str(raw.get("text") or raw.get("message") or raw)
-                    classified = classify_cursor_session_failure(
+                    classified = classify_cursor_failure(
                         detail,
                         session_id=session_id,
                     )
@@ -1868,15 +1950,27 @@ class CursorProvider:
                     )
                 if raw.get("type") == "result":
                     session.turn_remote_observed = True
+                    if watchdogs is not None:
+                        watchdogs.mark_progress()
                     if raw.get("is_error"):
                         detail = str(raw.get("result") or raw.get("message") or raw)
-                        classified = classify_cursor_session_failure(
+                        classified = classify_cursor_failure(
                             detail,
                             session_id=session_id,
                         )
                         if classified is not None:
                             raise classified
+                        raise ProviderTurnError(
+                            f"Cursor CLI result error: {detail}",
+                            session_id=session_id,
+                        )
                 normalized = normalize_cursor_event(raw)
+                if watchdogs is not None:
+                    if cursor_record_indicates_turn_progress(raw, normalized):
+                        watchdogs.mark_progress()
+                    expired = watchdogs.expired_error(session_id)
+                    if expired is not None:
+                        raise expired
                 if normalized is not None:
                     enriched = enrich_provider_observability_event(
                         normalized,
@@ -1906,6 +2000,12 @@ class CursorProvider:
                     session_id=session_id,
                 )
         finally:
+            closer = getattr(stream, "close", None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception:
+                    pass
             self._clear_collect_context()
 
     def _observe_stream_session_identity(
@@ -2000,6 +2100,18 @@ class CursorProvider:
             return 0.0
         return max(0.0, timeout)
 
+    def _turn_progress_timeout_seconds(self) -> float:
+        provider_limits = (self._config.get("limits") or {}).get("provider") or {}
+        raw = provider_limits.get(
+            "turn_progress_timeout_seconds",
+            DEFAULT_TURN_PROGRESS_TIMEOUT_SECONDS,
+        )
+        try:
+            timeout = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, timeout)
+
     def _agent_start_timeout_seconds(self) -> float:
         provider_limits = (self._config.get("limits") or {}).get("provider") or {}
         raw = provider_limits.get(
@@ -2020,13 +2132,19 @@ class CursorProvider:
         on_idle: Callable[[], None],
         session_id: str | None = None,
         deadline: float | None = None,
+        watchdogs: _TurnWatchdogs | None = None,
     ) -> Iterator[str]:
         while True:
-            remaining = (
-                idle_timeout
-                if deadline is None
-                else max(0.0, deadline - time.monotonic())
-            )
+            if watchdogs is not None:
+                remaining = watchdogs.wait_seconds()
+                if remaining is None:
+                    remaining = idle_timeout if idle_timeout > 0 else 1e9
+            else:
+                remaining = (
+                    idle_timeout
+                    if deadline is None
+                    else max(0.0, deadline - time.monotonic())
+                )
             try:
                 line = stream.read_nonempty_line(remaining)
             except StopIteration:
@@ -2037,12 +2155,18 @@ class CursorProvider:
                     stream.close()
                 except Exception:
                     pass
+                if watchdogs is not None:
+                    error = watchdogs.expired_error(session_id)
+                    if error is not None:
+                        raise error
                 raise ProviderTurnStalledError(
                     f"provider turn produced no stream output for {idle_timeout:g}s",
                     session_id=session_id,
                 )
             yield line
-            if deadline is not None:
+            if watchdogs is not None:
+                watchdogs.mark_raw_line()
+            elif deadline is not None:
                 deadline = time.monotonic() + idle_timeout
 
     @staticmethod
@@ -2053,8 +2177,9 @@ class CursorProvider:
         on_idle: Callable[[], None],
         session_id: str | None = None,
         deadline: float | None = None,
+        watchdogs: _TurnWatchdogs | None = None,
     ) -> Iterator[str]:
-        """Yield stdout lines, raising when no line arrives within *idle_timeout* seconds."""
+        """Yield stdout lines, raising when no line arrives within the watchdog window."""
 
         if isinstance(stream, _SubprocessStdoutIterator):
             yield from CursorProvider._iter_subprocess_stdout_with_idle_timeout(
@@ -2063,6 +2188,7 @@ class CursorProvider:
                 on_idle=on_idle,
                 session_id=session_id,
                 deadline=deadline,
+                watchdogs=watchdogs,
             )
             return
 
@@ -2089,13 +2215,23 @@ class CursorProvider:
             name="cursor-idle-stream",
         )
         thread.start()
+        join_timeout = max(
+            idle_timeout,
+            watchdogs.progress_timeout if watchdogs is not None else 0.0,
+            0.2,
+        )
         try:
             while True:
-                wait = (
-                    idle_timeout
-                    if deadline is None
-                    else max(0.0, deadline - time.monotonic())
-                )
+                if watchdogs is not None:
+                    wait = watchdogs.wait_seconds()
+                    if wait is None:
+                        wait = idle_timeout if idle_timeout > 0 else 1e9
+                else:
+                    wait = (
+                        idle_timeout
+                        if deadline is None
+                        else max(0.0, deadline - time.monotonic())
+                    )
                 try:
                     if wait <= 0:
                         line = line_queue.get_nowait()
@@ -2110,12 +2246,16 @@ class CursorProvider:
                         except Exception:
                             pass
                     stopped.set()
-                    thread.join(timeout=max(idle_timeout, 0.2))
+                    thread.join(timeout=join_timeout)
                     if thread.is_alive():
                         raise ProviderTurnError(
                             "cursor idle-stream producer failed to stop",
                             session_id=session_id,
                         )
+                    if watchdogs is not None:
+                        error = watchdogs.expired_error(session_id)
+                        if error is not None:
+                            raise error
                     raise ProviderTurnStalledError(
                         f"provider turn produced no stream output for {idle_timeout:g}s",
                         session_id=session_id,
@@ -2125,10 +2265,19 @@ class CursorProvider:
                         raise errors[0]
                     break
                 yield line
-                if deadline is not None:
+                if watchdogs is not None:
+                    watchdogs.mark_raw_line()
+                elif deadline is not None:
                     deadline = time.monotonic() + idle_timeout
         finally:
             stopped.set()
+            closer = getattr(stream, "close", None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception:
+                    pass
+            thread.join(timeout=join_timeout)
 
     def _emit_provider_event(self, event: dict[str, Any]) -> None:
         if self._on_provider_event is not None:
@@ -2677,15 +2826,18 @@ class CursorProvider:
 
     def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
         idle_timeout = self._turn_idle_timeout_seconds()
+        progress_timeout = self._turn_progress_timeout_seconds()
 
         def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
             active_proc: list[subprocess.Popen[str] | None] = [None]
             iterator: _SubprocessStdoutIterator | None = None
             stream: Iterator[str] | None = None
+            raw_stream: Iterator[str] | None = None
             teardown_deadline: list[float | None] = [None]
             detect_deadline: float | None = None
             owner_id = uuid.uuid4().hex
             self._collect_context.owner_id = owner_id
+            watchdogs: _TurnWatchdogs | None = None
             turn_env = dict(self._subprocess_env or os.environ)
             turn_env[PROVIDER_OWNER_ENV_VAR] = owner_id
             try:
@@ -2705,6 +2857,7 @@ class CursorProvider:
                         iterator = stream
                         if active_proc[0] is None:
                             active_proc[0] = stream._proc
+                raw_stream = stream
                 if iterator is not None:
                     proc = active_proc[0]
                     if proc is not None:
@@ -2729,6 +2882,12 @@ class CursorProvider:
                         raise
                 if idle_timeout > 0:
                     detect_deadline = time.monotonic() + idle_timeout
+                if idle_timeout > 0 or progress_timeout > 0:
+                    watchdogs = _TurnWatchdogs(
+                        idle_timeout=idle_timeout,
+                        progress_timeout=progress_timeout,
+                    )
+                    self._collect_context.watchdogs = watchdogs
 
                 def on_idle() -> None:
                     proc = active_proc[0]
@@ -2757,7 +2916,7 @@ class CursorProvider:
                         if not live:
                             self._unregister_tracked_turn_proc(proc)
 
-                if idle_timeout > 0:
+                if watchdogs is not None:
                     context = self._get_collect_context()
                     stalled_session_id = context[0] if context is not None else None
                     stream = self._iter_stream_with_idle_timeout(
@@ -2766,6 +2925,7 @@ class CursorProvider:
                         on_idle=on_idle,
                         session_id=stalled_session_id,
                         deadline=detect_deadline,
+                        watchdogs=watchdogs,
                     )
 
                 assert stream is not None
@@ -2832,6 +2992,12 @@ class CursorProvider:
                         if tree_clean:
                             self._unregister_tracked_turn_proc(proc)
                 finally:
+                    closer = getattr(raw_stream, "close", None)
+                    if callable(closer):
+                        try:
+                            closer()
+                        except Exception:
+                            pass
                     if iterator is not None:
                         iterator.close()
 

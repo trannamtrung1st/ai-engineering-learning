@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.provider import Provider
+from core_tools.provider.cursor_session_errors import classify_cursor_failure
 from core_tools.provider.errors import (
     ProviderReplacementIdentityError,
     ProviderSessionNotFoundError,
@@ -1277,11 +1278,25 @@ def _drain_provider_turn(
             event_type = str(event.get("type") or "")
             if event_type == "error":
                 text = event.get("text") or "provider error"
+                classified = classify_cursor_failure(
+                    str(text),
+                    session_id=active_session_id,
+                )
+                if classified is not None:
+                    raise classified
                 raise ProviderRunError(str(text))
             if event_type in {"assistant", "done"}:
                 accumulator.ingest(event)
             if event_type == "done" and event.get("is_error"):
                 provider_failure = str(event.get("text") or "provider turn failed")
+                classified = classify_cursor_failure(
+                    provider_failure,
+                    session_id=active_session_id,
+                )
+                _abort_provider_turn(provider, active_session_id)
+                if classified is not None:
+                    raise classified
+                raise ProviderRunError(provider_failure)
             if sync_session_id is not None:
                 active_session_id = sync_session_id(active_session_id)
                 session_id_holder[0] = active_session_id
