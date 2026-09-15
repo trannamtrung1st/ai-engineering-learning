@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.domain.reviews import ReviewLoop
+from core_tools.persistence import PersistenceError
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.review_input_bundle import (
     ReviewInputBundle,
-    extract_trusted_bootstrap_fields,
     materialize_review_input_bundle,
 )
 from top_down_planning.prompts import render_prompt
@@ -26,7 +26,11 @@ def build_reviewer_bootstrap_request(
 ) -> dict[str, Any]:
     """Build a compact reviewer request that references a review-input bundle."""
 
-    trusted = dict(bundle.bootstrap_fields or extract_trusted_bootstrap_fields(review_package))
+    if not bundle.bootstrap_fields:
+        raise PersistenceError(
+            "review-input bundle is missing trusted bootstrap fields"
+        )
+    trusted = dict(bundle.bootstrap_fields)
     protocol = str(trusted.get("protocol_instructions") or "").rstrip()
     bootstrap_instructions = _format_bootstrap_instructions(bundle)
     if protocol:

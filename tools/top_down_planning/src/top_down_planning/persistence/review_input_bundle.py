@@ -19,6 +19,7 @@ from top_down_planning.persistence.path_ids import validate_store_id
 REVIEW_INPUT_BUNDLE_SCHEMA_VERSION = 1
 REVIEW_INPUTS_DIRNAME = "review-inputs"
 BOOTSTRAP_SIDECAR_NAME = "_bootstrap.json"
+BOOTSTRAP_INPUT_KIND = "bootstrap"
 
 SECRET_KEYS = frozenset(
     {
@@ -197,6 +198,7 @@ def materialize_review_input_bundle(
             attempt_id=attempt_id,
             review_type=review_type,
             stage=stage,
+            target_revision=int(loop.target_revision),
             dest=dest,
             workspace=workspace,
             reused=True,
@@ -233,6 +235,17 @@ def materialize_review_input_bundle(
                     "size_bytes": len(data),
                 }
             )
+        bootstrap_data = _canonical_json_bytes(trusted)
+        exclusive_create_bytes(staging / BOOTSTRAP_SIDECAR_NAME, bootstrap_data)
+        inputs.append(
+            {
+                "kind": BOOTSTRAP_INPUT_KIND,
+                "path": BOOTSTRAP_SIDECAR_NAME,
+                "required": True,
+                "sha256": digest_bytes(bootstrap_data),
+                "size_bytes": len(bootstrap_data),
+            }
+        )
         inputs.sort(key=lambda entry: str(entry["kind"]))
         manifest = {
             "schema_version": REVIEW_INPUT_BUNDLE_SCHEMA_VERSION,
@@ -248,10 +261,6 @@ def materialize_review_input_bundle(
             staging / "manifest.json",
             _canonical_json_bytes(manifest),
         )
-        exclusive_create_bytes(
-            staging / BOOTSTRAP_SIDECAR_NAME,
-            _canonical_json_bytes(trusted),
-        )
         loop_dir.mkdir(parents=True, exist_ok=True)
         try:
             os.rename(staging, dest)
@@ -264,6 +273,7 @@ def materialize_review_input_bundle(
                     attempt_id=attempt_id,
                     review_type=review_type,
                     stage=stage,
+                    target_revision=int(loop.target_revision),
                     dest=dest,
                     workspace=workspace,
                     reused=True,
@@ -278,6 +288,7 @@ def materialize_review_input_bundle(
         attempt_id=attempt_id,
         review_type=review_type,
         stage=stage,
+        target_revision=int(loop.target_revision),
         dest=dest,
         workspace=workspace,
         reused=False,
@@ -291,6 +302,7 @@ def _load_bundle(
     attempt_id: str,
     review_type: str,
     stage: str,
+    target_revision: int,
     dest: Path,
     workspace: Path,
     reused: bool,
@@ -299,13 +311,17 @@ def _load_bundle(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise PersistenceError("review-input manifest must be an object")
+    _verify_manifest_identity(
+        manifest,
+        run_id=run_id,
+        loop_id=loop_id,
+        attempt_id=attempt_id,
+        review_type=review_type,
+        stage=stage,
+        target_revision=target_revision,
+    )
     _verify_bundle_inputs(dest, manifest)
-    sidecar = dest / BOOTSTRAP_SIDECAR_NAME
-    bootstrap_fields: dict[str, Any] = {}
-    if sidecar.is_file():
-        loaded = json.loads(sidecar.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            bootstrap_fields = loaded
+    bootstrap_fields = _load_trusted_bootstrap_fields(dest, manifest)
     return ReviewInputBundle(
         run_id=run_id,
         loop_id=loop_id,
@@ -319,6 +335,64 @@ def _load_bundle(
         reused=reused,
         bootstrap_fields=bootstrap_fields,
     )
+
+
+def _verify_manifest_identity(
+    manifest: dict[str, Any],
+    *,
+    run_id: str,
+    loop_id: str,
+    attempt_id: str,
+    review_type: str,
+    stage: str,
+    target_revision: int,
+) -> None:
+    checks: tuple[tuple[str, Any], ...] = (
+        ("run_id", run_id),
+        ("loop_id", loop_id),
+        ("attempt_id", attempt_id),
+        ("review_type", review_type),
+        ("stage", stage),
+        ("target_revision", int(target_revision)),
+    )
+    for field, expected in checks:
+        actual = manifest.get(field)
+        if field == "target_revision":
+            if actual is None:
+                raise PersistenceError(f"review-input manifest {field} mismatch")
+            if int(actual) != int(expected):
+                raise PersistenceError(f"review-input manifest {field} mismatch")
+            continue
+        if actual is None or str(actual) != str(expected):
+            raise PersistenceError(f"review-input manifest {field} mismatch")
+
+
+def _load_trusted_bootstrap_fields(
+    dest: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, list):
+        raise PersistenceError("review-input manifest is missing inputs")
+    bootstrap_entries = [
+        entry
+        for entry in inputs
+        if isinstance(entry, dict) and entry.get("kind") == BOOTSTRAP_INPUT_KIND
+    ]
+    if len(bootstrap_entries) != 1:
+        raise PersistenceError(
+            "review-input manifest must include exactly one bootstrap entry"
+        )
+    relative = str(bootstrap_entries[0].get("path") or "")
+    if relative != BOOTSTRAP_SIDECAR_NAME:
+        raise PersistenceError("review-input bootstrap path is invalid")
+    sidecar = dest / relative
+    if not sidecar.is_file() or sidecar.is_symlink():
+        raise PersistenceError(f"review-input {BOOTSTRAP_SIDECAR_NAME!r} is missing")
+    loaded = json.loads(sidecar.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise PersistenceError("review-input bootstrap must be an object")
+    return loaded
 
 
 def _verify_bundle_inputs(dest: Path, manifest: dict[str, Any]) -> None:
