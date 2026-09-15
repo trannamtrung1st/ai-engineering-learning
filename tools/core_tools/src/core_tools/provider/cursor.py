@@ -2276,7 +2276,14 @@ class CursorProvider:
             name="cursor-idle-stream",
         )
         thread.start()
-        cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
+        cleanup_deadline: float | None = None
+
+        def ensure_cleanup_deadline() -> float:
+            nonlocal cleanup_deadline
+            if cleanup_deadline is None:
+                cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
+            return cleanup_deadline
+
         try:
             while True:
                 if watchdogs is not None:
@@ -2306,7 +2313,7 @@ class CursorProvider:
                     CursorProvider._join_idle_stream_producer(
                         thread,
                         session_id=session_id,
-                        cleanup_deadline=cleanup_deadline,
+                        cleanup_deadline=ensure_cleanup_deadline(),
                     )
                     if watchdogs is not None:
                         error = watchdogs.expired_error(session_id)
@@ -2340,7 +2347,7 @@ class CursorProvider:
                 CursorProvider._join_idle_stream_producer(
                     thread,
                     session_id=session_id,
-                    cleanup_deadline=cleanup_deadline,
+                    cleanup_deadline=ensure_cleanup_deadline(),
                 )
             except ProviderTurnCleanupError as exc:
                 if cleanup_exc is None:
@@ -2370,6 +2377,8 @@ class CursorProvider:
     def _clear_collect_context(self) -> None:
         self._collect_context.session_id = None
         self._collect_context.role = None
+        if hasattr(self._collect_context, "idle_stream_cleanup_failures"):
+            del self._collect_context.idle_stream_cleanup_failures
 
     def _get_collect_context(self) -> tuple[str, str] | None:
         session_id = getattr(self._collect_context, "session_id", None)

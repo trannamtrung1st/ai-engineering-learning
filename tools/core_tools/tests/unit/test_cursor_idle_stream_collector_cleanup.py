@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -93,6 +94,160 @@ class _TerminalErrorThenBlock:
     def close(self) -> None:
         if self._cooperative:
             self._release.set()
+
+
+class _LongHealthyTurnThenTerminalErrorCooperativeClose:
+    """Emit progress, run longer than cleanup budget, terminal error, then slow close."""
+
+    def __init__(
+        self,
+        *,
+        healthy_seconds: float,
+        close_release_delay: float,
+        release: threading.Event,
+    ) -> None:
+        self._healthy_seconds = healthy_seconds
+        self._close_release_delay = close_release_delay
+        self._release = release
+        self._close_requested = threading.Event()
+        self._step = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        if self._step == 0:
+            self._step = 1
+            return json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "text", "text": "working"}]},
+                    "session_id": "chat-long",
+                }
+            )
+        if self._step == 1:
+            time.sleep(self._healthy_seconds)
+            self._step = 2
+            return json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "error",
+                    "is_error": True,
+                    "session_id": "chat-long",
+                    "result": "turn failed after long run",
+                }
+            )
+        self._close_requested.wait(timeout=60)
+        time.sleep(self._close_release_delay)
+        self._release.set()
+        raise StopIteration
+
+    def close(self) -> None:
+        self._close_requested.set()
+
+
+def test_long_turn_does_not_consume_cleanup_budget_before_teardown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup budget must start at teardown, not when the collector thread starts."""
+    test_cleanup_budget = 0.05
+    healthy_seconds = test_cleanup_budget * 3
+    close_release_delay = test_cleanup_budget * 0.6
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    release = threading.Event()
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _LongHealthyTurnThenTerminalErrorCooperativeClose(
+            healthy_seconds=healthy_seconds,
+            close_release_delay=close_release_delay,
+            release=release,
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    with pytest.raises(ProviderTurnError, match="turn failed after long run") as exc_info:
+        list(provider.stream_events(session_id))
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert not any("cleanup" in str(note).lower() for note in notes)
+    assert release.wait(timeout=1.0)
+    assert _live_idle_stream_collectors() == []
+
+
+def test_clear_collect_context_removes_idle_stream_cleanup_failures(
+    tmp_path: Path,
+) -> None:
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: iter(()),
+    )
+    provider._collect_context.idle_stream_cleanup_failures = [
+        ProviderTurnCleanupError("stale", session_id="stale-session"),
+    ]
+    provider._clear_collect_context()
+    assert not hasattr(provider._collect_context, "idle_stream_cleanup_failures")
+
+
+def test_teardown_reuses_single_cleanup_deadline_for_idle_stall_joins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Idle-stall teardown must not mint a fresh budget for each join."""
+    test_cleanup_budget = 0.05
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    deadline_calls: list[float] = []
+    original = CursorProvider._turn_tree_cleanup_deadline
+
+    def counting_deadline(start: float | None = None) -> float:
+        deadline_calls.append(time.monotonic())
+        return original(start)
+
+    release = threading.Event()
+
+    class _HeartbeatThenIgnoreClose:
+        def __init__(self) -> None:
+            self._count = 0
+
+        def __iter__(self):
+            return self
+
+        def __next__(self) -> str:
+            self._count += 1
+            if self._count <= 2:
+                return json.dumps(
+                    {"type": "system", "subtype": "keepalive", "session_id": "chat-idle"}
+                )
+            release.wait(timeout=60)
+            raise StopIteration
+
+        def close(self) -> None:
+            return
+
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _HeartbeatThenIgnoreClose(),
+        turn_idle_timeout_seconds=0.05,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    with patch.object(
+        CursorProvider,
+        "_turn_tree_cleanup_deadline",
+        side_effect=counting_deadline,
+    ):
+        with pytest.raises((ProviderTurnStalledError, ProviderTurnCleanupError)):
+            list(provider.stream_events(session_id))
+    assert len(deadline_calls) == 1
+    release.set()
+    for thread in _live_idle_stream_collectors():
+        thread.join(timeout=1.0)
 
 
 def test_cooperative_close_releases_idle_stream_collector_promptly(tmp_path: Path) -> None:
