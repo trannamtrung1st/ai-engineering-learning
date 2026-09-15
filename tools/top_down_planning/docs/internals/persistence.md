@@ -17,6 +17,7 @@ Under `<runs-root>/<run-id>/` (run id `run-YYYYMMDDTHHMMSS-<6hex>`):
 | `resolved-config.yaml` | Materialized resolved config |
 | `invocation.json` | CLI invocation metadata |
 | `reviews/` | Review loop records |
+| `review-inputs/<loop-id>/<attempt-id>/` | Immutable reviewer input snapshots (manifest + hashed material files) |
 | `artifacts/<snapshot-uuid>/` | Immutable evidence snapshots |
 | `capabilities/` + `capability/` | Capability records and current token file |
 | `agent-requests/` | Non-canonical agent payloads |
@@ -25,6 +26,20 @@ Under `<runs-root>/<run-id>/` (run id `run-YYYYMMDDTHHMMSS-<6hex>`):
 Run `schema_version` is currently 3. Unsupported or missing version fails load; there is no automatic migrator. Config document `version` is unrelated.
 
 The run directory and listed children must not be symlinks. Paths must stay under the store root and the run directory (`path_containment`).
+
+## Review-input bundles
+
+Initial reviewer sessions do not serialize plan/production/evidence into the provider prompt. TDP materializes those payloads under `review-inputs/<loop-id>/<attempt-id>/` with `manifest.json` (schema version, kinds, relative paths, sha256, byte sizes) and hashed JSON files (`plan.json`, `production.json`, `evidence.json`, and other large fields). Capability tokens are never written into a bundle.
+
+Attempt identity is `<stage>-rev<target_revision>-cycle<revision_cycles>`. Pause/resume of the same attempt reuses the existing snapshot; a new stage/revision/cycle writes a new directory. Bundles are retained with the run as audit evidence and are not deleted while the loop can resume. Incomplete writes use `.stage-review-input-*` staging directories (same doctor leftover class as other `.stage-*` dirs).
+
+Operators debugging a failed review can open:
+
+```text
+<tdp-runs-dir>/<run-id>/review-inputs/<loop-id>/<attempt-id>/manifest.json
+```
+
+The reviewer bootstrap prompt points at that manifest with a workspace-relative path.
 
 ## Revisions and compare-and-swap
 

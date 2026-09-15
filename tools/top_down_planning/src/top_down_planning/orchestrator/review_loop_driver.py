@@ -79,6 +79,7 @@ from top_down_planning.orchestrator.reviewer_session import (
     reviewer_loop_provider_session_id,
     resolve_reviewer_session_for_recheck,
 )
+from top_down_planning.orchestrator.reviewer_bootstrap import reviewer_initial_provider_request
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
     ProviderRunError,
@@ -1079,6 +1080,12 @@ class ReviewLoopDriver:
         config = self._store.load_resolved_config(self._run_id)
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
         package = self._adapter.build_review_package(run, config, loop)
+        bootstrap = reviewer_initial_provider_request(
+            self._store,
+            self._run_id,
+            loop=loop,
+            review_package=package,
+        )
         role_context = self._reviewer_activity_context(config, run, loop)
         phase = self._adapter.phase_for_session(loop, run)
         try:
@@ -1093,7 +1100,7 @@ class ReviewLoopDriver:
                     phase,
                     self._append_event,
                     role_context.model,
-                    package,
+                    bootstrap,
                 ),
             )
         except SessionRecoveryPaused:

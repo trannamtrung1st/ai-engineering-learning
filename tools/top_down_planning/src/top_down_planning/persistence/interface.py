@@ -29,6 +29,9 @@ class RunStore(Protocol):
     def artifacts_dir(self, run_id: str) -> Path:
         """Return the contained artifacts directory for a run."""
 
+    def review_inputs_dir(self, run_id: str) -> Path:
+        """Return the contained review-input bundle directory for a run."""
+
     def active_capability_token_path(self, run_id: str) -> Path:
         """Return the contained active capability token path for a run."""
 

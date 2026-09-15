@@ -12,6 +12,7 @@ from top_down_planning.domain.session_bindings import (
     SessionBinding,
     resumable_binding_provider_session_id,
 )
+from top_down_planning.orchestrator.reviewer_bootstrap import reviewer_initial_provider_request
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
@@ -274,9 +275,15 @@ def begin_reviewer_review(
 
     loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
     preexisting = active_provider_session_ids(provider)
+    bootstrap = reviewer_initial_provider_request(
+        store,
+        run_id,
+        loop=loop,
+        review_package=review_package,
+    )
     session_id = start_reviewer_review_session(
         provider,
-        review_package,
+        bootstrap,
         model=model,
     )
     try:
@@ -327,6 +334,13 @@ def resume_reviewer_session_with_package(
 ) -> str:
     """Deliver a full review package on an existing reviewer session (cold resume)."""
 
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    bootstrap = reviewer_initial_provider_request(
+        store,
+        run_id,
+        loop=loop,
+        review_package=review_package,
+    )
     return deliver_reviewer_turn(
         provider,
         store,
@@ -334,7 +348,7 @@ def resume_reviewer_session_with_package(
         session_id=session_id,
         loop_id=loop_id,
         phase=phase,
-        request=review_package,
+        request=bootstrap,
         model=model,
     )
 

@@ -15,7 +15,7 @@ Provider sessions are stored as structured bindings on `run.sessions`:
 
 Each binding carries `session_instance_id`, `generation`, `provider_session_id`, `state`, `role`, and `kind` (`primary` or `reviewer`). States: `unbound`, `starting`, `bound`.
 
-The Cursor adapter registers in-memory sessions under transient `cursor-pending-*` handles until stream-json emits a durable `session_id`. Orchestration persists durable ids during the turn (`state: bound`). **Transient pending handles are never passed to Cursor `--resume`.** A Cursor turn that completes without a durable `session_id` fails.
+The Cursor adapter registers in-memory sessions under transient `cursor-pending-*` handles until stream-json emits a durable `session_id`. Orchestration persists durable ids during the turn (`state: bound`). **Transient pending handles are never passed to Cursor `--resume`.** A Cursor turn that completes with **no usable stream records and no durable session id** raises `ProviderTurnStartupError` (not retried by `limits.provider.max_retries_per_call`). A turn that emits stream records but still has no durable id fails as `ProviderTurnError`. Startup/retry diagnostics include prompt bytes, argv count/bytes, new-session vs resume, model, and role/kind — never the prompt text.
 
 Resume of a torn-down in-memory adapter rebinds the persisted durable id through Cursor `--resume` when the next phase step starts.
 
@@ -35,7 +35,7 @@ Supporting context uses a **spec vs snapshot** split (`digests.context_spec` vs 
 
 ## Activity and phase boundaries
 
-The orchestrator binds **one** primary planner, producer, or reviewer session per phase step and issues a capability token for that subprocess. Stream-event sync **reuses the live exported token** (`read_exported_live_capability_token`); it must not mint a new token per streamed event. Reissue only when the exported token file is gone or no longer live for that binding (`tests/unit/test_reviewer_capability_stream_rebind.py`). Reviewer sessions allocate a provider session id, bind the token, then deliver the review package before `review respond`. Tokens are revoked when the turn, loop, or phase ends. Agents do not pass `--role`. [Authorization](../decisions/agent-authorization.md).
+The orchestrator binds **one** primary planner, producer, or reviewer session per phase step and issues a capability token for that subprocess. Stream-event sync **reuses the live exported token** (`read_exported_live_capability_token`); it must not mint a new token per streamed event. Reissue only when the exported token file is gone or no longer live for that binding (`tests/unit/test_reviewer_capability_stream_rebind.py`). Reviewer sessions allocate a provider session id, bind the token, then deliver a compact bootstrap that references the review-input bundle before `review respond`. Tokens are revoked when the turn, loop, or phase ends. Agents do not pass `--role`. [Authorization](../decisions/agent-authorization.md).
 
 Producer batch and completion-claim boundaries abort the in-flight provider turn, wait until the collector settles, then queue the next turn on the same session. Reviewer `respond` releases the bounded reviewer session after settle. Owner `record-actions` closes advisory turns.
 

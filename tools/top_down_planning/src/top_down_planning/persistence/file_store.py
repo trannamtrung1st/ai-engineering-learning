@@ -1119,6 +1119,13 @@ class FileRunStore:
         run_dir = self.run_dir(run_id)
         return self._assert_run_contained(run_dir, run_dir / "artifacts")
 
+    def review_inputs_dir(self, run_id: str) -> Path:
+        run_dir = self.run_dir(run_id)
+        path = run_dir / "review-inputs"
+        if path.is_symlink():
+            raise PersistenceError("run path review-inputs must not be a symlink")
+        return self._assert_run_contained(run_dir, path)
+
     def active_capability_token_path(self, run_id: str) -> Path:
         run_dir = self.run_dir(run_id)
         capability_dir = run_dir / "capability"

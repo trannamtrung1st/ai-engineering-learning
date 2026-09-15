@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class ProviderError(Exception):
     """Base error for provider adapter failures."""
@@ -60,7 +62,21 @@ class ProviderSessionMismatchError(ProviderSessionError, ProviderTurnError):
 
 
 class ProviderTurnStartupError(ProviderTurnError):
-    """The provider agent child was not spawned within the start deadline."""
+    """The provider agent failed to start a usable turn.
+
+    Covers spawn deadline misses and completed processes that emitted no
+    usable stream records and no durable session id.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, session_id=session_id)
+        self.diagnostics = dict(diagnostics or {})
 
 
 class ProviderTurnStalledError(ProviderTurnError):

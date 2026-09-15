@@ -20,6 +20,7 @@ _RUN_SCOPED_SYMLINK_CHILDREN = frozenset(
         "capabilities",
         "capability",
         "agent-requests",
+        "review-inputs",
         "events.jsonl",
     }
 )

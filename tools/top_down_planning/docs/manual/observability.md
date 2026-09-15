@@ -43,7 +43,7 @@ Progress stays on stderr. The command payload is on stdout (pipe to `jq` if you 
 tdp resume --run <run-id> --config cfg.yaml --agent-transcript
 ```
 
-`--agent-transcript` persists a redacted provider transcript to `agent-transcript.jsonl` under the run directory. It is independent of `--log-level` / `--no-agent-text`. Default is off (from config).
+`--agent-transcript` persists a redacted provider transcript to `agent-transcript.jsonl` under the run directory. It is independent of `--log-level` / `--no-agent-text`. Default is off (from config). Cursor retry and zero-output startup error events include `prompt_bytes`, `argv_count`, and `argv_bytes` without prompt contents.
 
 ## Notifications
 

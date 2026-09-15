@@ -73,7 +73,7 @@ Examples validate against schemas. Copy structure from an example and adapt ids 
 The orchestrator binds one primary planner, producer, or reviewer session per phase.
 
 - Mutating `tdp agent` commands read the session capability token from `TDP_CAPABILITY_TOKEN_FILE` on the provider subprocess that runs the turn.
-- Reviewer sessions allocate a provider session id, bind the token, then deliver the review package (or a mandatory `finding_verification` recheck) before the agent may call `tdp agent review respond`.
+- Reviewer sessions allocate a provider session id, bind the token, then deliver a compact bootstrap that references the review-input bundle (or a mandatory `finding_verification` recheck) before the agent may call `tdp agent review respond`.
 - Authorization checks phase, allowed operations, the bound provider session, and (for reviewers) the review loop.
 - Capability records store only a `secret_hash`; tokens are revoked when turns, loops, or phases end.
 - Agents do not pass `--role` on the CLI.

@@ -17,6 +17,14 @@ Focused loops use `approved` / `changes_requested` / `blocked` as canonical term
 
 Whole-plan and focused-plan reviewer packages embed a plan snapshot; refresh with `tdp agent plan snapshot --view active` if the plan may have changed.
 
+## File-backed reviewer inputs
+
+Initial reviewer sessions (whole-plan, whole-output, focused, and replacement sessions after recovery) receive a **compact bootstrap prompt**: trusted role/protocol/`tdp agent review respond` instructions plus a workspace-relative path to an immutable review-input bundle. Plan, production, evidence, and other size-scaling state live in the bundle, not in provider argv.
+
+Small follow-up turns on an already-bound reviewer session (missing-respond nudges, verification rechecks on the same session) may still send a compact inline request.
+
+The bundle is a TDP persistence contract, not a Cursor-specific workaround. Another provider can receive the same bootstrap/manifest reference. Snapshot reuse vs new attempt: [persistence](persistence.md#review-input-bundles).
+
 ## Mandatory stages
 
 On `whole_plan` / `whole_output`:

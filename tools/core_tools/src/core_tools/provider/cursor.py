@@ -890,6 +890,31 @@ def enrich_provider_observability_event(
     return enriched
 
 
+def cursor_turn_diagnostics(
+    argv: list[str],
+    *,
+    prompt: str,
+    new_session: bool,
+    model: str | None,
+    role: str,
+    kind: str,
+) -> dict[str, Any]:
+    """Return prompt/argv size diagnostics without prompt contents."""
+
+    prompt_bytes = len(prompt.encode("utf-8"))
+    encoded = [part.encode("utf-8") for part in argv]
+    argv_bytes = sum(len(part) for part in encoded) + max(0, len(encoded) - 1)
+    return {
+        "prompt_bytes": prompt_bytes,
+        "argv_count": len(argv),
+        "argv_bytes": argv_bytes,
+        "new_session": bool(new_session),
+        "model": format_provider_model_name(model),
+        "role": role,
+        "kind": kind,
+    }
+
+
 def build_agent_argv(
     config: dict[str, Any],
     *,
@@ -936,6 +961,7 @@ class _CursorSession:
     model: str | None
     pending_events: deque[dict[str, Any]] = field(default_factory=deque)
     pending_argv: list[str] | None = None
+    turn_diagnostics: dict[str, Any] = field(default_factory=dict)
     turn_queued: bool = False
     turn_running: bool = False
     turn_complete: bool = False
@@ -1662,6 +1688,14 @@ class CursorProvider:
             prompt=prompt,
             model=session_model,
         )
+        diagnostics = cursor_turn_diagnostics(
+            argv,
+            prompt=prompt,
+            new_session=resume_session_id is None,
+            model=session_model,
+            role=role,
+            kind=kind,
+        )
         with self._session_registry_lock:
             if resume_session_id is not None:
                 session_id = resume_session_id
@@ -1674,6 +1708,7 @@ class CursorProvider:
                 manifest=dict(manifest),
                 model=session_model,
                 pending_argv=argv,
+                turn_diagnostics=diagnostics,
                 turn_queued=True,
             )
         return session_id
@@ -1737,6 +1772,14 @@ class CursorProvider:
                 )
             session.pending_events.clear()
             session.pending_argv = argv
+            session.turn_diagnostics = cursor_turn_diagnostics(
+                argv,
+                prompt=prompt,
+                new_session=False,
+                model=session.model,
+                role=session.role,
+                kind=session.kind,
+            )
             session.turn_queued = True
             session.turn_running = False
             session.turn_complete = False
@@ -1772,6 +1815,11 @@ class CursorProvider:
             self._collect_turn_once(session_id, session, argv)
         except ProviderSessionNotFoundError as exc:
             with session.condition:
+                session.turn_error = exc
+        except ProviderTurnStartupError as exc:
+            with session.condition:
+                if session.turn_aborted:
+                    return
                 session.turn_error = exc
         except ProviderTurnStalledError as exc:
             with session.condition:
@@ -1870,14 +1918,16 @@ class CursorProvider:
                     raise classified from exc
                 last_error = classified
                 if attempt < max_retries:
+                    retry_event = {
+                        "type": "retry",
+                        "text": str(exc),
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                    }
+                    retry_event.update(session.turn_diagnostics)
                     self._emit_provider_event(
                         enrich_provider_observability_event(
-                            {
-                                "type": "retry",
-                                "text": str(exc),
-                                "attempt": attempt + 1,
-                                "max_retries": max_retries,
-                            },
+                            retry_event,
                             session_id=session_id,
                         )
                     )
@@ -1914,6 +1964,7 @@ class CursorProvider:
                 raise
 
             first_durable_session = True
+            usable_records = 0
             for line in stream:
                 watchdogs = getattr(self._collect_context, "watchdogs", None)
                 try:
@@ -1924,6 +1975,7 @@ class CursorProvider:
                     ) from exc
                 if not isinstance(raw, dict):
                     continue
+                usable_records += 1
                 session_id, observed_id = self._observe_stream_session_identity(
                     session,
                     session_id,
@@ -1990,6 +2042,29 @@ class CursorProvider:
             if provider_session_id is None or provider_session_id.startswith(
                 _CURSOR_TRANSIENT_SESSION_PREFIX
             ):
+                diagnostics = dict(session.turn_diagnostics)
+                diagnostics["zero_output"] = usable_records == 0
+                diagnostics["exit_status"] = getattr(stream, "returncode", None)
+                if usable_records == 0 and not session.turn_remote_observed:
+                    error = ProviderTurnStartupError(
+                        (
+                            "Cursor CLI turn completed with no stream output "
+                            "and no durable provider session id"
+                        ),
+                        session_id=session_id,
+                        diagnostics=diagnostics,
+                    )
+                    self._emit_provider_event(
+                        enrich_provider_observability_event(
+                            {
+                                "type": "error",
+                                "text": str(error),
+                                **diagnostics,
+                            },
+                            session_id=session_id,
+                        )
+                    )
+                    raise error
                 raise ProviderTurnError(
                     "Cursor CLI turn completed without a durable provider session id",
                     session_id=session_id,
