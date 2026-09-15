@@ -316,11 +316,21 @@ def check_first_run_safety(package_root: Path) -> list[str]:
 def check_known_defaults(package_root: Path) -> list[str]:
     errors: list[str] = []
     expected_idle = DEFAULT_CONFIG["limits"]["provider"]["turn_idle_timeout_seconds"]
+    expected_progress = DEFAULT_CONFIG["limits"]["provider"]["turn_progress_timeout_seconds"]
     example = (package_root / CANONICAL_EXAMPLE_REL).read_text(encoding="utf-8")
     needle = f"turn_idle_timeout_seconds: {int(expected_idle)}"
     if needle not in example and f"turn_idle_timeout_seconds: {expected_idle}" not in example:
         errors.append(
             f"{CANONICAL_EXAMPLE_REL}: idle timeout must match DEFAULT_CONFIG ({expected_idle})"
+        )
+    progress_needle = f"turn_progress_timeout_seconds: {int(expected_progress)}"
+    if (
+        progress_needle not in example
+        and f"turn_progress_timeout_seconds: {expected_progress}" not in example
+    ):
+        errors.append(
+            f"{CANONICAL_EXAMPLE_REL}: progress timeout must match DEFAULT_CONFIG "
+            f"({expected_progress})"
         )
     errors.extend(check_example_runs_dir_comment(example))
     schema = show_schema("config")

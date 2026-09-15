@@ -9,7 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.cursor import (
+    DEFAULT_TURN_TREE_CLEANUP_SECONDS,
+    CursorProvider,
+)
 from core_tools.provider.errors import (
     ProviderActionRequiredError,
     ProviderTurnError,
@@ -258,6 +261,56 @@ def test_terminal_quota_result_is_error_does_not_wait_for_eof(tmp_path: Path) ->
     assert time.monotonic() - started_at < 1.0
     assert _live_named("cursor-idle-stream") == []
     closed.set()
+
+
+def test_idle_stream_teardown_does_not_wait_watchdog_timeouts(tmp_path: Path) -> None:
+    """Collector cleanup is bounded by process-tree cleanup, not idle/progress windows."""
+
+    release = threading.Event()
+
+    class _ErrorThenIgnoreClose:
+        def __init__(self) -> None:
+            self._emitted = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self) -> str:
+            if not self._emitted:
+                self._emitted = True
+                return json.dumps(
+                    {
+                        "type": "result",
+                        "subtype": "error",
+                        "is_error": True,
+                        "session_id": "chat-hang",
+                        "result": "provider boom",
+                    }
+                )
+            release.wait(timeout=60)
+            raise StopIteration
+
+        def close(self) -> None:
+            return
+
+    watchdog = 4.0
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _ErrorThenIgnoreClose(),
+        turn_idle_timeout_seconds=watchdog,
+        turn_progress_timeout_seconds=watchdog,
+        max_retries_per_call=0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    started_at = time.monotonic()
+    try:
+        with pytest.raises(ProviderTurnError, match="provider boom"):
+            list(provider.stream_events(session_id))
+        elapsed = time.monotonic() - started_at
+        assert elapsed < DEFAULT_TURN_TREE_CLEANUP_SECONDS + 0.75
+        assert elapsed < watchdog - 0.5
+    finally:
+        release.set()
 
 
 def test_progress_timeout_zero_is_explicit_opt_out_when_idle_remains(

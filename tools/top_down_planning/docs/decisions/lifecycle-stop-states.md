@@ -22,6 +22,7 @@ A run’s durability is `status` plus, when stopped, either a structured `stop` 
 ## Verified consequences
 
 - `limit_exhausted` is an **operational** pause (`PAUSED_STOP_CODES`), not `failed`.
+- `provider_quota_exhausted` is the same kind of operational pause: classified account/provider quota exhaustion. Resume after capacity is restored; do not replace the provider session.
 - `session_recovery_exhausted` is an **invariant** failure (`FAILED_STOP_CODES`).
 - `continuation_ok_from_run` is **continuation-command success**: `running` → `true`; `paused`/`failed` → `false`; `completed` → `true` only for `accepted`. Terminal quality success is still `completed` + `accepted`.
 - Quality `blocked` / `rejected` are **completion outcomes**, not `status=failed`.

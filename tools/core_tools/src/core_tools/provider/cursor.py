@@ -2215,10 +2215,13 @@ class CursorProvider:
             name="cursor-idle-stream",
         )
         thread.start()
-        join_timeout = max(
-            idle_timeout,
-            watchdogs.progress_timeout if watchdogs is not None else 0.0,
-            0.2,
+        join_timeout = min(
+            max(
+                idle_timeout,
+                watchdogs.progress_timeout if watchdogs is not None else 0.0,
+                0.2,
+            ),
+            DEFAULT_TURN_TREE_CLEANUP_SECONDS,
         )
         try:
             while True:

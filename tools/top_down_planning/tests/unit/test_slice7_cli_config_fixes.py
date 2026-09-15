@@ -798,6 +798,7 @@ def test_provider_idle_timeout_default_matches_documented_contract() -> None:
         encoding="utf-8"
     )
     assert "turn_idle_timeout_seconds: 300" in example
+    assert "turn_progress_timeout_seconds: 300" in example
     readme = (package_root / "README.md").read_text(encoding="utf-8")
     assert "default `0`, disabled" not in readme
     assert "default `300`" in readme or "default 300" in readme
@@ -805,6 +806,7 @@ def test_provider_idle_timeout_default_matches_documented_contract() -> None:
         package_root / "docs" / "manual" / "configuration.md"
     ).read_text(encoding="utf-8")
     assert "turn_idle_timeout_seconds` (default `300`" in configuration
+    assert "turn_progress_timeout_seconds` (default `300`" in configuration
 
 
 def test_stream_json_commands_emit_one_json_document() -> None:
