@@ -53,6 +53,7 @@ from tests.helpers import (
     plan_root_item,
     prepare_loop_for_scope_review_respond,
     record_finding_actions,
+    record_mandatory_owner_revision_complete,
     respond_review,
     save_review_payload,
     seed_mandatory_interrupted_owner_revision_loop,
@@ -188,6 +189,40 @@ def _minimal_plan() -> Plan:
             items={"item-root": plan_root_item()},
         )
     )
+
+
+def _revise_plan_and_complete_owner(
+    store: FileRunStore,
+    run_id: str,
+    loop_id: str,
+    *,
+    base_revision: int,
+    outcome: str,
+) -> Any:
+    def mutate() -> None:
+        apply_plan(
+            store,
+            run_id,
+            base_revision=base_revision,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {"outcome": outcome},
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        )()
+        record_mandatory_owner_revision_complete(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=WHOLE_PLAN_REVIEW,
+            role="planner",
+            changed_refs=["item-root"],
+        )
+
+    return mutate
 
 
 def _create_driver_run(
@@ -443,18 +478,12 @@ def test_driver_revision_limit_pauses_run(tmp_path: Path) -> None:
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome.",
         ),
     )
     def _needs_revision_respond() -> None:
@@ -544,18 +573,12 @@ def test_driver_resumes_pending_owner_revision_after_revision_limit_extension(
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome.",
         ),
     )
 
@@ -636,18 +659,12 @@ def test_driver_resumes_pending_owner_revision_after_revision_limit_extension(
 
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=1,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome with tighter wording."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome with tighter wording.",
         ),
     )
 
@@ -795,18 +812,12 @@ def test_driver_verified_path_enters_scope_review_before_final_approval(
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome.",
         ),
     )
 
@@ -996,18 +1007,12 @@ def test_driver_verification_needs_revision_enters_owner_cycle(
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome.",
         ),
     )
 
@@ -1043,18 +1048,12 @@ def test_driver_verification_needs_revision_enters_owner_cycle(
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=1,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Fully improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Fully improved outcome.",
         ),
     )
     provider.script_turn(done_events(text="turn complete"))
@@ -1130,18 +1129,12 @@ def test_driver_scope_review_round_limit_pauses(tmp_path: Path) -> None:
     provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_found_respond)
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome.",
         ),
     )
 
@@ -1961,18 +1954,12 @@ def test_driver_interrupted_owner_revision_resumes_recheck(tmp_path: Path) -> No
 
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Improved outcome."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Improved outcome.",
         ),
     )
 
@@ -2115,18 +2102,12 @@ def test_driver_limit_extension_5_to_8_charges_revision_cycle_six(
 
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=_revise_plan_and_complete_owner(
             store,
             run_id,
+            loop_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-root",
-                    "patch": {"outcome": "Cycle six revision."},
-                }
-            ],
-            phase=WHOLE_PLAN_REVIEW,
+            outcome="Cycle six revision.",
         ),
     )
 

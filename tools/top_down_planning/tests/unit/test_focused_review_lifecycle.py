@@ -30,6 +30,7 @@ from tests.helpers import (
     done_events,
     grant_capability,
     mandatory_output_digest,
+    record_finding_actions,
     request_focused_review,
     respond_review,
 )
@@ -1034,6 +1035,26 @@ def test_focused_output_revision_recheck_supersedes_blocker_and_continues(
     digest_b = mandatory_output_digest(store, run_id)
     assert revision_b != revision_a
     assert digest_b != digest_a
+    loop_payload = store.load_review(run_id, loop_id)
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+            "finding_actions": [
+                {
+                    "finding_id": "finding-01",
+                    "action": "fix",
+                    "actor_role": "producer",
+                    "rationale": "Added a revised artifact.",
+                }
+            ],
+        },
+        role="producer",
+        phase=PRODUCTION,
+        loop_id=loop_id,
+    )()
 
     def _verify_revised_artifact() -> None:
         loop = store.load_review(run_id, loop_id)

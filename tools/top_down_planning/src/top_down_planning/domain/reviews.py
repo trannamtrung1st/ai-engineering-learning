@@ -1265,6 +1265,31 @@ def required_open_findings(
     ]
 
 
+def required_findings_missing_owner_response(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> list[ReviewFinding]:
+    """Required open findings lacking a fix or challenge for the active finding set."""
+
+    effective = effective_owner_actions(
+        finding_actions,
+        finding_set_id=finding_set_id,
+    )
+    responded = {
+        finding_id
+        for finding_id, action in effective.items()
+        if action.action in REQUIRED_FINDING_OWNER_ACTIONS
+    }
+    return [
+        finding
+        for finding in required_open_findings(findings, threshold)
+        if finding.id not in responded
+    ]
+
+
 def optional_open_findings(
     findings: Sequence[ReviewFinding],
     threshold: ReviewSeverity,
@@ -1635,8 +1660,6 @@ def pending_interrupted_owner_revision(
     if loop.lifecycle_status != "revision_in_progress":
         return False
     if loop.status != "pending":
-        return False
-    if current_revision > loop.target_revision:
         return False
     return True
 

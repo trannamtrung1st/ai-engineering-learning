@@ -1536,6 +1536,20 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 ),
             },
             "intent": {"type": "string"},
+            "completion": {
+                "type": "object",
+                "description": (
+                    "Optional structured replacement completion claim for "
+                    "evidence_revision apply. TDP stamps plan_revision and the "
+                    "resulting output_revision. Omit to clear the previous claim."
+                ),
+                "required": ["goal_met", "summary"],
+                "properties": {
+                    "goal_met": {"type": "boolean"},
+                    "summary": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
         },
         "additionalProperties": False,
     },
@@ -2191,6 +2205,11 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                 }
             ],
             "summary": "Evidence revision for whole-output review finding.",
+            "goal_assessment": "Output goal is fully met after revision.",
+            "completion": {
+                "goal_met": True,
+                "summary": "Revised evidence satisfies the output goal.",
+            },
         },
     },
     "evidence-revision-focused": {
@@ -3297,7 +3316,7 @@ state conflicts after a successful turn use `orchestrator_state_conflict` or
 on a running run also use `orchestrator_state_conflict`. Paused stops use `category: operational` with
 `code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
 `provider_turn_failed`, `provider_quota_exhausted`, `orchestrator_state_conflict`, `review_state_conflict`,
-`focused_review_wait`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment)
+`focused_review_wait`, `completion_claim_required`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment)
 checkpoint); failed stops use `category: invariant` with
 `code` in `state_integrity_failure`, `evidence_integrity_failure`,
 `unsupported_phase_state`, `orchestrator_invariant_failure`, or

@@ -66,7 +66,7 @@ def test_needs_primary_revision_resume_detects_interrupted_cycle() -> None:
     loop = _loop()
 
     assert needs_primary_revision_resume(loop, current_revision=4) is True
-    assert needs_primary_revision_resume(loop, current_revision=5) is False
+    assert needs_primary_revision_resume(loop, current_revision=5) is True
     assert needs_primary_revision_resume(_loop(status="changes_requested"), current_revision=4) is False
     assert needs_primary_revision_resume(_loop(revision_cycles=0), current_revision=4) is False
 

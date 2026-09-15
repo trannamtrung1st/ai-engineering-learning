@@ -74,7 +74,7 @@ from top_down_planning.orchestrator.reviewer_session import (
     build_reviewer_tool_instructions,
     reviewer_loop_provider_session_id,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import CompletionClaimRequired, ProviderRunError
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     build_producer_turn_recovery,
@@ -435,13 +435,15 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
         production = self._store.load_production(self._run_id)
         claim = production.get("completion_claim")
         if not isinstance(claim, dict):
-            raise ProviderRunError(
-                "whole-output review requires a production completion claim"
+            raise CompletionClaimRequired(
+                "whole-output review requires a production completion claim",
+                output_revision=int(production["output_revision"]),
             )
         if claim.get("goal_met") is not True:
-            raise ProviderRunError(
+            raise CompletionClaimRequired(
                 "whole-output review requires a completion claim with goal_met=true; "
-                f"got status={claim.get('status')!r} goal_met={claim.get('goal_met')!r}"
+                f"got status={claim.get('status')!r} goal_met={claim.get('goal_met')!r}",
+                output_revision=int(production["output_revision"]),
             )
 
     def _require_plan_approval(self) -> None:

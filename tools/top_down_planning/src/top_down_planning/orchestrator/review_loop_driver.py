@@ -81,6 +81,7 @@ from top_down_planning.orchestrator.reviewer_session import (
 )
 from top_down_planning.orchestrator.reviewer_bootstrap import reviewer_initial_provider_request
 from top_down_planning.orchestrator.errors import (
+    CompletionClaimRequired,
     OrchestratorInvariantError,
     ProviderRunError,
     ReviewStateConflict,
@@ -93,6 +94,7 @@ from top_down_planning.orchestrator.review_incomplete_handoff import (
 from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     pause_for_limit_exhausted,
+    pause_run,
 )
 from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
@@ -102,6 +104,7 @@ from top_down_planning.orchestrator.provider_turns import (
     consume_producer_provider_turn_with_session_recovery,
     consume_provider_turn_with_session_recovery,
     consume_reviewer_provider_turn_with_session_recovery,
+    owner_revision_complete,
 )
 from top_down_planning.orchestrator.session_context import (
     ensure_primary_session,
@@ -129,6 +132,7 @@ from top_down_planning.persistence.review_commit import (
     save_review_with_expected_revision,
 )
 from top_down_planning.domain.production_blockers import FOCUSED_REVIEW_RECHECK_REQUESTED
+from top_down_planning.domain.run_lifecycle import StopRecord
 from core_tools.provider import Provider
 
 
@@ -274,7 +278,15 @@ class ReviewLoopDriver:
                 reject_mandatory_contract_v1_loop(pending_approval)
                 return self._adapter.complete_approval(pending_approval)
 
-        self._adapter.preflight(None)
+        existing = self._peek_active_loop()
+        recovering_owner_revision = (
+            existing is not None and existing.lifecycle_status == "revision_in_progress"
+        )
+        if not recovering_owner_revision:
+            try:
+                self._adapter.preflight(None)
+            except CompletionClaimRequired as exc:
+                return self._pause_completion_claim_required(exc)
         config = self._store.load_resolved_config(self._run_id)
         limits = mandatory_review_limits_from_config(config, spec.limits_key)
         loop, deliver_on_existing_session = bootstrap_whole_review_loop(
@@ -284,6 +296,9 @@ class ReviewLoopDriver:
             normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
         loop = self._reload_loop(loop.id)
+        run = self._store.load_run(self._run_id)
+        if str(run.get("status") or "") != "running":
+            return self.result_from_run(run, ok=False, loop=loop)
         self._adapter.preflight(loop)
         reject_mandatory_contract_v1_loop(loop)
         loop = self._persist_loop(seed_mandatory_loop_fields(loop))
@@ -320,6 +335,20 @@ class ReviewLoopDriver:
         reviewer_decision: str | None = None
 
         while True:
+            if (
+                self.profile.is_mandatory_gate
+                and loop.status == "pending"
+                and loop.lifecycle_status == "revision_in_progress"
+                and (
+                    not self._owner_revision_complete(loop)
+                    or pending_unconsumed_revision_cycle_entry(loop)
+                )
+            ):
+                loop = self._resume_interrupted_owner_revision(loop)
+                run = self._store.load_run(self._run_id)
+                if str(run.get("status") or "") != "running":
+                    return self.result_from_run(run, ok=False, loop=loop)
+                continue
             if loop.status == "pending":
                 consumed_persisted_decision = False
                 if self.profile.is_mandatory_gate:
@@ -585,7 +614,11 @@ class ReviewLoopDriver:
             )
 
             self._resume_owner_with_findings(loop)
-            loop = self._prepare_recheck(loop)
+            loop = self._reload_loop(loop.id)
+            if self._owner_revision_complete(loop):
+                loop = self._prepare_recheck(loop)
+            else:
+                continue
 
     def _resolve_stage_decision(
         self,
@@ -755,8 +788,9 @@ class ReviewLoopDriver:
             return self._persist_loop(retried), False
 
         if loop.lifecycle_status == "revision_in_progress":
-            artifact_revision, _digest = self._adapter.current_artifact_binding()
-            if artifact_revision > loop.target_revision:
+            if pending_unconsumed_revision_cycle_entry(loop):
+                return loop, False
+            if self._owner_revision_complete(loop):
                 return self._prepare_recheck(loop), True
             return loop, False
 
@@ -765,6 +799,9 @@ class ReviewLoopDriver:
 
         artifact_revision, _digest = self._adapter.current_artifact_binding()
         if artifact_revision <= loop.target_revision:
+            return loop, False
+
+        if not self._owner_revision_complete(loop):
             return loop, False
 
         return self._prepare_recheck(loop), True
@@ -790,7 +827,7 @@ class ReviewLoopDriver:
             return None
         return None
 
-    def _get_or_create_active_loop(self) -> ReviewLoop:
+    def _peek_active_loop(self) -> ReviewLoop | None:
         spec = self.spec
         for payload in reversed(self._store.list_reviews(self._run_id)):
             if payload.get("type") != spec.review_type:
@@ -806,6 +843,12 @@ class ReviewLoopDriver:
             # Newest non-terminal loop owns the phase (revision lag is handled by
             # normalize / recheck). Do not walk past it to an older limit_reached.
             return loop
+        return None
+
+    def _get_or_create_active_loop(self) -> ReviewLoop:
+        existing = self._peek_active_loop()
+        if existing is not None:
+            return existing
         return self._create_loop()
 
     def _create_loop(self) -> ReviewLoop:
@@ -1129,19 +1172,55 @@ class ReviewLoopDriver:
             session_id=session_id,
         )
 
+    def _owner_revision_complete(self, loop: ReviewLoop) -> bool:
+        return owner_revision_complete(self._store, self._run_id, loop.id)
+
+    def _pause_completion_claim_required(
+        self,
+        exc: CompletionClaimRequired,
+    ) -> MandatoryWholeReviewResult:
+        spec = self.spec
+        pause_run(
+            self._store,
+            self._run_id,
+            stop=StopRecord(
+                code="completion_claim_required",
+                category="operational",
+                phase=spec.phase,
+                message=str(exc),
+                role="producer",
+                details={
+                    "precondition": "domain/precondition",
+                    "next_actor": "producer",
+                    "current_output_revision": int(exc.output_revision),
+                },
+            ),
+            revoke_phase=spec.phase,
+        )
+        run = self._store.load_run(self._run_id)
+        return self.result_from_run(run, ok=False, reason=str(exc))
+
     def _resume_interrupted_owner_revision(self, loop: ReviewLoop) -> ReviewLoop:
-        artifact_revision, _digest = self._adapter.current_artifact_binding()
-        if artifact_revision > loop.target_revision:
-            return self._prepare_recheck(loop)
         if pending_unconsumed_revision_cycle_entry(loop):
             # Limit-extension resume: charge the next cycle once, then run owner.
-            # Do not replay mark_findings_open / the consumed reviewer decision.
+            # Do not treat prior-cycle owner actions as completing this cycle,
+            # and do not replay mark_findings_open / the consumed reviewer decision.
             revision_cycles = int(loop.revision_cycles) + 1
             loop = self._persist_loop(
                 self._adapter.enter_revision_cycle(loop, revision_cycles)
             )
+            self._resume_owner_with_findings(loop)
+            loop = self._reload_loop(loop.id)
+            if self._owner_revision_complete(loop):
+                return self._prepare_recheck(loop)
+            return loop
+        if self._owner_revision_complete(loop):
+            return self._prepare_recheck(loop)
         self._resume_owner_with_findings(loop)
-        return self._prepare_recheck(loop)
+        loop = self._reload_loop(loop.id)
+        if self._owner_revision_complete(loop):
+            return self._prepare_recheck(loop)
+        return loop
 
     def _resume_owner_with_findings(self, loop: ReviewLoop) -> None:
         spec = self.spec
@@ -1256,6 +1335,7 @@ class ReviewLoopDriver:
                         self._run_id,
                         self._provider,
                         session_id,
+                        loop_id=loop_id,
                         recovery=recovery,
                     )
                 else:

@@ -35,6 +35,7 @@ from tests.helpers import (
     mandatory_verification_respond_request,
     plan_root_item,
     record_finding_actions,
+    record_mandatory_owner_revision_complete,
     respond_review,
     save_review_payload,
     script_mandatory_clear_approval,
@@ -198,6 +199,26 @@ def _review_respond_request(
     )
 
 
+def _record_required_fix(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    loop_id: str = "review-whole-output-01",
+    finding_id: str = "finding-01",
+) -> None:
+    del finding_id
+    record_mandatory_owner_revision_complete(
+        store,
+        run_id,
+        loop_id=loop_id,
+        phase=WHOLE_OUTPUT_REVIEW,
+        role="producer",
+        changed_refs=["item-leaf"],
+        searched_refs=["production:*"],
+        rationale="Addressed required finding.",
+    )
+
+
 def test_whole_output_review_approve_reaches_accepted(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
@@ -299,6 +320,7 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
     )()
+    _record_required_fix(store, run_id)
     script_verification_then_scope_review_approval(
         provider,
         store,
@@ -402,6 +424,7 @@ def test_whole_output_owner_revision_closes_on_completion_claim_while_stream_sta
             handler="submit_completion",
             phase=WHOLE_OUTPUT_REVIEW,
         )()
+        _record_required_fix(store, run_id, loop_id=loop_id)
 
     provider.script_turn(
         [
@@ -487,8 +510,12 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_output_review(store, limits={"max_revision_cycles": 1}, provider=provider)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
 
     run_id = "run-20260101T000801-000801"
+    loop_id = "review-whole-output-01"
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
@@ -511,16 +538,59 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
                 run_id=run_id,
             ),
             phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
+            loop_id=loop_id,
         ),
     )
-    provider.script_turn(done_events(text="turn complete"))
 
-    loop_id = "review-whole-output-01"
+    def _owner_revision() -> None:
+        production = store.load_production(run_id)
+        apply_production(
+            store,
+            run_id,
+            {
+                "production_revision": int(production["revision"]),
+                "evidence_revision": True,
+                "plan_items": ["item-leaf"],
+                "dispositions": {
+                    "item-leaf": {
+                        "disposition": "completed",
+                        "evidence": "Added artifact reference.",
+                    }
+                },
+                "outputs": [
+                    {
+                        "id": "output-leaf",
+                        "type": "artifact",
+                        "ref": "artifacts/leaf.txt",
+                    }
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-leaf",
+                        "output_refs": ["output-leaf"],
+                        "summary": "Revised evidence.",
+                    }
+                ],
+                "summary": "Addressed reviewer finding.",
+            },
+            handler="apply",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        apply_production(
+            store,
+            run_id,
+            {"goal_assessment": "Output goal is fully met after revision."},
+            handler="submit_completion",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        _record_required_fix(store, run_id, loop_id=loop_id)
+
+    provider.script_turn(done_events(text="owner revision"), mutate_store=_owner_revision)
 
     def _needs_revision_respond() -> None:
         loop = store.load_review(run_id, loop_id)
         finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        target_revision = int(loop["target_revision"])
         respond_review(
             store,
             run_id,
@@ -528,7 +598,7 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
                 store,
                 run_id,
                 loop_id=loop_id,
-                target_revision=1,
+                target_revision=target_revision,
                 review_type="whole_output",
                 finding_set_id=finding_set_id,
                 finding_results=[
@@ -545,7 +615,7 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
         )()
 
     provider.script_turn(
-        done_events(text="turn complete"),
+        done_events(text="verification needs revision"),
         mutate_store=_needs_revision_respond,
     )
 

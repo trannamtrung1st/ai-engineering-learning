@@ -2315,6 +2315,135 @@ def record_finding_actions(
     return mutate
 
 
+def record_mandatory_owner_revision_complete(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    phase: str,
+    role: str,
+    changed_refs: list[str],
+    searched_refs: list[str] | None = None,
+    rationale: str = "Addressed required findings.",
+) -> None:
+    """Record family_fix with a completed owner sweep, then defer leftover optionals.
+
+    Mandatory verification rejects ``owner_sweep_pending`` after a bare ``fix``.
+    Owner-revision tests that need the driver to enter recheck should call this
+    instead of recording finding-level fix actions alone.
+    """
+
+    from top_down_planning.domain.finding_families import (
+        derive_family_operational_status,
+        family_open_required_members,
+    )
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        loop_revise_at,
+        open_optional_findings_missing_owner_response,
+        required_findings_missing_owner_response,
+    )
+
+    loop_payload = dict(store.load_review(run_id, loop_id))
+    loop = ReviewLoop.from_dict(loop_payload)
+    binding = enrich_record_finding_actions_request(
+        store,
+        run_id,
+        {"loop_id": loop_id},
+    )
+    artifact_revision = binding.get("target_revision")
+    artifact_digest = binding.get("target_digest")
+    families = list(loop_payload.get("finding_families") or [])
+    resolved_searched = list(searched_refs or changed_refs)
+    family_fixes: list[dict[str, Any]] = []
+    for family in families:
+        family_id = str(family.get("id") or "")
+        if not family_id:
+            continue
+        status = derive_family_operational_status(
+            loop,
+            family_id,
+            artifact_revision=artifact_revision,
+            artifact_digest=artifact_digest,
+        )
+        if family_open_required_members(loop, family_id) or status == "owner_sweep_pending":
+            family_fixes.append(
+                {
+                    "family_id": family_id,
+                    "target_finding_ids": [],
+                    "rationale": rationale,
+                    "changed_refs": list(changed_refs),
+                    "owner_sweep": {
+                        "searched_refs": resolved_searched,
+                        "search_dimensions": ["evidence"],
+                        "additional_fixed_refs": [],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "No remaining required instances.",
+                    },
+                }
+            )
+    if family_fixes:
+        record_finding_actions(
+            store,
+            run_id,
+            {
+                "loop_id": loop_id,
+                "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+                "family_fixes": family_fixes,
+                "finding_actions": [],
+            },
+            role=role,
+            phase=phase,
+            loop_id=loop_id,
+        )()
+        loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+
+    threshold = loop_revise_at(loop)
+    leftover = required_findings_missing_owner_response(
+        loop.findings,
+        loop.finding_actions,
+        threshold,
+        finding_set_id=loop.finding_set_id,
+    )
+    finding_actions: list[dict[str, Any]] = [
+        {
+            "finding_id": finding.id,
+            "action": "fix",
+            "actor_role": role,
+            "rationale": rationale,
+        }
+        for finding in leftover
+    ]
+    finding_actions.extend(
+        {
+            "finding_id": finding.id,
+            "action": "defer",
+            "actor_role": role,
+            "rationale": "Defer optional finding until after required fix.",
+        }
+        for finding in open_optional_findings_missing_owner_response(
+            loop.findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=loop.finding_set_id,
+        )
+    )
+    if finding_actions:
+        record_finding_actions(
+            store,
+            run_id,
+            {
+                "loop_id": loop_id,
+                "finding_set_id": str(loop.finding_set_id or ""),
+                "finding_actions": finding_actions,
+            },
+            role=role,
+            phase=phase,
+            loop_id=loop_id,
+        )()
+
+
 def only_run_id(store: Any) -> str:
     """Return the sole run directory id under a test store root."""
 

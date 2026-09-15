@@ -435,6 +435,207 @@ def test_build_owner_finding_action_boundary_observer_detects_record_actions(
     assert observe() == OWNER_FINDING_ACTION_COMPLETE_SIGNAL
 
 
+def test_owner_revision_boundary_waits_for_claim_and_required_actions(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.producer_session import (
+        OWNER_REVISION_COMPLETE_SIGNAL,
+    )
+    from top_down_planning.orchestrator.provider_turns import (
+        build_owner_revision_boundary_observer,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    loop_id = "review-whole-output-01"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+    save_review_payload(
+        store,
+        run_id,
+        {
+            **dict(store.load_review(run_id, loop_id)),
+            "lifecycle_status": "revision_in_progress",
+            "status": "pending",
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-leaf"],
+                    "issue": "Output evidence is missing.",
+                    "recommended_change": "Add artifact reference.",
+                    "status": "unresolved",
+                }
+            ],
+        },
+    )
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": int(store.load_production(run_id)["revision"]),
+            "evidence_revision": True,
+            "plan_items": ["item-leaf"],
+            "dispositions": {
+                "item-leaf": {
+                    "disposition": "completed",
+                    "evidence": "Added artifact reference.",
+                }
+            },
+            "outputs": [
+                {"id": "output-leaf", "type": "artifact", "ref": "artifacts/leaf.txt"}
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-leaf",
+                    "output_refs": ["output-leaf"],
+                    "summary": "Revised evidence.",
+                }
+            ],
+            "summary": "Addressed reviewer finding.",
+        },
+        handler="apply",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    observe = build_owner_revision_boundary_observer(store, run_id, loop_id)
+
+    assert observe() is None
+
+    apply_production(
+        store,
+        run_id,
+        {"goal_assessment": "Output goal is fully met after revision."},
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    assert observe() is None
+
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "finding_actions": [
+                {
+                    "finding_id": "finding-01",
+                    "action": "fix",
+                    "actor_role": "producer",
+                    "rationale": "Added missing evidence.",
+                }
+            ],
+        },
+        role="producer",
+        phase=WHOLE_OUTPUT_REVIEW,
+        loop_id=loop_id,
+    )()
+    assert observe() == OWNER_REVISION_COMPLETE_SIGNAL
+
+
+def test_owner_revision_boundary_closes_when_actions_precede_claim(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.producer_session import (
+        OWNER_REVISION_COMPLETE_SIGNAL,
+    )
+    from top_down_planning.orchestrator.provider_turns import (
+        build_owner_revision_boundary_observer,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    loop_id = "review-whole-output-01"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+    save_review_payload(
+        store,
+        run_id,
+        {
+            **dict(store.load_review(run_id, loop_id)),
+            "lifecycle_status": "revision_in_progress",
+            "status": "pending",
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-leaf"],
+                    "issue": "Output evidence is missing.",
+                    "recommended_change": "Add artifact reference.",
+                    "status": "unresolved",
+                }
+            ],
+        },
+    )
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": int(store.load_production(run_id)["revision"]),
+            "evidence_revision": True,
+            "plan_items": ["item-leaf"],
+            "dispositions": {
+                "item-leaf": {
+                    "disposition": "completed",
+                    "evidence": "Added artifact reference.",
+                }
+            },
+            "outputs": [
+                {"id": "output-leaf", "type": "artifact", "ref": "artifacts/leaf.txt"}
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-leaf",
+                    "output_refs": ["output-leaf"],
+                    "summary": "Revised evidence.",
+                }
+            ],
+            "summary": "Addressed reviewer finding.",
+        },
+        handler="apply",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    observe = build_owner_revision_boundary_observer(store, run_id, loop_id)
+    assert observe() is None
+
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "finding_actions": [
+                {
+                    "finding_id": "finding-01",
+                    "action": "fix",
+                    "actor_role": "producer",
+                    "rationale": "Added missing evidence.",
+                }
+            ],
+        },
+        role="producer",
+        phase=WHOLE_OUTPUT_REVIEW,
+        loop_id=loop_id,
+    )()
+    assert observe() is None
+
+    apply_production(
+        store,
+        run_id,
+        {"goal_assessment": "Output goal is fully met after revision."},
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    assert observe() == OWNER_REVISION_COMPLETE_SIGNAL
+
+
 def test_build_producer_completion_boundary_observer_detects_new_claim(
     tmp_path: Path,
 ) -> None:

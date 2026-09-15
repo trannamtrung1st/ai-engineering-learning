@@ -328,6 +328,7 @@ def validate_stop_for_resume_apply(
         "orchestrator_state_conflict",
         "review_state_conflict",
         "focused_review_wait",
+        "completion_claim_required",
     }:
         return None
     if code in {"provider_turn_failed", "provider_quota_exhausted"}:

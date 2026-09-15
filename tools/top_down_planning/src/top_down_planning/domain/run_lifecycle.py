@@ -25,6 +25,7 @@ PausedStopCode = Literal[
     "orchestrator_state_conflict",
     "review_state_conflict",
     "focused_review_wait",
+    "completion_claim_required",
 ]
 
 FailedStopCode = Literal[
@@ -56,6 +57,7 @@ PAUSED_STOP_CODES: frozenset[str] = frozenset(
         "orchestrator_state_conflict",
         "review_state_conflict",
         "focused_review_wait",
+        "completion_claim_required",
     }
 )
 

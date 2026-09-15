@@ -24,6 +24,14 @@ class OrchestratorStateConflict(OrchestratorError):
         super().__init__(message, code=code)
 
 
+class CompletionClaimRequired(OrchestratorStateConflict):
+    """Fresh whole-output entry is missing a current production completion claim."""
+
+    def __init__(self, message: str, *, output_revision: int) -> None:
+        super().__init__(message, code="completion_claim_required")
+        self.output_revision = output_revision
+
+
 class ReviewStateConflict(OrchestratorStateConflict):
     """Review-loop lifecycle conflict such as an advisory handoff identity mismatch."""
 

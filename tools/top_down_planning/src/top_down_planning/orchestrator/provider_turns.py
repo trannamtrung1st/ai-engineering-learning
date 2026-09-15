@@ -26,7 +26,12 @@ from core_tools.provider.errors import (
     ProviderUnsupportedPlatformError,
 )
 from core_tools.provider.process_cleanup import posix_spawn_session_leader
-from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.production import completion_claim_is_current
+from top_down_planning.domain.reviews import (
+    ReviewLoop,
+    loop_revise_at,
+    required_findings_missing_owner_response,
+)
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
@@ -50,6 +55,7 @@ from top_down_planning.orchestrator.recovery_manifest import (
     build_reviewer_recovery_manifest,
 )
 from top_down_planning.orchestrator.producer_session import (
+    OWNER_REVISION_COMPLETE_SIGNAL,
     PRODUCER_BATCH_COMPLETE_SIGNAL,
     PRODUCER_COMPLETION_COMPLETE_SIGNAL,
     PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
@@ -1750,6 +1756,46 @@ def owner_finding_action_count(store: RunStore, run_id: str, loop_id: str) -> in
     )
 
 
+def owner_revision_complete(store: RunStore, run_id: str, loop_id: str) -> bool:
+    """True when the current owner revision has required durable owner work.
+
+    Whole-output also requires a completion claim bound to the current
+    output revision. Order of claim vs record-actions does not matter.
+    """
+
+    from top_down_planning.domain.reviews import (
+        open_optional_findings_missing_owner_response,
+        required_open_findings,
+    )
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    threshold = loop_revise_at(loop)
+    if required_findings_missing_owner_response(
+        loop.findings,
+        loop.finding_actions,
+        threshold,
+        finding_set_id=loop.finding_set_id,
+    ):
+        return False
+    if not required_open_findings(loop.findings, threshold):
+        if open_optional_findings_missing_owner_response(
+            loop.findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=loop.finding_set_id,
+        ):
+            return False
+    if loop.type != "whole_output":
+        return True
+    production = store.load_production(run_id)
+    claim = production.get("completion_claim")
+    return completion_claim_is_current(
+        claim if isinstance(claim, dict) else None,
+        production=production,
+        plan=store.load_plan_model(run_id),
+    )
+
+
 def review_respond_count(store: RunStore, run_id: str, loop_id: str) -> int:
     """Count durable ``review_responded`` audit events for a review loop."""
 
@@ -1869,6 +1915,11 @@ class StoreBoundaryProbe:
             if production_completion_claim_count(store, self.run_id) > self.baseline_claims:
                 return PRODUCER_COMPLETION_COMPLETE_SIGNAL
             return None
+        if self.kind == "owner_revision":
+            loop_id = str(self.loop_id or "")
+            if owner_revision_complete(store, self.run_id, loop_id):
+                return OWNER_REVISION_COMPLETE_SIGNAL
+            return None
         if self.kind == "owner_finding":
             loop_id = str(self.loop_id or "")
             if owner_finding_action_count(store, self.run_id, loop_id) > self.baseline_actions:
@@ -1929,6 +1980,21 @@ def build_producer_completion_boundary_observer(
         store_root=_file_store_root(store),
         run_id=run_id,
         baseline_claims=production_completion_claim_count(store, run_id),
+    )
+
+
+def build_owner_revision_boundary_observer(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that closes owner revision after claim and required actions."""
+
+    return StoreBoundaryProbe(
+        kind="owner_revision",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        loop_id=loop_id,
     )
 
 
@@ -1997,9 +2063,10 @@ def consume_producer_owner_provider_turn_with_session_recovery(
     provider: Provider,
     session_id: str,
     *,
+    loop_id: str,
     recovery: PrimarySessionRecoverySpec,
 ) -> ProviderTurnOutcome:
-    """Drain a whole-output owner revision turn; close on submit-completion."""
+    """Drain a whole-output owner revision turn; close on owner_revision_complete."""
 
     return _consume_provider_turn_with_session_recovery(
         store,
@@ -2008,7 +2075,7 @@ def consume_producer_owner_provider_turn_with_session_recovery(
         session_id,
         allowed_signals=_NO_COMPLETION_SIGNALS,
         recovery=recovery,
-        on_boundary=build_producer_completion_boundary_observer(store, run_id),
+        on_boundary=build_owner_revision_boundary_observer(store, run_id, loop_id),
     )
 
 

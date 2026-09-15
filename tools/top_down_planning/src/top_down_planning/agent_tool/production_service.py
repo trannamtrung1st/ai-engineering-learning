@@ -199,6 +199,29 @@ class ProductionAgentService:
         current_dispositions = self._dispositions(production)
         reviews = self._store.list_reviews(self._run_id)
         evidence_revision = bool(request.get("evidence_revision"))
+        completion = request.get("completion")
+        if completion is not None and not evidence_revision:
+            raise RequestError("completion is only valid with evidence_revision: true")
+        replacement_claim_fields: dict[str, Any] | None = None
+        if evidence_revision and completion is not None:
+            if not isinstance(completion, dict):
+                raise RequestError("completion must be an object")
+            if completion.get("goal_met") is not True:
+                raise RequestError("completion.goal_met must be true")
+            summary = str(completion.get("summary") or "").strip()
+            if not summary:
+                raise RequestError("completion.summary must be a non-empty string")
+            goal_assessment = str(request.get("goal_assessment") or summary).strip()
+            if not goal_assessment:
+                raise RequestError(
+                    "evidence_revision completion requires goal_assessment or "
+                    "completion.summary"
+                )
+            replacement_claim_fields = {
+                "goal_assessment": goal_assessment,
+                "goal_met": True,
+                "summary": summary,
+            }
         plan_item_ids = [str(item_id) for item_id in plan_items]
         if not evidence_revision:
             blocked = blocking_focused_findings_for_items(
@@ -369,8 +392,41 @@ class ProductionAgentService:
             )
 
             updated = self._merge_batch(production, batch, disposition_records, outputs)
+            events = [
+                apply_request_audit_fields(
+                    {
+                        "type": "production_batch_recorded",
+                        "run_id": self._run_id,
+                        "batch_id": batch_id,
+                        "plan_items": batch.plan_items,
+                        "production_revision": updated["revision"],
+                        "output_revision": updated["output_revision"],
+                    },
+                    request_audit,
+                )
+            ]
             if evidence_revision:
-                updated["completion_claim"] = None
+                if replacement_claim_fields is None:
+                    updated["completion_claim"] = None
+                else:
+                    claim = {
+                        **replacement_claim_fields,
+                        "plan_revision": plan.revision,
+                        "output_revision": int(updated["output_revision"]),
+                        "all_applicable_items_processed": True,
+                    }
+                    updated["completion_claim"] = claim
+                    events.append(
+                        apply_request_audit_fields(
+                            {
+                                "type": "production_completion_claimed",
+                                "run_id": self._run_id,
+                                "production_revision": updated["revision"],
+                                "output_revision": claim["output_revision"],
+                            },
+                            request_audit,
+                        )
+                    )
             commit_authorized(
                 self._store,
                 self._run_id,
@@ -378,19 +434,7 @@ class ProductionAgentService:
                     production=updated,
                     production_expected_revision=current_revision,
                     artifacts=staged_artifacts,
-                    events=[
-                        apply_request_audit_fields(
-                            {
-                                "type": "production_batch_recorded",
-                                "run_id": self._run_id,
-                                "batch_id": batch_id,
-                                "plan_items": batch.plan_items,
-                                "production_revision": updated["revision"],
-                                "output_revision": updated["output_revision"],
-                            },
-                            request_audit,
-                        )
-                    ],
+                    events=events,
                 ),
                 auth,
                 conflict_action=_PRODUCTION_SNAPSHOT_ACTION,

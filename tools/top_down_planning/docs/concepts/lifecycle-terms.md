@@ -15,7 +15,7 @@ TDP uses several independent axes. Mixing them (for example treating a review st
 | `completed` | The run finished with a quality `outcome` (`accepted`, `rejected`, or `blocked`). `stop` is null. |
 | `failed` | The run hit an **invariant** stop. `outcome` is null. This is not a quality outcome. |
 
-Paused runs are **recoverable** in the lifecycle sense: they carry an operational `stop.code` (for example `limit_exhausted`, `user_cancelled`, `amendment_pending`, `provider_turn_failed`, `provider_quota_exhausted`, `orchestrator_state_conflict`, `review_state_conflict`, `focused_review_wait`). Failed runs are **terminal** for that run: they carry an invariant `stop.code` (for example `orchestrator_invariant_failure`, `session_recovery_exhausted`, `sub_tdp_unit_permanently_failed`). Completed runs are also terminal.
+Paused runs are **recoverable** in the lifecycle sense: they carry an operational `stop.code` (for example `limit_exhausted`, `user_cancelled`, `amendment_pending`, `provider_turn_failed`, `provider_quota_exhausted`, `orchestrator_state_conflict`, `review_state_conflict`, `focused_review_wait`, `completion_claim_required`). Failed runs are **terminal** for that run: they carry an invariant `stop.code` (for example `orchestrator_invariant_failure`, `session_recovery_exhausted`, `sub_tdp_unit_permanently_failed`). Completed runs are also terminal.
 
 Distinguish **continuation-command success** (`ok` on `tdp run` / `tdp resume`) from **terminal quality success**:
 
@@ -92,6 +92,7 @@ Stale revision fields return `revision_conflict`. Whole-plan and whole-output ap
 | `phase_action_domain_committed_id` | Last provider action whose domain boundary committed. Not a live action id. |
 | `provider_turn_failed` | The in-flight provider turn failed while `phase_action_id` was still active. Persist the interrupted id in `stop.details`. |
 | `provider_quota_exhausted` | The provider reported account/quota exhaustion that requires user or administrator action. Pause operationally; do not replace the session. Restore capacity, then resume. |
+| `completion_claim_required` | Fresh whole-output review entry has no current `goal_met=true` completion claim. Domain precondition, not a provider lifecycle failure. Next actor is the producer. |
 
 A later orchestration or review-state error must not reuse `provider_turn_failed`. Those pauses use `orchestrator_state_conflict` or `review_state_conflict`. Provider session teardown that leaves surviving processes on a running run is also `orchestrator_state_conflict`, not `provider_turn_failed`.
 
