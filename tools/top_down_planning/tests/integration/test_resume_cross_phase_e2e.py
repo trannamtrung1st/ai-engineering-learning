@@ -24,8 +24,8 @@ from core_tools.provider import StubProvider
 from tests.conftest import run_cli
 from tests.helpers import (
     apply_plan,
+    apply_plan_and_complete_mandatory_owner_revision,
     done_events,
-    enter_mandatory_verification_pending,
     mandatory_initial_respond_request,
     mandatory_scope_review_found_respond_request,
     mandatory_verification_needs_revision_request,
@@ -260,7 +260,7 @@ def _pause_whole_plan_revision_limit(
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
             store,
             run_id,
             base_revision=0,
@@ -277,6 +277,8 @@ def _pause_whole_plan_revision_limit(
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+            changed_refs=["item-root"],
         ),
     )
 
@@ -448,7 +450,7 @@ def _pause_whole_plan_scope_review_limit(
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
             store,
             run_id,
             base_revision=0,
@@ -460,19 +462,14 @@ def _pause_whole_plan_scope_review_limit(
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+            changed_refs=["item-root"],
         ),
     )
 
     def _verification_respond() -> None:
         loop = store.load_review(run_id, loop_id)
         finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
-        enter_mandatory_verification_pending(
-            store,
-            run_id,
-            loop_id,
-            target_revision=1,
-            finding_set_id=finding_set_id,
-        )
         respond_review(
             store,
             run_id,
