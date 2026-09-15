@@ -367,6 +367,86 @@ def test_owner_revision_complete_rejects_prior_cycle_actions_with_same_finding_s
     assert owner_revision_complete(store, _RUN_ID, _LOOP_ID) is False
 
 
+def _seed_cycle_one_owner_revision_complete(store: FileRunStore) -> None:
+    _enter_owner_revision_in_progress(store, _RUN_ID)
+    artifacts_dir = store.root / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+    production = store.load_production(_RUN_ID)
+    apply_production(
+        store,
+        _RUN_ID,
+        _evidence_revision_request(
+            production_revision=int(production["revision"]),
+            with_completion=True,
+        ),
+        handler="apply",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    _record_required_fix(store, _RUN_ID)
+
+
+def _seed_verification_needs_revision_crash_window(store: FileRunStore) -> None:
+    """Crash after mark_findings_open but before enter_revision_cycle charged cycle 2."""
+
+    loop = ReviewLoop.from_dict(store.load_review(_RUN_ID, _LOOP_ID))
+    loop = replace(
+        loop,
+        revision_cycles=1,
+        lifecycle_status="revision_in_progress",
+        status="needs_revision",
+        verification_result={"decision": "needs_revision"},
+    )
+    save_review_payload(store, _RUN_ID, loop.to_dict())
+
+
+def test_resume_after_verification_needs_revision_crash_window_runs_cycle_two_producer(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    _create_run_at_whole_output_review(store, provider=provider)
+    _seed_cycle_one_owner_revision_complete(store)
+    _seed_verification_needs_revision_crash_window(store)
+
+    assert owner_revision_complete(store, _RUN_ID, _LOOP_ID) is True
+    cycles_before = int(store.load_review(_RUN_ID, _LOOP_ID)["revision_cycles"])
+
+    owner_turn_started = False
+
+    def _cycle_two_owner_revision() -> None:
+        nonlocal owner_turn_started
+        owner_turn_started = True
+        apply_production(
+            store,
+            _RUN_ID,
+            {"goal_assessment": "Output goal remains met after cycle 2."},
+            handler="submit_completion",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        _record_required_fix(store, _RUN_ID)
+
+    provider.script_turn(
+        done_events(text="cycle 2 owner revision"),
+        mutate_store=_cycle_two_owner_revision,
+    )
+    provider.script_turn(done_events(text="reviewer recheck"))
+
+    with pytest.raises(ProviderTurnError, match="no scripted provider turn"):
+        WholeOutputReviewOrchestrator(store, _RUN_ID, provider).run()
+
+    loop_after = ReviewLoop.from_dict(store.load_review(_RUN_ID, _LOOP_ID))
+    assert owner_turn_started is True
+    assert loop_after.revision_cycles == cycles_before + 1
+    assert owner_revision_complete(store, _RUN_ID, _LOOP_ID) is True
+    cycle_two_actions = [
+        action
+        for action in loop_after.finding_actions
+        if action.owner_revision_cycle == 2 and action.action == "fix"
+    ]
+    assert [action.finding_id for action in cycle_two_actions] == ["finding-01"]
+
+
 def test_resume_cycle_two_runs_producer_before_reviewer_recheck(
     tmp_path: Path,
 ) -> None:

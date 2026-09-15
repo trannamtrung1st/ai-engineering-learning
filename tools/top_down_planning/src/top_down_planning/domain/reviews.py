@@ -1714,6 +1714,33 @@ def pending_interrupted_owner_revision(
     return True
 
 
+def pending_verification_owner_cycle_charge(
+    store: Any,
+    run_id: str,
+    loop: ReviewLoop,
+) -> bool:
+    """True when verification ``needs_revision`` reopened owner work without charging the next cycle.
+
+    Crash between ``mark_findings_open()`` and ``enter_revision_cycle()`` leaves
+    ``revision_in_progress`` at the prior ``revision_cycles`` with a consumed
+    verification decision still on the loop. Resume must charge the next cycle
+    before treating prior-cycle owner work as complete.
+    """
+
+    if loop.lifecycle_status != "revision_in_progress":
+        return False
+    if loop.status != "needs_revision":
+        return False
+    verification = loop.verification_result
+    if not isinstance(verification, dict):
+        return False
+    if str(verification.get("decision") or "").strip() != "needs_revision":
+        return False
+    from top_down_planning.orchestrator.provider_turns import owner_revision_complete
+
+    return owner_revision_complete(store, run_id, loop.id)
+
+
 def pending_unconsumed_revision_cycle_entry(loop: ReviewLoop) -> bool:
     """True when the next owner revision cycle was blocked before being charged.
 

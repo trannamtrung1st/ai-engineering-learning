@@ -28,6 +28,7 @@ from tests.helpers import (
     mandatory_initial_respond_request,
     mandatory_scope_review_respond_request,
     mandatory_verification_respond_request,
+    record_mandatory_owner_revision_complete,
     respond_review,
     save_review_payload,
     seed_mandatory_interrupted_owner_revision_loop,
@@ -162,9 +163,8 @@ def test_resume_revision_in_progress_does_not_replay_verification_needs_revision
         mark_calls.append(str(loop.lifecycle_status))
         return real_mark(loop)
 
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=apply_plan(
+    def _complete_owner_revision() -> None:
+        apply_plan(
             store,
             run_id,
             base_revision=0,
@@ -176,12 +176,25 @@ def test_resume_revision_in_progress_does_not_replay_verification_needs_revision
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
-        ),
+        )()
+        record_mandatory_owner_revision_complete(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=WHOLE_PLAN_REVIEW,
+            role="planner",
+            changed_refs=["item-root"],
+        )
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_complete_owner_revision,
     )
 
     def _verification_respond() -> None:
         payload = store.load_review(run_id, loop_id)
         finding_set_id = str(payload.get("finding_set_id") or f"{loop_id}-fs-01")
+        target_revision = int(store.load_plan(run_id)["revision"])
         respond_review(
             store,
             run_id,
@@ -189,7 +202,7 @@ def test_resume_revision_in_progress_does_not_replay_verification_needs_revision
                 store,
                 run_id,
                 loop_id=loop_id,
-                target_revision=1,
+                target_revision=target_revision,
                 review_type="whole_plan",
                 finding_set_id=finding_set_id,
                 finding_results=[
@@ -206,6 +219,7 @@ def test_resume_revision_in_progress_does_not_replay_verification_needs_revision
         )()
 
     def _scope_clear() -> None:
+        target_revision = int(store.load_plan(run_id)["revision"])
         respond_review(
             store,
             run_id,
@@ -213,7 +227,7 @@ def test_resume_revision_in_progress_does_not_replay_verification_needs_revision
                 store,
                 run_id,
                 loop_id=loop_id,
-                target_revision=1,
+                target_revision=target_revision,
                 review_type="whole_plan",
             ),
             phase=WHOLE_PLAN_REVIEW,
@@ -278,6 +292,14 @@ def test_resume_revision_in_progress_after_owner_mutation_prepares_recheck_whole
         ],
         phase=WHOLE_PLAN_REVIEW,
     )()
+    record_mandatory_owner_revision_complete(
+        store,
+        run_id,
+        loop_id=loop_id,
+        phase=WHOLE_PLAN_REVIEW,
+        role="planner",
+        changed_refs=["item-root"],
+    )
     _pause_user_cancelled(store, run_id, phase=WHOLE_PLAN_REVIEW)
     _resume_from_user_cancel(store, run_id)
 
@@ -297,7 +319,7 @@ def test_resume_revision_in_progress_after_owner_mutation_prepares_recheck_whole
                 store,
                 run_id,
                 loop_id=loop_id,
-                target_revision=1,
+                target_revision=int(store.load_plan(run_id)["revision"]),
                 review_type="whole_plan",
                 finding_set_id=f"{loop_id}-fs-01",
                 finding_results=[
@@ -347,9 +369,8 @@ def test_repeated_cancel_resume_revision_in_progress_is_idempotent_whole_plan(
         assert review["lifecycle_status"] == "revision_in_progress"
         assert review["revision_cycles"] == 1
 
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=apply_plan(
+    def _complete_owner_revision() -> None:
+        apply_plan(
             store,
             run_id,
             base_revision=0,
@@ -361,12 +382,25 @@ def test_repeated_cancel_resume_revision_in_progress_is_idempotent_whole_plan(
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
-        ),
+        )()
+        record_mandatory_owner_revision_complete(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=WHOLE_PLAN_REVIEW,
+            role="planner",
+            changed_refs=["item-root"],
+        )
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_complete_owner_revision,
     )
 
     def _verification_respond() -> None:
         payload = store.load_review(run_id, loop_id)
         finding_set_id = str(payload.get("finding_set_id") or f"{loop_id}-fs-01")
+        target_revision = int(store.load_plan(run_id)["revision"])
         respond_review(
             store,
             run_id,
@@ -374,7 +408,7 @@ def test_repeated_cancel_resume_revision_in_progress_is_idempotent_whole_plan(
                 store,
                 run_id,
                 loop_id=loop_id,
-                target_revision=1,
+                target_revision=target_revision,
                 review_type="whole_plan",
                 finding_set_id=finding_set_id,
                 finding_results=[
@@ -391,6 +425,7 @@ def test_repeated_cancel_resume_revision_in_progress_is_idempotent_whole_plan(
         )()
 
     def _scope_clear() -> None:
+        target_revision = int(store.load_plan(run_id)["revision"])
         respond_review(
             store,
             run_id,
@@ -398,7 +433,7 @@ def test_repeated_cancel_resume_revision_in_progress_is_idempotent_whole_plan(
                 store,
                 run_id,
                 loop_id=loop_id,
-                target_revision=1,
+                target_revision=target_revision,
                 review_type="whole_plan",
             ),
             phase=WHOLE_PLAN_REVIEW,

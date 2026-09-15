@@ -169,6 +169,15 @@ def enter_owner_revision_cycle(loop: ReviewLoop) -> ReviewLoop:
     )
 
 
+def begin_next_owner_revision_cycle(loop: ReviewLoop, revision_cycles: int) -> ReviewLoop:
+    """Reopen findings and charge the next owner revision cycle in one transition."""
+
+    opened = mark_findings_open(loop)
+    return enter_owner_revision_cycle(
+        replace(opened, revision_cycles=int(revision_cycles))
+    )
+
+
 def mandatory_orchestration_decision(loop: ReviewLoop) -> str:
     """Stage-native decision that drives mandatory review orchestration."""
 
