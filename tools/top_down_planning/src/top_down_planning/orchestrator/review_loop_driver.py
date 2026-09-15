@@ -293,12 +293,15 @@ class ReviewLoopDriver:
                 return self._pause_completion_claim_required(exc)
         config = self._store.load_resolved_config(self._run_id)
         limits = mandatory_review_limits_from_config(config, spec.limits_key)
-        loop, deliver_on_existing_session = bootstrap_whole_review_loop(
+        bootstrap_outcome = bootstrap_whole_review_loop(
             self._get_or_create_active_loop(),
             current_revision=self._adapter.current_artifact_binding()[0],
             resume_interrupted_revision=self._resume_interrupted_owner_revision,
             normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
+        if isinstance(bootstrap_outcome, MandatoryWholeReviewResult):
+            return bootstrap_outcome
+        loop, deliver_on_existing_session = bootstrap_outcome
         loop = self._reload_loop(loop.id)
         run = self._store.load_run(self._run_id)
         if str(run.get("status") or "") != "running":

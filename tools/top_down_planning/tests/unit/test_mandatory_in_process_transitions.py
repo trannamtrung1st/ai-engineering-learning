@@ -11,7 +11,7 @@ from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import (
-    apply_plan,
+    apply_plan_and_complete_mandatory_owner_revision,
     done_events,
     mandatory_scope_review_found_respond_request,
     mandatory_initial_respond_request,
@@ -78,7 +78,7 @@ def test_in_process_scope_review_changes_requested_emits_event_and_enters_revisi
     )
     provider.script_turn(
         done_events(text="planner revise"),
-        mutate_store=apply_plan(
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
             store,
             run_id,
             base_revision=0,
@@ -95,6 +95,8 @@ def test_in_process_scope_review_changes_requested_emits_event_and_enters_revisi
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+            changed_refs=["item-api"],
         ),
     )
     provider.script_turn(done_events(text="verification delivery"))
@@ -166,7 +168,7 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
     )
     provider.script_turn(
         done_events(text="planner revise"),
-        mutate_store=apply_plan(
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
             store,
             run_id,
             base_revision=0,
@@ -183,6 +185,8 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+            changed_refs=["item-api"],
         ),
     )
     provider.script_turn(
@@ -212,7 +216,7 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
     )
     provider.script_turn(
         done_events(text="planner revise again"),
-        mutate_store=apply_plan(
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
             store,
             run_id,
             base_revision=1,
@@ -230,6 +234,8 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+            changed_refs=["item-api"],
         ),
     )
     provider.script_turn(done_events(text="verification delivery again"))

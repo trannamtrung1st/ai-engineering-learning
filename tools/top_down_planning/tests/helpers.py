@@ -2447,6 +2447,132 @@ def record_mandatory_owner_revision_complete(
         )()
 
 
+def apply_plan_and_complete_mandatory_owner_revision(
+    store: Any,
+    run_id: str,
+    *,
+    base_revision: int,
+    operations: list[dict[str, Any]],
+    phase: str,
+    loop_id: str,
+    changed_refs: list[str],
+    role: str = "planner",
+    searched_refs: list[str] | None = None,
+    rationale: str = "Addressed required findings.",
+) -> Any:
+    """Apply a plan revision and record durable owner finding actions for recheck."""
+
+    def mutate() -> None:
+        apply_plan(
+            store,
+            run_id,
+            base_revision=base_revision,
+            operations=operations,
+            phase=phase,
+            role=role,
+        )()
+        record_mandatory_owner_revision_complete(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=phase,
+            role=role,
+            changed_refs=changed_refs,
+            searched_refs=searched_refs,
+            rationale=rationale,
+        )
+
+    return mutate
+
+
+def record_focused_owner_revision_complete(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    phase: str,
+    role: str,
+    finding_ids: list[str] | None = None,
+    action: str = "fix",
+    rationale: str = "Addressed reviewer finding.",
+) -> None:
+    """Record current-cycle owner actions so focused review can enter verification recheck."""
+
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        loop_revise_at,
+        required_open_finding_ids,
+    )
+
+    loop_payload = store.load_review(run_id, loop_id)
+    finding_set_id = str(loop_payload.get("finding_set_id") or "")
+    resolved_finding_ids = list(finding_ids or [])
+    if not resolved_finding_ids:
+        loop = ReviewLoop.from_dict(loop_payload)
+        resolved_finding_ids = required_open_finding_ids(
+            loop.findings,
+            loop_revise_at(loop),
+        )
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": finding_set_id,
+            "finding_actions": [
+                {
+                    "finding_id": finding_id,
+                    "action": action,
+                    "actor_role": role,
+                    "rationale": rationale,
+                }
+                for finding_id in resolved_finding_ids
+            ],
+        },
+        role=role,
+        phase=phase,
+        loop_id=loop_id,
+    )()
+
+
+def apply_plan_and_complete_focused_owner_revision(
+    store: Any,
+    run_id: str,
+    *,
+    base_revision: int,
+    operations: list[dict[str, Any]],
+    phase: str,
+    loop_id: str,
+    role: str = "planner",
+    finding_ids: list[str] | None = None,
+    action: str = "fix",
+    rationale: str = "Addressed reviewer finding.",
+) -> Any:
+    """Apply a plan revision and record durable owner finding actions for recheck."""
+
+    def mutate() -> None:
+        apply_plan(
+            store,
+            run_id,
+            base_revision=base_revision,
+            operations=operations,
+            phase=phase,
+            role=role,
+        )()
+        record_focused_owner_revision_complete(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=phase,
+            role=role,
+            finding_ids=finding_ids,
+            action=action,
+            rationale=rationale,
+        )
+
+    return mutate
+
+
 def only_run_id(store: Any) -> str:
     """Return the sole run directory id under a test store root."""
 

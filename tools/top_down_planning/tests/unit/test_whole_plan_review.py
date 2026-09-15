@@ -20,6 +20,7 @@ from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
 from tests.helpers import (
     apply_plan,
+    apply_plan_and_complete_mandatory_owner_revision,
     make_review_loop,
     plan_root_item,
     ensure_plan_work_scope_contracts,
@@ -363,7 +364,7 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
     )
     provider.script_turn(
         done_events(text="turn complete"),
-        mutate_store=apply_plan(
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
             store,
             run_id,
             base_revision=0,
@@ -375,6 +376,8 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+            changed_refs=["item-root"],
         ),
     )
 

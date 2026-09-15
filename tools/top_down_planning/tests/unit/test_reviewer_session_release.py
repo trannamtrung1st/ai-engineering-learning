@@ -22,6 +22,7 @@ from top_down_planning.orchestrator.session_events import (
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import binding_provider_session_id
 from tests.helpers import (
+    apply_plan_and_complete_mandatory_owner_revision,
     make_review_loop,
     done_events,
     mandatory_initial_respond_request,
@@ -328,7 +329,29 @@ def test_whole_plan_recheck_resumes_after_changes_requested_release(tmp_path: Pa
         ),
     )
 
-    provider.script_turn(done_events(text="planner revises after findings"))
+    provider.script_turn(
+        done_events(text="planner revises after findings"),
+        mutate_store=apply_plan_and_complete_mandatory_owner_revision(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-api",
+                    "patch": {
+                        "acceptance": [
+                            "API behavior is verifiable.",
+                            "GET /health returns 200.",
+                        ]
+                    },
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+            changed_refs=["item-api"],
+        ),
+    )
     provider.script_turn(done_events(text="verification recheck queued"))
 
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()

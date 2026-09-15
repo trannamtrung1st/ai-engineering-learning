@@ -6,9 +6,10 @@ from typing import Any
 
 from core_tools.provider import StubProvider
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator.phases import PRODUCTION
+from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
+    bind_focused_review_freshness,
     create_run_kwargs,
     done_events,
     plan_root_item,
@@ -16,6 +17,104 @@ from tests.helpers import (
     sessions_with_primary_session,
     whole_plan_approval_record,
 )
+
+
+def focused_plan_request(
+    item_ids: list[str],
+    store: FileRunStore | None = None,
+    run_id: str = "run-20260101T000401-000401",
+) -> dict[str, Any]:
+    payload = {
+        "type": "focused_plan",
+        "scope": {
+            "item_ids": item_ids,
+        },
+    }
+    if store is None:
+        return payload
+    return bind_focused_review_freshness(store, run_id, payload)
+
+
+def planning_config(
+    *,
+    limits: dict | None = None,
+    review: dict | None = None,
+) -> dict[str, Any]:
+    config = {
+        "run": {
+            "output_goal": "Deliver the feature.",
+            "input_refs": ["README.md"],
+        },
+        "planning": {
+            "stop_hint": "Stop when ready.",
+            "max_depth": 4,
+            "max_expansion_per_item": 7,
+        },
+        "limits": {
+            "planning": {
+                "max_items_added": 20,
+                "max_agent_turns": 40,
+            },
+            "focused_plan_review": {
+                "max_loops": 5,
+                "max_revision_cycles_per_loop": 3,
+            },
+        },
+        "review": {
+            "focused_plan": {"enabled": True},
+            "focused_output": {"enabled": True},
+        },
+    }
+    if limits:
+        focused_keys = {"max_revision_cycles_per_loop", "max_loops"}
+        if focused_keys.intersection(limits):
+            config["limits"]["focused_plan_review"].update(limits)
+        else:
+            for key, value in limits.items():
+                existing = config["limits"].get(key)
+                if isinstance(value, dict) and isinstance(existing, dict):
+                    existing.update(value)
+                else:
+                    config["limits"][key] = value
+    if review:
+        config["review"].update(review)
+    return config
+
+
+def create_planning_run(
+    store: FileRunStore,
+    run_id: str = "run-20260101T000401-000401",
+    *,
+    limits: dict | None = None,
+    review: dict | None = None,
+) -> None:
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
+    )
+    api = PlanItem(
+        id="item-api",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="API",
+        outcome="API exists.",
+        acceptance=["API behavior is verifiable."],
+        kind="work",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={"item-root": root, "item-api": api},
+    )
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(
+            store.root,
+            resolved_config=planning_config(limits=limits, review=review),
+        ),
+    )
 
 
 def review_respond_request(

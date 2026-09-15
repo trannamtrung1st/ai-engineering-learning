@@ -12,6 +12,7 @@ from top_down_planning.domain.reviews import (
     prepare_limit_reached_retry,
 )
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
+from top_down_planning.orchestrator.review_loop_types import MandatoryWholeReviewResult
 
 
 def _loop(**overrides) -> ReviewLoop:
@@ -264,6 +265,35 @@ def test_bootstrap_resumes_owner_revision_when_only_optional_findings_remain_aft
     assert resumed == ["review-whole-plan-01"]
     assert updated.lifecycle_status == "revision_in_progress"
     assert deliver_on_existing_session is False
+
+
+def test_bootstrap_propagates_revision_limit_pause_from_owner_resume() -> None:
+    loop = _loop()
+    limit_pause = MandatoryWholeReviewResult(
+        ok=False,
+        phase="whole_output_review",
+        status="paused",
+        outcome=None,
+        loop_id=loop.id,
+        reviewer_session_id="reviewer-1",
+        revision_cycles=1,
+        reason="verification revision limit exhausted",
+    )
+
+    def resume_interrupted(_current: ReviewLoop) -> MandatoryWholeReviewResult:
+        return limit_pause
+
+    def normalize(current: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        return current, False
+
+    outcome = bootstrap_whole_review_loop(
+        loop,
+        current_revision=4,
+        resume_interrupted_revision=resume_interrupted,
+        normalize_loop_for_resume=normalize,
+    )
+
+    assert outcome == limit_pause
 
 
 def test_pending_unconsumed_revision_cycle_entry_distinguishes_limit_block_from_mid_cycle() -> None:

@@ -9,15 +9,21 @@ from top_down_planning.domain.reviews import (
     pending_interrupted_owner_revision,
 )
 from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
+from top_down_planning.orchestrator.review_loop_types import MandatoryWholeReviewResult
+
+ResumeInterruptedOwnerRevisionResult = ReviewLoop | MandatoryWholeReviewResult
+BootstrapWholeReviewLoopResult = tuple[ReviewLoop, bool] | MandatoryWholeReviewResult
 
 
 def bootstrap_whole_review_loop(
     loop: ReviewLoop,
     *,
     current_revision: int,
-    resume_interrupted_revision: Callable[[ReviewLoop], ReviewLoop],
+    resume_interrupted_revision: Callable[
+        [ReviewLoop], ResumeInterruptedOwnerRevisionResult
+    ],
     normalize_loop_for_resume: Callable[[ReviewLoop], tuple[ReviewLoop, bool]],
-) -> tuple[ReviewLoop, bool]:
+) -> BootstrapWholeReviewLoopResult:
     """Normalize loop state, then resume an interrupted primary revision.
 
     Normalize runs first so ``limit_reached`` revival can restore
@@ -29,6 +35,10 @@ def bootstrap_whole_review_loop(
     replay of a consumed ``needs_revision`` / ``changes_requested`` decision.
     When revival set ``pending_revision_cycle_entry``, the driver charges
     exactly one new ``revision_cycles`` before the owner turn.
+
+    ``resume_interrupted_revision`` may return ``MandatoryWholeReviewResult``
+    when recovery hits a revision limit; callers must propagate that terminal
+    outcome instead of treating it as a loop object.
     """
 
     loop, reviewer_turn_delivered = normalize_loop_for_resume(loop)
@@ -36,7 +46,10 @@ def bootstrap_whole_review_loop(
     if not reviewer_turn_delivered and pending_interrupted_owner_revision(
         loop, current_revision=current_revision
     ):
-        loop = resume_interrupted_revision(loop)
+        resume_outcome = resume_interrupted_revision(loop)
+        if isinstance(resume_outcome, MandatoryWholeReviewResult):
+            return resume_outcome
+        loop = resume_outcome
         interrupted_revision_resumed = True
 
     deliver_on_existing_session = (
@@ -47,4 +60,8 @@ def bootstrap_whole_review_loop(
     return loop, deliver_on_existing_session
 
 
-__all__ = ["bootstrap_whole_review_loop"]
+__all__ = [
+    "BootstrapWholeReviewLoopResult",
+    "ResumeInterruptedOwnerRevisionResult",
+    "bootstrap_whole_review_loop",
+]
