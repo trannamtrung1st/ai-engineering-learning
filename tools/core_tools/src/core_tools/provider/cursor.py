@@ -1900,6 +1900,7 @@ class CursorProvider:
             expected_durable_id = session_id
         self._set_collect_context(session_id, session.role)
         stream: Iterator[str] | None = None
+        primary_exc: BaseException | None = None
         try:
             try:
                 stream = self._runner(argv, self._workspace)
@@ -1999,14 +2000,35 @@ class CursorProvider:
                     f"{provider_session_id!r} (expected {session_id!r})",
                     session_id=session_id,
                 )
+        except BaseException as exc:
+            primary_exc = exc
+            raise
         finally:
+            cleanup_exc: ProviderTurnCleanupError | None = None
             closer = getattr(stream, "close", None)
             if callable(closer):
                 try:
                     closer()
+                except ProviderTurnCleanupError as exc:
+                    cleanup_exc = exc
                 except Exception:
                     pass
+            failures = getattr(
+                self._collect_context, "idle_stream_cleanup_failures", None
+            )
+            if failures:
+                cleanup_exc = failures[-1]
             self._clear_collect_context()
+            if cleanup_exc is not None:
+                if primary_exc is not None and not isinstance(
+                    primary_exc, ProviderTurnCleanupError
+                ):
+                    try:
+                        primary_exc.add_note(f"cleanup: {cleanup_exc!r}")
+                    except Exception:
+                        pass
+                elif primary_exc is None:
+                    raise cleanup_exc
 
     def _observe_stream_session_identity(
         self,
@@ -2125,6 +2147,44 @@ class CursorProvider:
         return max(0.0, timeout)
 
     @staticmethod
+    def _turn_tree_cleanup_deadline(
+        start: float | None = None,
+    ) -> float:
+        """Return a monotonic deadline for bounded turn process/collector cleanup."""
+
+        base = start if start is not None else time.monotonic()
+        return base + DEFAULT_TURN_TREE_CLEANUP_SECONDS
+
+    @staticmethod
+    def _remaining_turn_tree_cleanup_seconds(
+        cleanup_deadline: float,
+    ) -> float:
+        return max(0.0, cleanup_deadline - time.monotonic())
+
+    @staticmethod
+    def _join_idle_stream_producer(
+        thread: threading.Thread,
+        *,
+        session_id: str | None,
+        cleanup_deadline: float,
+    ) -> None:
+        """Join a cursor-idle-stream producer within the remaining cleanup budget."""
+
+        remaining = CursorProvider._remaining_turn_tree_cleanup_seconds(
+            cleanup_deadline
+        )
+        if remaining > 0:
+            thread.join(timeout=remaining)
+        if thread.is_alive():
+            raise ProviderTurnCleanupError(
+                (
+                    "cursor idle-stream producer failed to stop within "
+                    f"{DEFAULT_TURN_TREE_CLEANUP_SECONDS:g}s cleanup budget"
+                ),
+                session_id=session_id,
+            )
+
+    @staticmethod
     def _iter_subprocess_stdout_with_idle_timeout(
         stream: _SubprocessStdoutIterator,
         *,
@@ -2178,6 +2238,7 @@ class CursorProvider:
         session_id: str | None = None,
         deadline: float | None = None,
         watchdogs: _TurnWatchdogs | None = None,
+        cleanup_failures: list[ProviderTurnCleanupError] | None = None,
     ) -> Iterator[str]:
         """Yield stdout lines, raising when no line arrives within the watchdog window."""
 
@@ -2215,14 +2276,7 @@ class CursorProvider:
             name="cursor-idle-stream",
         )
         thread.start()
-        join_timeout = min(
-            max(
-                idle_timeout,
-                watchdogs.progress_timeout if watchdogs is not None else 0.0,
-                0.2,
-            ),
-            DEFAULT_TURN_TREE_CLEANUP_SECONDS,
-        )
+        cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
         try:
             while True:
                 if watchdogs is not None:
@@ -2249,12 +2303,11 @@ class CursorProvider:
                         except Exception:
                             pass
                     stopped.set()
-                    thread.join(timeout=join_timeout)
-                    if thread.is_alive():
-                        raise ProviderTurnError(
-                            "cursor idle-stream producer failed to stop",
-                            session_id=session_id,
-                        )
+                    CursorProvider._join_idle_stream_producer(
+                        thread,
+                        session_id=session_id,
+                        cleanup_deadline=cleanup_deadline,
+                    )
                     if watchdogs is not None:
                         error = watchdogs.expired_error(session_id)
                         if error is not None:
@@ -2274,13 +2327,29 @@ class CursorProvider:
                     deadline = time.monotonic() + idle_timeout
         finally:
             stopped.set()
+            cleanup_exc: ProviderTurnCleanupError | None = None
             closer = getattr(stream, "close", None)
             if callable(closer):
                 try:
                     closer()
+                except ProviderTurnCleanupError as exc:
+                    cleanup_exc = exc
                 except Exception:
                     pass
-            thread.join(timeout=join_timeout)
+            try:
+                CursorProvider._join_idle_stream_producer(
+                    thread,
+                    session_id=session_id,
+                    cleanup_deadline=cleanup_deadline,
+                )
+            except ProviderTurnCleanupError as exc:
+                if cleanup_exc is None:
+                    cleanup_exc = exc
+            if cleanup_exc is not None:
+                if cleanup_failures is not None:
+                    cleanup_failures.append(cleanup_exc)
+                if sys.exc_info()[1] is None:
+                    raise cleanup_exc
 
     def _emit_provider_event(self, event: dict[str, Any]) -> None:
         if self._on_provider_event is not None:
@@ -2919,6 +2988,10 @@ class CursorProvider:
                         if not live:
                             self._unregister_tracked_turn_proc(proc)
 
+                idle_stream_cleanup_failures: list[ProviderTurnCleanupError] = []
+                self._collect_context.idle_stream_cleanup_failures = (
+                    idle_stream_cleanup_failures
+                )
                 if watchdogs is not None:
                     context = self._get_collect_context()
                     stalled_session_id = context[0] if context is not None else None
@@ -2929,6 +3002,7 @@ class CursorProvider:
                         session_id=stalled_session_id,
                         deadline=detect_deadline,
                         watchdogs=watchdogs,
+                        cleanup_failures=idle_stream_cleanup_failures,
                     )
 
                 assert stream is not None

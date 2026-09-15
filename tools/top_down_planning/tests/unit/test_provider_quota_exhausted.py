@@ -9,10 +9,15 @@ from core_tools.provider.errors import ProviderActionRequiredError
 
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.session_recovery_state import (
+    domain_budget_committed_for_phase_action,
     replacement_attempted_for_phase_action,
     session_replacement_phase_action_id,
 )
 from top_down_planning.orchestrator import RunEngine
+from top_down_planning.orchestrator.provider_turns import (
+    production_batch_count,
+    production_completion_claim_count,
+)
 from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.prepare_resume import prepare_resume
@@ -28,6 +33,28 @@ INCIDENT_QUOTA_MESSAGE = (
     "Increase limits for faster responses You're out of usage. "
     "Switch to Auto, or ask your admin to increase your limit to continue."
 )
+
+
+def _production_accounting_snapshot(store: FileRunStore, run_id: str) -> dict:
+    run = store.load_run(run_id)
+    production = store.load_production(run_id)
+    phase_action_id = str(run.get("phase_action_id") or "").strip() or None
+    return {
+        "batch_count": production_batch_count(store, run_id),
+        "output_revision": int(production.get("output_revision") or 0),
+        "current_batch_agent_turns": int(
+            (run.get("production_loop") or {}).get("current_batch_agent_turns") or 0
+        ),
+        "phase_action_id": phase_action_id,
+        "phase_action_domain_committed_id": run.get("phase_action_domain_committed_id"),
+        "session_replacement_phase_action_id": session_replacement_phase_action_id(run),
+        "completion_claims": production_completion_claim_count(store, run_id),
+        "domain_committed_for_phase_action": (
+            domain_budget_committed_for_phase_action(run, phase_action_id)
+            if phase_action_id
+            else False
+        ),
+    }
 
 
 def _batch_apply_request(
@@ -181,6 +208,14 @@ def test_engine_pauses_quota_exhaustion_without_session_replacement(
     ]
     assert paused_events
     assert paused_events[-1]["reason"] == "quota_exhausted"
+    paused_accounting = _production_accounting_snapshot(store, run_id)
+    assert paused_accounting["batch_count"] == 1
+    assert paused_accounting["current_batch_agent_turns"] == 0
+    assert paused_accounting["completion_claims"] == 0
+    assert paused_accounting["phase_action_id"] == phase_action_id
+    assert paused_accounting["phase_action_domain_committed_id"] != phase_action_id
+    assert paused_accounting["session_replacement_phase_action_id"] is None
+    assert paused_accounting["domain_committed_for_phase_action"] is False
 
     again = engine.continue_run(run_id, single_step=True)
     assert again.ok is False
@@ -229,6 +264,13 @@ def test_resume_after_quota_restoration_completes_without_duplicating_work(
     assert paused.status == "paused"
     paused_run = store.load_run(run_id)
     preserved_action = paused_run["phase_action_id"]
+    paused_accounting = _production_accounting_snapshot(store, run_id)
+    assert paused_accounting["batch_count"] == 1
+    assert paused_accounting["current_batch_agent_turns"] == 0
+    assert paused_accounting["completion_claims"] == 0
+    assert paused_accounting["phase_action_id"] == preserved_action
+    assert paused_accounting["domain_committed_for_phase_action"] is False
+    assert paused_accounting["session_replacement_phase_action_id"] is None
     producer_session = None
     sessions = paused_run.get("sessions") or {}
     primary = sessions.get("primary_producer") or {}
@@ -247,6 +289,8 @@ def test_resume_after_quota_restoration_completes_without_duplicating_work(
     assert resumed_run["status"] == "running"
     assert resumed_run["phase"] == PRODUCTION
     assert resumed_run["phase_action_id"] == preserved_action
+    resume_prepare_accounting = _production_accounting_snapshot(store, run_id)
+    assert resume_prepare_accounting == paused_accounting
 
     resume_provider = StubProvider()
     resume_provider.script_turn(done_events(text="resume producer"))
@@ -289,6 +333,19 @@ def test_resume_after_quota_restoration_completes_without_duplicating_work(
     resumed_sessions = final.get("sessions") or {}
     resumed_primary = resumed_sessions.get("primary_producer") or {}
     assert resumed_primary.get("provider_session_id") == producer_session
+    final_accounting = _production_accounting_snapshot(store, run_id)
+    assert final_accounting["batch_count"] == 2
+    assert final_accounting["output_revision"] == 2
+    assert final_accounting["completion_claims"] == 1
+    assert final_accounting["current_batch_agent_turns"] == 0
+    assert final_accounting["session_replacement_phase_action_id"] is None
+    committed_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "phase_action_domain_committed"
+        and event.get("phase_action_id") == preserved_action
+    ]
+    assert len(committed_events) == 1
 
 
 def test_is_recoverable_session_loss_excludes_quota_errors() -> None:

@@ -8,6 +8,11 @@ from core_tools.provider import StubProvider
 
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import RunEngine
+from top_down_planning.orchestrator.provider_turns import production_batch_count
+from top_down_planning.domain.session_recovery_state import (
+    domain_budget_committed_for_phase_action,
+    session_replacement_phase_action_id,
+)
 from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.prepare_resume import prepare_resume
@@ -151,6 +156,12 @@ def test_partial_production_work_survives_quota_pause_and_resume(
     assert (
         partial_path.read_text(encoding="utf-8") == "# milestone two (partial)\n"
     )
+    interrupted_action = str(run.get("phase_action_id") or "").strip()
+    assert interrupted_action
+    assert production_batch_count(store, run_id) == 1
+    assert int((run.get("production_loop") or {}).get("current_batch_agent_turns") or 0) == 0
+    assert session_replacement_phase_action_id(run) is None
+    assert not domain_budget_committed_for_phase_action(run, interrupted_action)
 
     stored = store.load_resolved_config(run_id)
     resume_plan = prepare_resume(store, run_id, stored)
@@ -196,6 +207,15 @@ def test_partial_production_work_survives_quota_pause_and_resume(
         "item-second": "completed",
     }
     assert len(production["batches"]) == 2
+    assert production_batch_count(store, run_id) == 2
+    assert session_replacement_phase_action_id(final) is None
+    committed_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "phase_action_domain_committed"
+        and event.get("phase_action_id") == interrupted_action
+    ]
+    assert len(committed_events) == 1
     assert completed_path.read_text(encoding="utf-8") == "# milestone one\n"
     assert partial_path.read_text(encoding="utf-8") == "# milestone two\n"
     assert final["phase"] == WHOLE_OUTPUT_REVIEW
