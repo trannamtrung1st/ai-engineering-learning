@@ -2185,6 +2185,84 @@ class CursorProvider:
             )
 
     @staticmethod
+    def _invoke_bounded_stream_close(
+        stream: object,
+        *,
+        session_id: str | None,
+        cleanup_deadline: float,
+    ) -> ProviderTurnCleanupError | None:
+        """Run a generic iterator close() within the shared teardown budget."""
+
+        closer = getattr(stream, "close", None)
+        if not callable(closer):
+            return None
+
+        close_errors: list[BaseException] = []
+        close_done = threading.Event()
+
+        def run_close() -> None:
+            try:
+                closer()
+            except BaseException as exc:
+                close_errors.append(exc)
+            finally:
+                close_done.set()
+
+        close_thread = threading.Thread(
+            target=run_close,
+            daemon=True,
+            name="cursor-idle-stream-close",
+        )
+        close_thread.start()
+        remaining = CursorProvider._remaining_turn_tree_cleanup_seconds(
+            cleanup_deadline
+        )
+        if remaining > 0:
+            close_done.wait(timeout=remaining)
+        if not close_done.is_set():
+            return ProviderTurnCleanupError(
+                (
+                    "cursor idle-stream close failed to stop within "
+                    f"{DEFAULT_TURN_TREE_CLEANUP_SECONDS:g}s cleanup budget"
+                ),
+                session_id=session_id,
+            )
+        if not close_errors:
+            return None
+        err = close_errors[0]
+        if isinstance(err, ProviderTurnCleanupError):
+            return err
+        return None
+
+    @staticmethod
+    def _teardown_generic_idle_stream_collector(
+        stream: object,
+        thread: threading.Thread,
+        *,
+        session_id: str | None,
+        cleanup_deadline: float,
+        stopped: threading.Event,
+    ) -> ProviderTurnCleanupError | None:
+        """Bounded generic stream close and producer join on one teardown deadline."""
+
+        stopped.set()
+        cleanup_exc = CursorProvider._invoke_bounded_stream_close(
+            stream,
+            session_id=session_id,
+            cleanup_deadline=cleanup_deadline,
+        )
+        try:
+            CursorProvider._join_idle_stream_producer(
+                thread,
+                session_id=session_id,
+                cleanup_deadline=cleanup_deadline,
+            )
+        except ProviderTurnCleanupError as exc:
+            if cleanup_exc is None:
+                cleanup_exc = exc
+        return cleanup_exc
+
+    @staticmethod
     def _iter_subprocess_stdout_with_idle_timeout(
         stream: _SubprocessStdoutIterator,
         *,
@@ -2303,18 +2381,6 @@ class CursorProvider:
                         line = line_queue.get(timeout=wait)
                 except queue.Empty:
                     on_idle()
-                    closer = getattr(stream, "close", None)
-                    if callable(closer):
-                        try:
-                            closer()
-                        except Exception:
-                            pass
-                    stopped.set()
-                    CursorProvider._join_idle_stream_producer(
-                        thread,
-                        session_id=session_id,
-                        cleanup_deadline=ensure_cleanup_deadline(),
-                    )
                     if watchdogs is not None:
                         error = watchdogs.expired_error(session_id)
                         if error is not None:
@@ -2333,25 +2399,13 @@ class CursorProvider:
                 elif deadline is not None:
                     deadline = time.monotonic() + idle_timeout
         finally:
-            stopped.set()
-            cleanup_exc: ProviderTurnCleanupError | None = None
-            closer = getattr(stream, "close", None)
-            if callable(closer):
-                try:
-                    closer()
-                except ProviderTurnCleanupError as exc:
-                    cleanup_exc = exc
-                except Exception:
-                    pass
-            try:
-                CursorProvider._join_idle_stream_producer(
-                    thread,
-                    session_id=session_id,
-                    cleanup_deadline=ensure_cleanup_deadline(),
-                )
-            except ProviderTurnCleanupError as exc:
-                if cleanup_exc is None:
-                    cleanup_exc = exc
+            cleanup_exc = CursorProvider._teardown_generic_idle_stream_collector(
+                stream,
+                thread,
+                session_id=session_id,
+                cleanup_deadline=ensure_cleanup_deadline(),
+                stopped=stopped,
+            )
             if cleanup_exc is not None:
                 if cleanup_failures is not None:
                     cleanup_failures.append(cleanup_exc)
@@ -2919,6 +2973,7 @@ class CursorProvider:
             owner_id = uuid.uuid4().hex
             self._collect_context.owner_id = owner_id
             watchdogs: _TurnWatchdogs | None = None
+            generic_idle_stream_managed = False
             turn_env = dict(self._subprocess_env or os.environ)
             turn_env[PROVIDER_OWNER_ENV_VAR] = owner_id
             try:
@@ -3013,6 +3068,8 @@ class CursorProvider:
                         watchdogs=watchdogs,
                         cleanup_failures=idle_stream_cleanup_failures,
                     )
+                    if iterator is None:
+                        generic_idle_stream_managed = True
 
                 assert stream is not None
 
@@ -3078,12 +3135,13 @@ class CursorProvider:
                         if tree_clean:
                             self._unregister_tracked_turn_proc(proc)
                 finally:
-                    closer = getattr(raw_stream, "close", None)
-                    if callable(closer):
-                        try:
-                            closer()
-                        except Exception:
-                            pass
+                    if not generic_idle_stream_managed:
+                        closer = getattr(raw_stream, "close", None)
+                        if callable(closer):
+                            try:
+                                closer()
+                            except Exception:
+                                pass
                     if iterator is not None:
                         iterator.close()
 

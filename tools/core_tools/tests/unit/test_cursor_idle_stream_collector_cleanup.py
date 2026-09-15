@@ -68,6 +68,103 @@ def _terminal_error_line(message: str = "provider boom") -> str:
     )
 
 
+def _run_stream_events_with_timeout(
+    provider: CursorProvider,
+    session_id: str,
+    *,
+    timeout_seconds: float,
+) -> BaseException | None:
+    result: list[BaseException | None] = [None]
+
+    def _consume() -> None:
+        try:
+            list(provider.stream_events(session_id))
+        except BaseException as exc:
+            result[0] = exc
+
+    worker = threading.Thread(target=_consume, daemon=True)
+    worker.start()
+    worker.join(timeout=timeout_seconds)
+    if worker.is_alive():
+        return None
+    return result[0]
+
+
+class _TerminalErrorThenBlockingClose:
+    def __init__(
+        self,
+        *,
+        message: str = "blocked close boom",
+        close_gate: threading.Event,
+        producer_gate: threading.Event,
+    ) -> None:
+        self._message = message
+        self._close_gate = close_gate
+        self._producer_gate = producer_gate
+        self._emitted = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        if not self._emitted:
+            self._emitted = True
+            return _terminal_error_line(self._message)
+        self._producer_gate.wait(timeout=60)
+        raise StopIteration
+
+    def close(self) -> None:
+        self._close_gate.wait(timeout=60)
+
+
+class _TerminalErrorThenSlowCooperativeClose:
+    def __init__(
+        self,
+        *,
+        close_delay: float,
+        release: threading.Event,
+    ) -> None:
+        self._close_delay = close_delay
+        self._release = release
+        self._close_requested = threading.Event()
+        self._emitted = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        if not self._emitted:
+            self._emitted = True
+            return _terminal_error_line("slow close ok")
+        self._close_requested.wait(timeout=60)
+        raise StopIteration
+
+    def close(self) -> None:
+        self._close_requested.set()
+        time.sleep(self._close_delay)
+        self._release.set()
+
+
+class _CloseConsumesBudgetBeforeBlockedProducer:
+    def __init__(self, *, close_delay: float, producer_gate: threading.Event) -> None:
+        self._close_delay = close_delay
+        self._producer_gate = producer_gate
+        self._emitted = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        if not self._emitted:
+            self._emitted = True
+            return _terminal_error_line("shared budget boom")
+        self._producer_gate.wait(timeout=60)
+        raise StopIteration
+
+    def close(self) -> None:
+        time.sleep(self._close_delay)
+
+
 class _TerminalErrorThenBlock:
     def __init__(
         self,
@@ -144,6 +241,208 @@ class _LongHealthyTurnThenTerminalErrorCooperativeClose:
 
     def close(self) -> None:
         self._close_requested.set()
+
+
+def test_blocking_close_returns_within_cleanup_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_cleanup_budget = 0.05
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    close_gate = threading.Event()
+    producer_gate = threading.Event()
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _TerminalErrorThenBlockingClose(
+            close_gate=close_gate,
+            producer_gate=producer_gate,
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    started_at = time.monotonic()
+    exc = _run_stream_events_with_timeout(
+        provider,
+        session_id,
+        timeout_seconds=test_cleanup_budget + 0.35,
+    )
+    elapsed = time.monotonic() - started_at
+    assert exc is not None, "provider call hung past cleanup budget"
+    assert isinstance(exc, ProviderTurnError)
+    assert "blocked close boom" in str(exc)
+    assert elapsed < test_cleanup_budget + 0.3
+    notes = getattr(exc, "__notes__", [])
+    assert any("cleanup" in str(note).lower() for note in notes)
+    assert _live_idle_stream_collectors() != []
+    close_gate.set()
+    producer_gate.set()
+    for thread in _live_idle_stream_collectors():
+        thread.join(timeout=1.0)
+
+
+def test_slow_close_within_budget_succeeds_without_cleanup_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_cleanup_budget = 0.05
+    close_delay = test_cleanup_budget * 0.4
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    release = threading.Event()
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _TerminalErrorThenSlowCooperativeClose(
+            close_delay=close_delay,
+            release=release,
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    with pytest.raises(ProviderTurnError, match="slow close ok") as exc_info:
+        list(provider.stream_events(session_id))
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert not any("cleanup" in str(note).lower() for note in notes)
+    assert release.wait(timeout=1.0)
+    assert _live_idle_stream_collectors() == []
+
+
+def test_close_and_producer_join_share_one_cleanup_deadline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_cleanup_budget = 0.05
+    close_delay = test_cleanup_budget * 0.8
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    producer_gate = threading.Event()
+    deadline_calls: list[float] = []
+    original = CursorProvider._turn_tree_cleanup_deadline
+
+    def counting_deadline(start: float | None = None) -> float:
+        deadline_calls.append(time.monotonic())
+        return original(start)
+
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _CloseConsumesBudgetBeforeBlockedProducer(
+            close_delay=close_delay,
+            producer_gate=producer_gate,
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    with patch.object(
+        CursorProvider,
+        "_turn_tree_cleanup_deadline",
+        side_effect=counting_deadline,
+    ):
+        with pytest.raises(ProviderTurnError, match="shared budget boom") as exc_info:
+            list(provider.stream_events(session_id))
+    assert len(deadline_calls) == 1
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert any("cleanup" in str(note).lower() for note in notes)
+    producer_gate.set()
+    for thread in _live_idle_stream_collectors():
+        thread.join(timeout=1.0)
+
+
+def test_primary_provider_error_stays_primary_when_close_times_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_cleanup_budget = 0.05
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    close_gate = threading.Event()
+    producer_gate = threading.Event()
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _TerminalErrorThenBlockingClose(
+            message="primary provider failure",
+            close_gate=close_gate,
+            producer_gate=producer_gate,
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    exc = _run_stream_events_with_timeout(
+        provider,
+        session_id,
+        timeout_seconds=test_cleanup_budget + 0.35,
+    )
+    assert isinstance(exc, ProviderTurnError)
+    assert "primary provider failure" in str(exc)
+    assert not isinstance(exc, ProviderTurnCleanupError)
+    notes = getattr(exc, "__notes__", [])
+    assert any("cleanup" in str(note).lower() for note in notes)
+    close_gate.set()
+    producer_gate.set()
+    for thread in _live_idle_stream_collectors():
+        thread.join(timeout=1.0)
+
+
+def test_healthy_turn_after_blocking_close_failure_has_no_stale_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_cleanup_budget = 0.05
+    monkeypatch.setattr(
+        "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
+        test_cleanup_budget,
+    )
+    close_gate = threading.Event()
+    producer_gate = threading.Event()
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _TerminalErrorThenBlockingClose(
+            close_gate=close_gate,
+            producer_gate=producer_gate,
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    first_exc = _run_stream_events_with_timeout(
+        provider,
+        session_id,
+        timeout_seconds=test_cleanup_budget + 0.35,
+    )
+    assert isinstance(first_exc, ProviderTurnError)
+    close_gate.set()
+    producer_gate.set()
+    for thread in _live_idle_stream_collectors():
+        thread.join(timeout=1.0)
+
+    release = threading.Event()
+    provider = _provider(
+        tmp_path,
+        lambda argv, cwd: _TerminalErrorThenBlock(
+            release=release,
+            cooperative=True,
+            message="healthy follow-up",
+        ),
+        turn_idle_timeout_seconds=120.0,
+        turn_progress_timeout_seconds=120.0,
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    with pytest.raises(ProviderTurnError, match="healthy follow-up") as exc_info:
+        list(provider.stream_events(session_id))
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert not any("cleanup" in str(note).lower() for note in notes)
+    assert _live_idle_stream_collectors() == []
 
 
 def test_long_turn_does_not_consume_cleanup_budget_before_teardown(
