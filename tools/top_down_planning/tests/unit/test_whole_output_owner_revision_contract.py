@@ -609,6 +609,29 @@ def test_fresh_whole_output_entry_rejects_stale_completion_claim(
             adapter._require_completion_claim()
 
 
+def test_stale_completion_claim_output_revision_fails_claim_validation_not_digest(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.production import completion_claim_is_current
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_output_review(store)
+    before = store.load_production(_RUN_ID)
+    before_digest = compute_output_digest(before)
+    plan = store.load_plan_model(_RUN_ID)
+    claim = dict(before.get("completion_claim") or {})
+    claim["output_revision"] = int(claim.get("output_revision") or 0) + 99
+    production = dict(before)
+    production["completion_claim"] = claim
+
+    assert compute_output_digest(production) == before_digest
+    assert completion_claim_is_current(
+        production["completion_claim"],
+        production=production,
+        plan=plan,
+    ) is False
+
+
 def test_completion_claim_does_not_change_output_digest(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_output_review(store)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -38,6 +39,22 @@ from tests.helpers import (
     whole_plan_approval_record,
     write_config,
 )
+
+
+def _with_mutated_latest_batch_summary(
+    production: dict[str, Any],
+    *,
+    summary: str,
+) -> dict[str, Any]:
+    updated = dict(production)
+    batches = [dict(batch) for batch in updated.get("batches") or []]
+    last_batch = dict(batches[-1])
+    result = dict(last_batch.get("result") or {})
+    result["summary"] = summary
+    last_batch["result"] = result
+    batches[-1] = last_batch
+    updated["batches"] = batches
+    return updated
 
 
 def _sample_plan() -> Plan:
@@ -790,12 +807,13 @@ def test_prepare_resume_rejects_current_output_approval_when_output_digest_drift
     _create_run_at_whole_output_review(store, run_id=run_id)
     save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
     _pause_whole_output_review(store, run_id)
-    production = dict(store.load_production(run_id))
+    production = store.load_production(run_id)
     expected_production = int(production["revision"])
+    production = _with_mutated_latest_batch_summary(
+        dict(production),
+        summary="Output changed after approval.",
+    )
     production["revision"] = expected_production + 1
-    claim = dict(production.get("completion_claim") or {})
-    claim["summary"] = "Output changed after approval."
-    production["completion_claim"] = claim
     run = dict(store.load_run(run_id))
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
@@ -813,6 +831,43 @@ def test_prepare_resume_rejects_current_output_approval_when_output_digest_drift
     stored = store.load_resolved_config(run_id)
     with pytest.raises(PrepareResumeBlockedError, match="approval binding"):
         prepare_resume(store, run_id, stored)
+
+
+def test_prepare_resume_allows_current_output_approval_when_only_completion_claim_changes(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000906-000906"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
+    _pause_whole_output_review(store, run_id)
+    production = dict(store.load_production(run_id))
+    expected_production = int(production["revision"])
+    production["revision"] = expected_production + 1
+    claim = dict(production.get("completion_claim") or {})
+    claim["summary"] = "Rephrased completion wording only."
+    claim["goal_assessment"] = "Output goal remains fully met with clearer wording."
+    production["completion_claim"] = claim
+    before_digest = compute_output_digest(store.load_production(run_id))
+    assert compute_output_digest(production) == before_digest
+    run = dict(store.load_run(run_id))
+    expected_revision = int(run["revision"])
+    run["revision"] = expected_revision + 1
+    run = bind_run_digests_for_production_update(run, production)
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=expected_revision,
+            production=production,
+            production_expected_revision=expected_production,
+        ),
+    )
+
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored)
+
+    assert plan.validation.approval_binding_valid is True
 
 
 def test_prepare_resume_ignores_stale_output_approval_after_output_revision(

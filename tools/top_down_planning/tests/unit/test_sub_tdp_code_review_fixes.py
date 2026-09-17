@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -32,6 +33,22 @@ from tests.helpers import accept_child_run, create_run_kwargs
 from tests.support.run_builders import _built_package
 from tests.helpers import write_config
 from tests.support.run_builders import _build_package, _force_run_fields, _item
+
+
+def _with_mutated_latest_batch_summary(
+    production: dict[str, Any],
+    *,
+    summary: str,
+) -> dict[str, Any]:
+    updated = dict(production)
+    batches = [dict(batch) for batch in updated.get("batches") or []]
+    last_batch = dict(batches[-1])
+    result = dict(last_batch.get("result") or {})
+    result["summary"] = summary
+    last_batch["result"] = result
+    batches[-1] = last_batch
+    updated["batches"] = batches
+    return updated
 
 
 def _dependent_plan_with_resources(run_id: str) -> Plan:
@@ -1184,6 +1201,7 @@ def test_validate_accepted_child_rejects_mutated_production_after_approval(
     """P0#4: recompute live output digest; reject post-acceptance production mutation."""
 
     from top_down_planning.package.lineage import validate_accepted_child_delivery
+    from top_down_planning.persistence.digests import compute_output_digest
 
     store, _, package = _built_package(tmp_path)
     config = create_run_kwargs(tmp_path)["resolved_config"]
@@ -1197,17 +1215,88 @@ def test_validate_accepted_child_rejects_mutated_production_after_approval(
     accept_child_run(store, child_id)
     production = store.load_production(child_id)
     expected = int(production["revision"])
-    production = dict(production)
+    before_digest = compute_output_digest(production)
+    production = _with_mutated_latest_batch_summary(
+        dict(production),
+        summary="mutated after acceptance",
+    )
     production["revision"] = expected + 1
-    claim = dict(production.get("completion_claim") or {})
-    claim["goal_assessment"] = "mutated after acceptance"
-    production["completion_claim"] = claim
     store.save_production(child_id, production, expected)
+    assert compute_output_digest(production) != before_digest
 
     with pytest.raises(ValueError, match="output digest"):
         validate_accepted_child_delivery(
             store=store,
             child_run_id=child_id,
+            verify_evidence=False,
+        )
+
+
+def test_validate_accepted_child_allows_completion_claim_only_mutation(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.package.lineage import validate_accepted_child_delivery
+    from top_down_planning.persistence.digests import compute_output_digest
+
+    store, _, package = _built_package(tmp_path)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-foundation"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    accept_child_run(store, child_id)
+    before = store.load_production(child_id)
+    before_digest = compute_output_digest(before)
+    expected = int(before["revision"])
+    production = dict(before)
+    production["revision"] = expected + 1
+    claim = dict(production.get("completion_claim") or {})
+    claim["goal_assessment"] = "Rephrased child goal assessment only."
+    production["completion_claim"] = claim
+    store.save_production(child_id, production, expected)
+
+    assert compute_output_digest(production) == before_digest
+    validate_accepted_child_delivery(
+        store=store,
+        child_run_id=child_id,
+        verify_evidence=False,
+    )
+
+
+def test_validate_accepted_child_rejects_stale_completion_claim_output_revision(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.package.lineage import validate_accepted_child_delivery
+    from top_down_planning.persistence.digests import compute_output_digest
+
+    store, _, package = _built_package(tmp_path)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-foundation"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    accept_child_run(store, child_id)
+    production = dict(store.load_production(child_id))
+    before_digest = compute_output_digest(production)
+    claim = dict(production.get("completion_claim") or {})
+    claim["output_revision"] = int(claim.get("output_revision") or 0) + 99
+    production["completion_claim"] = claim
+    assert compute_output_digest(production) == before_digest
+
+    with pytest.raises(
+        ValueError,
+        match="child completion claim output_revision does not match production",
+    ):
+        validate_accepted_child_delivery(
+            store=store,
+            child_run_id=child_id,
+            child_production=production,
             verify_evidence=False,
         )
 
