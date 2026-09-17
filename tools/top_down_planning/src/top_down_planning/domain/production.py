@@ -428,17 +428,19 @@ def build_compact_approved_plan(plan: Plan) -> dict[str, Any]:
 
 
 def build_production_digest_payload(production: dict[str, Any]) -> dict[str, Any]:
-    """Live output fields for digest binding (excludes invalidated reconciliation evidence)."""
+    """Live output artifact fields used for review freshness binding.
+
+    Completion claims are orchestration metadata and are deliberately excluded:
+    refreshing a claim must not invalidate review evidence for otherwise
+    unchanged output.
+    """
 
     snapshot = build_production_review_snapshot(production)
-    payload: dict[str, Any] = {
+    return {
         "batches": snapshot["batches"],
         "dispositions": snapshot["dispositions"],
         "output_evidence": snapshot["output_evidence"],
     }
-    if "completion_claim" in snapshot:
-        payload["completion_claim"] = snapshot["completion_claim"]
-    return payload
 
 
 def validate_evidence_revision_request(

@@ -25,13 +25,16 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
     enter_owner_revision_cycle,
     mark_findings_open,
 )
-from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.digests import compute_output_digest
 from tests.helpers import (
     apply_production,
     done_events,
+    mandatory_initial_respond_request,
     mandatory_scope_review_respond_request,
     mandatory_verification_respond_request,
+    record_finding_actions,
     record_mandatory_owner_revision_complete,
     respond_review,
     save_review_payload,
@@ -604,6 +607,234 @@ def test_fresh_whole_output_entry_rejects_stale_completion_claim(
     with patch.object(adapter._store, "load_production", return_value=production):
         with pytest.raises(CompletionClaimRequired):
             adapter._require_completion_claim()
+
+
+def test_completion_claim_does_not_change_output_digest(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_output_review(store)
+    _enter_owner_revision_in_progress(store, _RUN_ID)
+
+    before = store.load_production(_RUN_ID)
+    before_digest = compute_output_digest(before)
+    before_output_revision = int(before["output_revision"])
+    before_production_revision = int(before["revision"])
+
+    apply_production(
+        store,
+        _RUN_ID,
+        {
+            "goal_assessment": "Output goal remains fully met.",
+        },
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+
+    after = store.load_production(_RUN_ID)
+
+    assert int(after["revision"]) == before_production_revision + 1
+    assert int(after["output_revision"]) == before_output_revision
+    assert compute_output_digest(after) == before_digest
+
+
+def test_evidence_revision_changes_output_digest(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_output_review(store)
+    _enter_owner_revision_in_progress(store, _RUN_ID)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+
+    before_digest = compute_output_digest(store.load_production(_RUN_ID))
+
+    production = store.load_production(_RUN_ID)
+    apply_production(
+        store,
+        _RUN_ID,
+        _evidence_revision_request(
+            production_revision=int(production["revision"]),
+            with_completion=False,
+        ),
+        handler="apply",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+
+    after_digest = compute_output_digest(store.load_production(_RUN_ID))
+
+    assert after_digest != before_digest
+
+
+def test_owner_sweep_survives_submit_completion_for_verification(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    _create_run_at_whole_output_review(store, provider=provider)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+
+    findings = [
+        {
+            "id": "finding-01",
+            "severity": "blocker",
+            "category": "correctness",
+            "target_refs": ["item-leaf"],
+            "issue": "Output evidence is missing.",
+            "recommended_change": "Add artifact reference.",
+            "status": "unresolved",
+        }
+    ]
+
+    provider.script_turn(
+        done_events(text="initial review complete"),
+        mutate_store=respond_review(
+            store,
+            _RUN_ID,
+            mandatory_initial_respond_request(
+                store,
+                _RUN_ID,
+                loop_id=_LOOP_ID,
+                target_revision=1,
+                review_type="whole_output",
+                decision="changes_requested",
+                findings=findings,
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=_LOOP_ID,
+        ),
+    )
+
+    revision_cycles_before = int(store.load_review(_RUN_ID, _LOOP_ID)["revision_cycles"])
+
+    def _producer_revision() -> None:
+        production = store.load_production(_RUN_ID)
+        apply_production(
+            store,
+            _RUN_ID,
+            _evidence_revision_request(
+                production_revision=int(production["revision"]),
+                with_completion=False,
+            ),
+            handler="apply",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        digest_at_sweep = compute_output_digest(store.load_production(_RUN_ID))
+        output_revision = int(store.load_production(_RUN_ID)["output_revision"])
+        loop_payload = store.load_review(_RUN_ID, _LOOP_ID)
+        families = loop_payload.get("finding_families") or []
+        assert families, "discovery should persist finding families on the loop"
+        family_id = str(families[0]["id"])
+        record_finding_actions(
+            store,
+            _RUN_ID,
+            {
+                "loop_id": _LOOP_ID,
+                "target_revision": output_revision,
+                "target_digest": digest_at_sweep,
+                "finding_set_id": str(loop_payload.get("finding_set_id") or _FINDING_SET_ID),
+                "family_fixes": [
+                    {
+                        "family_id": family_id,
+                        "target_finding_ids": [],
+                        "rationale": "Added missing evidence across production.",
+                        "changed_refs": ["item-leaf"],
+                        "owner_sweep": {
+                            "searched_refs": ["production:*"],
+                            "search_dimensions": ["evidence"],
+                            "additional_fixed_refs": [],
+                            "remaining_instance_refs": [],
+                            "completed": True,
+                            "summary": "No remaining evidence gaps.",
+                        },
+                    }
+                ],
+                "finding_actions": [],
+            },
+            role="producer",
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=_LOOP_ID,
+        )()
+        apply_production(
+            store,
+            _RUN_ID,
+            {
+                "goal_assessment": "Output goal is fully met after revision.",
+            },
+            handler="submit_completion",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        assert compute_output_digest(store.load_production(_RUN_ID)) == digest_at_sweep
+
+    provider.script_turn(done_events(text="owner revision"), mutate_store=_producer_revision)
+
+    def _verification_respond() -> None:
+        loop_payload = store.load_review(_RUN_ID, _LOOP_ID)
+        finding_set_id = str(loop_payload.get("finding_set_id") or _FINDING_SET_ID)
+        target_revision = int(store.load_production(_RUN_ID)["output_revision"])
+        respond_review(
+            store,
+            _RUN_ID,
+            mandatory_verification_respond_request(
+                store,
+                _RUN_ID,
+                loop_id=_LOOP_ID,
+                target_revision=target_revision,
+                review_type="whole_output",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["artifact added"],
+                        "direct_side_effects": [],
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=_LOOP_ID,
+        )()
+
+    provider.script_turn(
+        done_events(text="verification complete"),
+        mutate_store=_verification_respond,
+    )
+
+    def _scope_respond() -> None:
+        target_revision = int(store.load_production(_RUN_ID)["output_revision"])
+        respond_review(
+            store,
+            _RUN_ID,
+            mandatory_scope_review_respond_request(
+                store,
+                _RUN_ID,
+                loop_id=_LOOP_ID,
+                target_revision=target_revision,
+                review_type="whole_output",
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=_LOOP_ID,
+        )()
+
+    provider.script_turn(done_events(text="scope review complete"), mutate_store=_scope_respond)
+
+    result = WholeOutputReviewOrchestrator(store, _RUN_ID, provider).run()
+
+    assert result.ok is True
+    assert result.phase == OUTPUT_VALIDATED
+    assert result.outcome == "accepted"
+    review = store.load_review(_RUN_ID, _LOOP_ID)
+    assert int(review["revision_cycles"]) == revision_cycles_before + 1
+    assert review.get("verification_result")
+    assert review.get("scope_review_result")
+    owner_sweeps = [
+        sweep
+        for sweep in review.get("family_sweeps", [])
+        if sweep.get("stage") == "owner_fix"
+    ]
+    assert owner_sweeps
+    assert owner_sweeps[-1]["artifact_digest"] == compute_output_digest(
+        store.load_production(_RUN_ID)
+    )
 
 
 def test_evidence_revision_apply_without_completion_still_clears_claim(
