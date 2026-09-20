@@ -2109,6 +2109,16 @@ def focused_output_revision_transaction_active(loop: ReviewLoop) -> bool:
     return False
 
 
+def focused_review_loop_is_recoverable_incomplete(loop: ReviewLoop) -> bool:
+    """True when a focused loop ended in retryable ``review_incomplete`` (not terminal)."""
+
+    if loop.type not in {"focused_plan", "focused_output"}:
+        return False
+    if is_terminal_review_loop(loop):
+        return False
+    return str(loop.status or "").strip() == "review_incomplete"
+
+
 def focused_review_orchestrator_resume_eligible(
     loop: ReviewLoop,
     *,

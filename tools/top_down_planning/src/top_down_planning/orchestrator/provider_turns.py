@@ -2219,12 +2219,15 @@ def run_pending_focused_review(
 ) -> bool:
     """Run a focused review loop when the store shows one is due.
 
-    Returns True when a focused review loop ran to completion.
+    Returns True when a focused review loop ran to completion. Returns False when
+    no loop is due, owner-revision work is producer-owned, or the loop is
+    recoverably ``review_incomplete`` (focused profile does not pause the run).
     """
 
     from top_down_planning.domain.production_blockers import evaluate_blocker_report
     from top_down_planning.domain.reviews import (
         ReviewLoop,
+        focused_review_loop_is_recoverable_incomplete,
         focused_review_producer_owner_work_pending,
     )
     from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
@@ -2261,6 +2264,10 @@ def run_pending_focused_review(
             store=store,
             run_id=run_id,
         ):
+            return False
+        if loop is not None and focused_review_loop_is_recoverable_incomplete(loop):
+            return False
+        if str(result.status or "").strip() == "review_incomplete":
             return False
         raise ReviewStateConflict(
             result.reason or f"{review_type} focused review did not complete successfully"

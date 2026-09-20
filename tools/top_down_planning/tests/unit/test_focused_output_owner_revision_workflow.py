@@ -1344,6 +1344,48 @@ def test_production_phase_rediscovers_review_incomplete_focused_output(
     assert store.load_production(run_id)["dispositions"]["item-second"] == "completed"
 
 
+def test_run_pending_focused_review_repeated_review_incomplete_does_not_raise(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import run_pending_focused_review
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000512-000512"
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    loop = ReviewLoop.from_dict(_advisory_optional_focused_output_loop(item_ids=["item-first"]))
+    incomplete = mark_advisory_handoff_incomplete(
+        loop,
+        missing_finding_ids=["finding-opt"],
+    )
+    save_review_payload(store, run_id, incomplete.to_dict())
+    assert (
+        find_resumable_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == loop_id
+    )
+
+    provider.script_turn(done_events(text="advisory retry without owner action"))
+
+    run_pending_focused_review(
+        store,
+        run_id,
+        provider,
+        review_type="focused_output",
+    )
+
+    persisted = store.load_review(run_id, loop_id)
+    assert persisted["status"] == "review_incomplete"
+    run = store.load_run(run_id)
+    assert run["status"] == "running"
+    stop_code = str((run.get("stop") or {}).get("code") or "")
+    assert stop_code != "review_state_conflict"
+
+
 def test_production_phase_rediscovers_changes_requested_focused_output(
     tmp_path: Path,
 ) -> None:
