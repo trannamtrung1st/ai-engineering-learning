@@ -1279,11 +1279,15 @@ class ReviewLoopDriver:
     def _owner_work_complete_for_recheck(self, loop: ReviewLoop) -> bool:
         if self.profile.is_mandatory_gate:
             return self._owner_revision_complete(loop)
-        return not focused_review_producer_owner_work_pending(
+        if is_terminal_review_loop(loop):
+            return False
+        if focused_review_producer_owner_work_pending(
             loop,
             store=self._store,
             run_id=self._run_id,
-        )
+        ):
+            return False
+        return verification_required_for_loop(loop)
 
     def _owner_revision_ready_for_recheck(self, loop: ReviewLoop) -> bool:
         if pending_verification_owner_cycle_charge(

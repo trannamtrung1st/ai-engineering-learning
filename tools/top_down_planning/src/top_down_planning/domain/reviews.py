@@ -2949,11 +2949,13 @@ def expand_finding_actions_with_default(
         for item in explicit
         if str(item.get("finding_id") or "").strip()
     }
-    scoped_existing_ids = {
-        action.finding_id
-        for action in loop.finding_actions
-        if not finding_set_id or action.finding_set_id == finding_set_id
-    }
+    scoped_existing_ids = set(
+        effective_owner_actions(
+            loop.finding_actions,
+            finding_set_id=finding_set_id or None,
+            owner_revision_cycle=int(loop.revision_cycles),
+        )
+    )
     expanded = list(explicit)
     if default_action is not None:
         threshold = loop_revise_at(loop)

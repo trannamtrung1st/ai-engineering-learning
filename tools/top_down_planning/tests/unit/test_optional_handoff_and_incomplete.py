@@ -808,6 +808,36 @@ def test_default_optional_action_never_covers_required_findings() -> None:
     assert expanded[0]["finding_id"] == "finding-opt"
 
 
+def test_default_optional_action_applies_when_prior_cycle_recorded_challenge() -> None:
+    loop = _optional_loop(
+        revision_cycles=2,
+        status="pending",
+        finding_actions=[
+            {
+                "finding_id": "finding-opt",
+                "finding_set_id": "fs-01",
+                "action": "challenge",
+                "actor_role": "planner",
+                "owner_revision_cycle": 1,
+                "artifact_revision": 0,
+                "challenge_reason": "invalid",
+                "proposed_disposition": "invalid",
+                "rationale": "Cycle one challenge.",
+            }
+        ],
+    )
+    expanded = expand_finding_actions_with_default(
+        loop,
+        [],
+        default_optional_action="defer",
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    assert len(expanded) == 1
+    assert expanded[0]["finding_id"] == "finding-opt"
+    assert expanded[0]["action"] == "defer"
+
+
 def test_history_summary_reports_open_count_and_convergence_warning() -> None:
     loop = _optional_loop(
         scope_review_rounds=3,

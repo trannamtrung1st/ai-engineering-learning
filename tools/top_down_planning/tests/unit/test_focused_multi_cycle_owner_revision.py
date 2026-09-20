@@ -11,7 +11,9 @@ from top_down_planning.domain.reviews import (
     focused_review_producer_owner_work_pending,
     owner_actions_require_revision,
     effective_owner_actions,
+    verification_required_for_loop,
 )
+from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.orchestrator.focused_review import (
     FocusedReviewAdapter,
     FocusedReviewOrchestrator,
@@ -283,3 +285,81 @@ def test_cycle2_challenge_does_not_require_cycle1_fix_artifact(
         store=store,
         run_id=run_id,
     ) is False
+
+
+def _optional_finding(*, target_refs: list[str]) -> dict:
+    return {
+        "id": "finding-opt",
+        "severity": "minor",
+        "category": "correctness",
+        "target_refs": target_refs,
+        "issue": "Optional polish.",
+        "recommended_change": "Improve wording.",
+        "status": "unresolved",
+    }
+
+
+def test_focused_optional_defer_after_charged_cycle_skips_recheck_and_completes(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000806-000806"
+    create_planning_run(store, run_id)
+    created = ReviewAgentService(store, run_id).request(
+        focused_plan_request(["item-api"], store, run_id=run_id),
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+    loop_id = str(created["loop_id"])
+    respond_review(
+        store,
+        run_id,
+        review_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            decision="changes_requested",
+            findings=[_optional_finding(target_refs=["item-api"])],
+        ),
+        phase=PLANNING,
+        loop_id=loop_id,
+    )()
+    _enter_focused_owner_cycle(store, run_id, loop_id, revision_cycles=1)
+
+    loop_payload = store.load_review(run_id, loop_id)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    ReviewAgentService(store, run_id).record_finding_actions(
+        {
+            "loop_id": loop_id,
+            "target_revision": int(store.load_plan_model(run_id).revision),
+            "target_digest": compute_plan_digest(store.load_plan_model(run_id)),
+            "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+            "finding_actions": [
+                {
+                    "finding_id": "finding-opt",
+                    "action": "defer",
+                    "actor_role": "planner",
+                    "rationale": "Accept optional risk for now.",
+                }
+            ],
+        },
+        capability_token=token,
+    )
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert loop.status == "approved"
+    assert verification_required_for_loop(loop) is False
+    adapter = FocusedReviewAdapter(store, run_id)
+    adapter.bind_loop(loop)
+    driver = ReviewLoopDriver(store, run_id, provider, adapter)
+    adapter.bind_driver(driver)
+    assert driver._owner_work_complete_for_recheck(loop) is False
+
+    result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
+
+    assert result.ok is True
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
+    assert not any(
+        event.get("type") == "focused_review_recheck_requested"
+        for event in store.load_events(run_id)
+    )
