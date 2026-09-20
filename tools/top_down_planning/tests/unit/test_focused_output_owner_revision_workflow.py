@@ -20,129 +20,43 @@ from top_down_planning.domain.production_blockers import (
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     focused_output_evidence_revision_allowed,
+    focused_output_owner_revision_in_progress_loop,
     focused_output_revision_target_ids,
 )
 from top_down_planning.domain.session_bindings import new_session_binding
-from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
+from top_down_planning.orchestrator.focused_review import (
+    FocusedReviewAdapter,
+    FocusedReviewOrchestrator,
+)
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
-from top_down_planning.orchestrator.provider_turns import find_pending_focused_review_loop_id
+from top_down_planning.orchestrator.provider_turns import (
+    find_pending_focused_review_loop_id,
+    owner_revision_complete,
+)
+from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
+    apply_production,
     done_events,
     grant_capability,
+    mandatory_output_digest,
     record_finding_actions,
     request_focused_review,
     respond_review,
     review_loop_dict_with_binding,
     save_review_payload,
 )
-from tests.support.focused_review import create_production_run, review_respond_request
-from tests.unit.test_focused_evidence_revision import (
-    _create_run,
-    _focused_review,
+from tests.support.focused_evidence_revision import (
+    create_agent_focused_test_run_open_item_second,
+    create_focused_evidence_test_run,
+    focused_output_review_payload,
 )
-
-
-def _create_run_with_open_item_second(
-    store: FileRunStore,
-    tmp_path: Path,
-    run_id: str = "run-20260101T000551-000551",
-) -> None:
-    from top_down_planning.domain.models import Plan, PlanItem
-    from tests.helpers import bind_evidence_snapshot, create_run_kwargs, whole_plan_approval_record
-
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
-    )
-    first = PlanItem(
-        id="item-first",
-        parent_id="item-root",
-        order_key="0000000000",
-        title="First",
-        outcome="First outcome.",
-        kind="work",
-    )
-    second = PlanItem(
-        id="item-second",
-        parent_id="item-root",
-        order_key="0000000100",
-        title="Second",
-        outcome="Second outcome.",
-        kind="work",
-    )
-    plan = Plan(
-        id=f"plan-{run_id}",
-        revision=0,
-        output_goal="Deliver.",
-        items={"item-root": root, "item-first": first, "item-second": second},
-    )
-    config = {
-        "run": {"output_goal": "Deliver.", "input_refs": ["README.md"]},
-        "planning": {
-            "stop_hint": "Stop.",
-            "max_depth": 4,
-            "max_expansion_per_item": 7,
-        },
-        "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-    }
-    store.create_run(
-        run_id,
-        plan=plan,
-        **create_run_kwargs(store.root, resolved_config=config),
-        phase=PRODUCTION,
-    )
-    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
-    run = store.load_run(run_id)
-    workspace = Path(str(run["workspace"]))
-    (workspace / "first.txt").write_text("1\n", encoding="utf-8")
-    (workspace / "second.txt").write_text("2\n", encoding="utf-8")
-    production = store.load_production(run_id)
-    expected = int(production["revision"])
-    production = dict(production)
-    production["revision"] = expected + 1
-    production["output_revision"] = 1
-    production["dispositions"] = {"item-first": "completed"}
-    output_evidence, nested_output = bind_evidence_snapshot(
-        store,
-        run_id,
-        {
-            "id": "output-first",
-            "type": "artifact",
-            "ref": "first.txt",
-            "media_type": "text/plain",
-            "captured_at": "2026-01-01T00:00:00Z",
-            "batch_id": "batch-01",
-        },
-        content=(workspace / "first.txt").read_bytes(),
-    )
-    production["batches"] = [
-        {
-            "id": "batch-01",
-            "plan_items": ["item-first"],
-            "status": "completed",
-            "result": {
-                "outputs": [nested_output],
-                "contributions": [
-                    {
-                        "item_id": "item-first",
-                        "output_refs": ["output-first"],
-                        "summary": "initial",
-                    }
-                ],
-                "dispositions": {
-                    "item-first": {"disposition": "completed", "evidence": "initial"},
-                },
-                "summary": "initial",
-            },
-        }
-    ]
-    production["output_evidence"] = [output_evidence]
-    store.save_production(run_id, production, expected)
+from tests.support.focused_review import (
+    create_production_run,
+    create_production_run_open_item_second,
+    review_respond_request,
+)
 
 
 def _owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
@@ -184,7 +98,7 @@ def test_evidence_revision_allowed_after_owner_actions_recorded_before_artifact(
 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000551-000551"
-    _create_run(store)
+    create_focused_evidence_test_run(store)
     loop_payload = _owner_revision_pending_loop(item_ids=["item-first"])
     loop_payload["finding_actions"] = [
         {
@@ -345,7 +259,7 @@ def test_focused_evidence_revision_allowed_after_owner_revision_handoff(
     tmp_path: Path,
 ) -> None:
     store = FileRunStore(tmp_path)
-    _create_run(store)
+    create_focused_evidence_test_run(store)
     save_review_payload(
         store,
         "run-20260101T000551-000551",
@@ -370,7 +284,7 @@ def test_normal_production_apply_rejected_during_focused_output_owner_revision(
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000551-000551"
-    _create_run_with_open_item_second(store, tmp_path, run_id=run_id)
+    create_agent_focused_test_run_open_item_second(store, run_id=run_id)
     save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
     service = ProductionAgentService(store, run_id)
     token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
@@ -417,7 +331,7 @@ def test_evidence_revision_then_owner_actions_before_reviewer_recheck(
 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000551-000551"
-    _create_run(store)
+    create_focused_evidence_test_run(store)
     save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
     loop_id = "review-focused-output-01"
     artifact = tmp_path / "first-v2.txt"
@@ -500,7 +414,7 @@ def test_focused_owner_revision_allows_evidence_apply_then_blocks_unrelated_norm
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000551-000551"
-    _create_run_with_open_item_second(store, tmp_path, run_id=run_id)
+    create_agent_focused_test_run_open_item_second(store, run_id=run_id)
     save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
     loop_id = "review-focused-output-01"
     first_v2 = tmp_path / "first-v2.txt"
@@ -567,7 +481,7 @@ def test_focused_owner_revision_allows_evidence_apply_then_blocks_unrelated_norm
 def test_focused_evidence_revision_apply_after_owner_handoff(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000551-000551"
-    _create_run(store)
+    create_focused_evidence_test_run(store)
     save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
     artifact = tmp_path / "first-v2.txt"
     artifact.write_text("revised", encoding="utf-8")
@@ -608,8 +522,8 @@ def test_focused_evidence_revision_apply_after_owner_handoff(tmp_path: Path) -> 
 def test_fresh_pending_focused_review_rejects_evidence_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000551-000551"
-    _create_run(store)
-    fresh = _focused_review(item_ids=["item-first"], status="pending")
+    create_focused_evidence_test_run(store)
+    fresh = focused_output_review_payload(item_ids=["item-first"], status="pending")
     fresh["revision_cycles"] = 0
     fresh["findings"] = []
     save_review_payload(store, run_id, fresh)
@@ -779,3 +693,253 @@ def test_focused_orchestrator_does_not_resume_ended_reviewer_during_owner_revisi
 
     assert result.ok is False
     assert "owner revision" in (result.reason or "").lower()
+
+
+def test_focused_owner_revision_recheck_then_normal_production_resumes(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000501-000501"
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    request_focused_review(
+        store,
+        run_id,
+        {"type": "focused_output", "scope": {"item_ids": ["item-first"]}},
+        role="producer",
+        phase=PRODUCTION,
+    )()
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    ProductionAgentService(store, run_id).report_blocked(
+        {
+            "production_revision": int(store.load_production(run_id)["revision"]),
+            "kind": BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+            "review_loop_id": loop_id,
+            "evidence": "Waiting on focused review.",
+            "affected_refs": ["item-first"],
+            "summary": "focused review pending",
+        },
+        capability_token=token,
+    )
+    respond_review(
+        store,
+        run_id,
+        review_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            decision="changes_requested",
+            target_revision=int(store.load_review(run_id, loop_id)["target_revision"]),
+            findings=[
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-first"],
+                    "issue": "Evidence is incomplete.",
+                    "recommended_change": "Add a revised artifact.",
+                    "status": "unresolved",
+                }
+            ],
+        ),
+        phase=PRODUCTION,
+        loop_id=loop_id,
+    )()
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    adapter = FocusedReviewAdapter(store, run_id)
+    adapter.bind_loop(loop)
+    entered = adapter.enter_revision_cycle(
+        loop,
+        max(1, int(loop.revision_cycles) + 1),
+    )
+    save_review_payload(store, run_id, entered.to_dict())
+    output_revision_before = int(store.load_production(run_id)["output_revision"])
+    service = ProductionAgentService(store, run_id)
+
+    with pytest.raises(RequestError, match="focused-output owner revision is active"):
+        service.apply(
+            {
+                "production_revision": int(store.load_production(run_id)["revision"]),
+                "plan_items": ["item-second"],
+                "dispositions": {
+                    "item-second": {
+                        "disposition": "completed",
+                        "evidence": "Unrelated batch during owner revision.",
+                    }
+                },
+                "outputs": [
+                    {
+                        "id": "output-second-batch",
+                        "type": "artifact",
+                        "ref": "artifacts/second.txt",
+                    }
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-second",
+                        "output_refs": ["output-second-batch"],
+                        "summary": "Should be rejected during owner revision.",
+                    }
+                ],
+                "summary": "Unrelated normal apply.",
+            },
+            capability_token=token,
+        )
+
+    workspace = Path(str(store.load_run(run_id)["workspace"]))
+    (workspace / "artifacts" / "first-v2.txt").write_text("revised", encoding="utf-8")
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": int(store.load_production(run_id)["revision"]),
+            "evidence_revision": True,
+            "focused_review_loop_id": loop_id,
+            "plan_items": ["item-first"],
+            "dispositions": {
+                "item-first": {
+                    "disposition": "completed",
+                    "evidence": "Revised artifact for reviewer.",
+                }
+            },
+            "outputs": [
+                {
+                    "id": "output-first-v2",
+                    "type": "artifact",
+                    "ref": "artifacts/first-v2.txt",
+                }
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-first",
+                    "output_refs": ["output-first-v2"],
+                    "summary": "Focused evidence revision.",
+                }
+            ],
+            "summary": "Evidence revision for focused-output review finding.",
+        },
+        handler="apply",
+    )()
+    assert int(store.load_production(run_id)["output_revision"]) == output_revision_before + 1
+
+    loop_payload = store.load_review(run_id, loop_id)
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+            "finding_actions": [
+                {
+                    "finding_id": "finding-01",
+                    "action": "fix",
+                    "actor_role": "producer",
+                    "rationale": "Added a revised artifact.",
+                }
+            ],
+        },
+        role="producer",
+        phase=PRODUCTION,
+        loop_id=loop_id,
+    )()
+
+    assert owner_revision_complete(store, run_id, loop_id) is True
+    assert focused_output_owner_revision_in_progress_loop(store, run_id) is None
+
+    reviewer_session_id = reviewer_loop_provider_session_id(
+        store.load_review(run_id, loop_id)
+    )
+
+    def _verify_revised_artifact() -> None:
+        loop = store.load_review(run_id, loop_id)
+        respond_review(
+            store,
+            run_id,
+            {
+                "loop_id": loop_id,
+                "target_revision": int(loop["target_revision"]),
+                "stage": "finding_verification",
+                "decision": "verified",
+                "finding_set_id": str(loop.get("finding_set_id") or ""),
+                "finding_results": [
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["revised artifact attached"],
+                        "direct_side_effects": [],
+                    }
+                ],
+                "new_direct_side_effect_findings": [],
+                "target_digest": mandatory_output_digest(store, run_id),
+                "summary": "focused verification",
+            },
+            phase=PRODUCTION,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="owner session rotate"))
+    provider.script_turn(done_events(text="producer owner revision turn"))
+    if reviewer_session_id:
+        provider.script_session_turn(
+            reviewer_session_id,
+            done_events(text="recheck delivery without respond"),
+        )
+        provider.script_session_turn(
+            reviewer_session_id,
+            done_events(text="reviewer verify"),
+            mutate_store=_verify_revised_artifact,
+        )
+    else:
+        provider.script_turn(done_events(text="recheck delivery without respond"))
+        provider.script_turn(
+            done_events(text="reviewer verify"),
+            mutate_store=_verify_revised_artifact,
+        )
+
+    recheck_result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
+
+    assert recheck_result.ok is True
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
+    assert any(
+        event.get("type") == "focused_review_recheck_requested"
+        and event.get("loop_id") == loop_id
+        for event in store.load_events(run_id)
+    )
+
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": int(store.load_production(run_id)["revision"]),
+            "plan_items": ["item-second"],
+            "dispositions": {
+                "item-second": {
+                    "disposition": "completed",
+                    "evidence": "Normal production after focused review closed.",
+                }
+            },
+            "outputs": [
+                {
+                    "id": "output-second-done",
+                    "type": "artifact",
+                    "ref": "artifacts/second.txt",
+                }
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-second",
+                    "output_refs": ["output-second-done"],
+                    "summary": "Item second completed after recheck.",
+                }
+            ],
+            "summary": "Normal batch after focused owner revision transaction.",
+        },
+        handler="apply",
+    )()
+
+    assert store.load_production(run_id)["dispositions"]["item-second"] == "completed"
+    run = store.load_run(run_id)
+    assert run.get("phase") == PRODUCTION
+    assert run.get("status") == "running"
