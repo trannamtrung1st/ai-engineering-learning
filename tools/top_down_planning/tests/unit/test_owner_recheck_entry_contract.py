@@ -189,6 +189,7 @@ def test_focused_plan_artifact_without_owner_action_does_not_enter_verification_
         phase=PLANNING,
         loop_id=loop_id,
     )()
+    provider.script_turn(done_events(text="owner revision session start"))
     provider.script_turn(
         done_events(text="planner revision without owner response"),
         mutate_store=apply_plan(

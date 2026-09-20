@@ -2167,32 +2167,68 @@ def build_reviewer_turn_recovery(
     )
 
 
-def find_resumable_focused_review_loop_id(
+def find_latest_active_focused_review_loop_id(
     store: RunStore,
     run_id: str,
     *,
     review_type: str,
 ) -> str | None:
-    """Return the newest focused review loop production/planning should resume."""
+    """Return the newest non-terminal focused loop of ``review_type``, if any."""
 
-    from top_down_planning.domain.reviews import (
-        ReviewLoop,
-        focused_review_orchestrator_resume_eligible,
-    )
+    from top_down_planning.domain.reviews import ReviewLoop, is_terminal_review_loop
 
-    for review in reversed(store.list_reviews(run_id)):
+    latest_id: str | None = None
+    for review in store.list_reviews(run_id):
         if str(review.get("type") or "") != review_type:
             continue
         loop_id = review.get("id")
         if loop_id is None:
             continue
         loop = ReviewLoop.from_dict(review)
-        if focused_review_orchestrator_resume_eligible(
-            loop,
-            store=store,
-            run_id=run_id,
-        ):
-            return str(loop_id)
+        if is_terminal_review_loop(loop):
+            continue
+        latest_id = str(loop_id)
+    return latest_id
+
+
+def find_resumable_focused_review_loop_id(
+    store: RunStore,
+    run_id: str,
+    *,
+    review_type: str,
+) -> str | None:
+    """Return the newest focused loop the orchestrator should drive when eligible.
+
+    When the newest active loop is waiting on owner-revision work, returns ``None``
+    and does **not** scan older loops (the newest transaction is authoritative).
+    """
+
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        focused_review_orchestrator_resume_eligible,
+        focused_review_producer_owner_work_pending,
+    )
+
+    loop_id = find_latest_active_focused_review_loop_id(
+        store,
+        run_id,
+        review_type=review_type,
+    )
+    if loop_id is None:
+        return None
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    if focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    ):
+        return None
+    if focused_review_orchestrator_resume_eligible(
+        loop,
+        store=store,
+        run_id=run_id,
+    ):
+        return loop_id
     return None
 
 
@@ -2260,6 +2296,7 @@ def run_pending_focused_review(
     from top_down_planning.domain.reviews import (
         ReviewLoop,
         focused_review_loop_is_recoverable_incomplete,
+        focused_review_orchestrator_resume_eligible,
         focused_review_producer_owner_work_pending,
     )
     from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
@@ -2277,12 +2314,26 @@ def run_pending_focused_review(
     if blocker.disposition == "active_terminal":
         return FocusedReviewRunOutcome.NOT_DUE
 
-    loop_id = find_resumable_focused_review_loop_id(
+    loop_id = find_latest_active_focused_review_loop_id(
         store,
         run_id,
         review_type=review_type,
     )
     if loop_id is None:
+        return FocusedReviewRunOutcome.NOT_DUE
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    owner_work_pending = focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    )
+    orchestrator_eligible = focused_review_orchestrator_resume_eligible(
+        loop,
+        store=store,
+        run_id=run_id,
+    )
+    if not owner_work_pending and not orchestrator_eligible:
         return FocusedReviewRunOutcome.NOT_DUE
 
     result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)

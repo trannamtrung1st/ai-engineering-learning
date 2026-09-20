@@ -394,7 +394,21 @@ class ReviewLoopDriver:
                 run = self._store.load_run(self._run_id)
                 if str(run.get("status") or "") != "running":
                     return self.result_from_run(run, ok=False, loop=loop)
-                return self._focused_adapter().owner_revision_pending(loop)
+                resumed = self._resume_interrupted_owner_revision(loop, limits)
+                if isinstance(resumed, MandatoryWholeReviewResult):
+                    return resumed
+                loop = resumed
+                run = self._store.load_run(self._run_id)
+                if str(run.get("status") or "") != "running":
+                    return self.result_from_run(run, ok=False, loop=loop)
+                loop = self._reload_loop(loop.id)
+                if focused_review_producer_owner_work_pending(
+                    loop,
+                    store=self._store,
+                    run_id=self._run_id,
+                ):
+                    return self._focused_adapter().owner_revision_pending(loop)
+                continue
             if loop.status == "pending":
                 consumed_persisted_decision = False
                 if self.profile.is_mandatory_gate:

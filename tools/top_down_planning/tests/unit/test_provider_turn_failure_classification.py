@@ -88,9 +88,23 @@ def test_pending_focused_review_failure_is_review_state_conflict(
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T001701-001701"
     _create_planning_run(store, run_id)
+    from tests.helpers import make_review_loop, save_review_payload
+
+    save_review_payload(
+        store,
+        run_id,
+        make_review_loop(
+            id="review-focused-plan-01",
+            type="focused_plan",
+            target_revision=0,
+            scope={"kind": "focused_plan", "item_ids": ["item-root"]},
+            status="pending",
+            reviewer_session_id="sess-fr",
+        ).to_dict(),
+    )
 
     with patch(
-        "top_down_planning.orchestrator.provider_turns.find_resumable_focused_review_loop_id",
+        "top_down_planning.orchestrator.provider_turns.find_latest_active_focused_review_loop_id",
         return_value="review-focused-plan-01",
     ):
         with patch.object(

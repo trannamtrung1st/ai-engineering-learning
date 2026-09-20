@@ -439,6 +439,18 @@ def test_evidence_revision_then_owner_actions_before_reviewer_recheck(
         loop, store=store, run_id=run_id
     ) is False
     assert focused_review_owner_actions_complete(loop) is False
+    from top_down_planning.orchestrator.provider_turns import (
+        find_latest_active_focused_review_loop_id,
+    )
+
+    assert (
+        find_latest_active_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == loop_id
+    )
     assert (
         find_pending_focused_review_loop_id(
             store,
@@ -743,15 +755,23 @@ def test_focused_orchestrator_does_not_resume_ended_reviewer_during_owner_revisi
                 session_id=session_id,
             )
 
-    original_canonical = provider.canonical_session_id
+    original_resume = provider.resume_primary_session
 
-    def canonical(session_id: str) -> str:
+    def resume_primary_session(
+        session_id: str,
+        request: dict,
+        *,
+        role: str | None = None,
+        model: str | None = None,
+    ) -> None:
         _reject_unknown(session_id)
-        return original_canonical(session_id)
+        return original_resume(session_id, request, role=role, model=model)
 
-    provider.canonical_session_id = canonical  # type: ignore[method-assign]
+    provider.resume_primary_session = resume_primary_session  # type: ignore[method-assign]
     create_production_run(store, provider=provider)
     save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
+    provider.script_turn(done_events(text="owner revision session start"))
+    provider.script_turn(done_events(text="owner revision turn"))
 
     result = FocusedReviewOrchestrator(store, run_id, provider).run(
         "review-focused-output-01"
@@ -1440,6 +1460,8 @@ def test_production_phase_rediscovers_changes_requested_focused_output(
         == loop_id
     )
 
+    provider.script_turn(done_events(text="producer primary session start"))
+    provider.script_turn(done_events(text="owner revision handoff session"))
     provider.script_turn(done_events(text="owner revision handoff"))
     FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
 

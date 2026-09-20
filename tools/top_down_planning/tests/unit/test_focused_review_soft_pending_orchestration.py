@@ -65,6 +65,70 @@ def _advisory_optional_focused_output_loop(*, item_ids: list[str]) -> dict:
     return loop
 
 
+def _focused_plan_owner_revision_pending_loop(*, target_revision: int = 0) -> dict:
+    binding = new_session_binding(
+        role="reviewer",
+        kind="reviewer",
+    ).with_provider_session_id("ended-reviewer-session")
+    loop = review_loop_dict_with_binding(
+        {
+            "id": "review-focused-plan-01",
+            "type": "focused_plan",
+            "target_revision": target_revision,
+            "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
+            "status": "pending",
+            "revise_at": "blocker",
+            "revision_cycles": 1,
+            "finding_set_id": "fs-owner-revision-01",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-root"],
+                    "issue": "Plan gap.",
+                    "recommended_change": "Revise plan.",
+                    "status": "unresolved",
+                }
+            ],
+        }
+    )
+    loop["reviewer_binding"] = binding.to_dict()
+    return loop
+
+
+def _owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
+    binding = new_session_binding(
+        role="reviewer",
+        kind="reviewer",
+    ).with_provider_session_id("ended-reviewer-session")
+    loop = review_loop_dict_with_binding(
+        {
+            "id": "review-focused-output-01",
+            "type": "focused_output",
+            "target_revision": 1,
+            "scope": {"kind": "focused_output", "item_ids": item_ids},
+            "status": "pending",
+            "revise_at": "blocker",
+            "revision_cycles": 1,
+            "finding_set_id": "fs-owner-revision-01",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": item_ids[:1],
+                    "issue": "Need better evidence.",
+                    "recommended_change": "Revise artifact.",
+                    "status": "unresolved",
+                }
+            ],
+        }
+    )
+    loop["reviewer_binding"] = binding.to_dict()
+    return loop
+
+
 def _focused_plan_incomplete_loop(*, target_revision: int = 0) -> ReviewLoop:
     payload = review_loop_dict_with_binding(
         {
@@ -265,3 +329,143 @@ def test_production_phase_review_incomplete_does_not_consume_producer_turn(
     assert run["status"] == "running"
     assert store.load_review(run_id, loop_id)["status"] == "review_incomplete"
     assert int(store.load_production(run_id)["revision"]) == production_revision_before
+
+
+def test_find_resumable_focused_review_does_not_skip_past_owner_pending_newest_loop(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        find_latest_active_focused_review_loop_id,
+        find_resumable_focused_review_loop_id,
+    )
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000605-000605"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    older = ReviewLoop.from_dict(_advisory_optional_focused_output_loop(item_ids=["item-first"]))
+    older_payload = older.to_dict()
+    older_payload["id"] = "review-focused-output-01"
+    save_review_payload(store, run_id, older_payload)
+    newer_owner = _owner_revision_pending_loop(item_ids=["item-first"])
+    newer_owner["id"] = "review-focused-output-02"
+    save_review_payload(store, run_id, newer_owner)
+
+    assert (
+        find_latest_active_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == "review-focused-output-02"
+    )
+    assert (
+        find_resumable_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        is None
+    )
+
+
+def test_run_pending_focused_plan_owner_work_pending_is_not_not_due(
+    tmp_path: Path,
+) -> None:
+    from unittest.mock import patch
+
+    from top_down_planning.orchestrator.focused_review import (
+        FocusedReviewOrchestrator,
+        FocusedReviewResult,
+    )
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000606-000606"
+    create_planning_run(store, run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _focused_plan_owner_revision_pending_loop(),
+    )
+
+    with patch.object(
+        FocusedReviewOrchestrator,
+        "run",
+        return_value=FocusedReviewResult(
+            ok=False,
+            loop_id="review-focused-plan-01",
+            status="pending",
+            reviewer_session_id=None,
+            revision_cycles=1,
+            reason="focused review owner revision in progress",
+        ),
+    ) as orchestrator_run:
+        outcome = run_pending_focused_review(
+            store,
+            run_id,
+            provider,
+            review_type="focused_plan",
+        )
+
+    orchestrator_run.assert_called_once_with("review-focused-plan-01")
+    assert outcome == FocusedReviewRunOutcome.OWNER_WORK_PENDING
+
+
+def test_planning_phase_owner_revision_pending_does_not_consume_planner_turn(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000607-000607"
+    create_planning_run(store, run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _focused_plan_owner_revision_pending_loop(),
+    )
+    plan_revision_before = store.load_plan_model(run_id).revision
+
+    provider.script_turn(done_events(text="planner primary session start"))
+    provider.script_turn(done_events(text="owner revision session start"))
+    provider.script_turn(done_events(text="owner revision turn"))
+
+    with patch(
+        "top_down_planning.orchestrator.planning.consume_provider_turn_with_session_recovery",
+    ) as consume_mock:
+        result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    consume_mock.assert_not_called()
+    assert result.ok is False
+    assert store.load_plan_model(run_id).revision == plan_revision_before
+    assert store.load_run(run_id)["status"] == "running"
+
+
+def test_production_phase_owner_revision_pending_does_not_consume_producer_turn(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000608-000608"
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _owner_revision_pending_loop(item_ids=["item-first"]),
+    )
+    output_revision_before = int(store.load_production(run_id)["output_revision"])
+
+    provider.script_turn(done_events(text="owner revision session start"))
+    provider.script_turn(done_events(text="owner revision turn"))
+
+    with patch(
+        "top_down_planning.orchestrator.production.consume_producer_provider_turn_with_session_recovery",
+    ) as consume_mock:
+        result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+
+    consume_mock.assert_not_called()
+    assert result.ok is False
+    assert int(store.load_production(run_id)["output_revision"]) == output_revision_before
+    assert store.load_review(run_id, loop_id)["status"] == "pending"
+    assert store.load_run(run_id)["status"] == "running"
