@@ -287,11 +287,13 @@ def script_focused_output_through_completion(
 
     factory.script_turn(
         done_events(text="production primary resume"),
+        mutate_store=_record_owner_actions,
         expected_role="producer",
         expected_kind="primary",
     )
     factory.script_turn(
         done_events(text="owner session rotate"),
+        mutate_store=_record_owner_actions,
         expected_role="producer",
         expected_kind="primary",
     )

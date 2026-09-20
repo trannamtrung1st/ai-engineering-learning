@@ -14,6 +14,7 @@ from top_down_planning.persistence.session_bindings import (
 )
 
 PLANNER_CANDIDATE_READY_SIGNAL = "candidate_plan_ready"
+PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL = "focused_plan_review_requested"
 
 
 def primary_planner_provider_session_id(run: dict[str, Any]) -> str | None:
@@ -64,6 +65,7 @@ def build_planner_tool_instructions(run_id: str) -> dict[str, str]:
 
 __all__ = [
     "PLANNER_CANDIDATE_READY_SIGNAL",
+    "PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL",
     "build_planner_protocol_instructions",
     "build_planner_tool_instructions",
     "primary_planner_binding",

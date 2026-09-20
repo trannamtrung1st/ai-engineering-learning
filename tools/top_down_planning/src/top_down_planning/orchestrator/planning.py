@@ -27,6 +27,7 @@ from top_down_planning.orchestrator.run_transitions import (
 )
 from top_down_planning.orchestrator.planner_session import (
     PLANNER_CANDIDATE_READY_SIGNAL,
+    PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
     build_planner_protocol_instructions,
     build_planner_tool_instructions,
     primary_planner_provider_session_id,
@@ -231,6 +232,21 @@ class PlanningPhaseOrchestrator:
                     self._run_id,
                     metrics,
                 )
+
+            if turn_signal == PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL:
+                resume_primary_session_with_audit(
+                    self._append_event,
+                    self._provider,
+                    role="planner",
+                    phase=PLANNING,
+                    session_id=session_id,
+                    request={
+                        "action": "continue",
+                        "phase": PLANNING,
+                    },
+                    model=role_context.model,
+                )
+                continue
 
             if turn_signal == PLANNER_CANDIDATE_READY_SIGNAL:
                 if self._has_blocking_focused_plan_findings():

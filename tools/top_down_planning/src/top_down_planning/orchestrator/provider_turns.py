@@ -73,15 +73,18 @@ from top_down_planning.orchestrator.producer_session import (
 from top_down_planning.orchestrator.reviewer_session import (
     OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
     REVIEWER_DECISION_COMPLETE_SIGNAL,
+    reviewer_loop_binding,
 )
 from top_down_planning.orchestrator.run_transitions import generate_phase_action_id
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
 from top_down_planning.orchestrator.session_events import (
+    commit_reviewer_loop_provider_session,
     discard_unbound_provider_session,
     sync_persisted_session_id,
     sync_reviewer_loop_session_id,
 )
+from top_down_planning.domain.session_bindings import resumable_binding_provider_session_id
 from top_down_planning.orchestrator.session_recovery import (
     PrimarySessionRecoverySpec,
     ReviewerSessionRecoverySpec,
@@ -1477,12 +1480,84 @@ def _consume_provider_turn_with_session_recovery(
             phase_action_id,
         )
         if isinstance(recovery, ReviewerSessionRecoverySpec):
-            # Reviewer respond already durably committed; do not replay or replace.
+            loop_id = recovery.loop_id
+            if reviewer_session_release_required_after_respond(
+                store,
+                run_id,
+                loop_id,
+            ):
+                return ProviderTurnOutcome(
+                    signal=boundary_signal,
+                    session_id=provider.canonical_session_id(session_id),
+                    replaced=False,
+                    domain_budget_committed=domain_budget_committed,
+                )
+            assert_replacement_allowed(
+                store,
+                run_id,
+                phase_action_id=phase_action_id,
+                phase=phase,
+                role=role,
+                provider_session_id=session_id,
+                loop_id=loop_id,
+            )
+            mark_replacement_attempt(store, run_id, phase_action_id)
+            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+            binding = reviewer_loop_binding(loop)
+            if binding is not None and not resumable_binding_provider_session_id(
+                binding
+            ):
+                canonical = provider.canonical_session_id(session_id)
+                loop = commit_reviewer_loop_provider_session(
+                    store,
+                    run_id,
+                    loop.with_reviewer_provider_session_id(canonical),
+                    session_provider=provider,
+                )
+            manifest = recovery.build_recovery_manifest(phase_action_id)
+            try:
+                new_session_id = replace_reviewer_session(
+                    store,
+                    run_id,
+                    provider,
+                    loop=loop,
+                    phase=recovery.phase,
+                    old_provider_session_id=session_id,
+                    phase_action_id=phase_action_id,
+                    append_event=recovery.append_event,
+                    model=recovery.model,
+                    manifest=manifest,
+                    recovery_reason=REASON_PROVIDER_SESSION_MISMATCH_AFTER_DOMAIN_COMMIT,
+                )
+            except ProducerReplacementBlocked as blocked:
+                _emit_replacement_blocked(
+                    store,
+                    run_id,
+                    recovery,
+                    phase_action_id,
+                    session_id,
+                    str(blocked),
+                )
+                raise ProviderRunError(str(blocked)) from blocked
+            except SessionRecoveryPaused:
+                raise
+            capability_token = issue_session_capability(
+                store,
+                run_id,
+                role="reviewer",
+                phase=recovery.phase,
+                session_id=new_session_id,
+                session_kind="reviewer",
+                loop_id=loop_id,
+            )
+            bind_provider_capability(provider, capability_token, store=store, run_id=run_id)
+            clear_session_replacement_attempt_marker(store, run_id, phase_action_id)
             return ProviderTurnOutcome(
                 signal=boundary_signal,
-                session_id=provider.canonical_session_id(session_id),
-                replaced=False,
+                session_id=provider.canonical_session_id(new_session_id),
+                replaced=True,
                 domain_budget_committed=domain_budget_committed,
+                capability_token=capability_token,
             )
         if not isinstance(recovery, PrimarySessionRecoverySpec):
             raise ProviderRunError(str(exc)) from exc
@@ -1925,6 +2000,52 @@ def orchestration_decision_from_store(
     return review_decision_from_store(store, run_id, loop_id)
 
 
+def reviewer_needs_further_provider_turns_after_respond(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+) -> bool:
+    """Return True when durable review state still expects another reviewer turn."""
+
+    review = store.load_review(run_id, loop_id)
+    status = str(review.get("status") or "")
+    if status in {"pending", "advisory_pending"}:
+        return True
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.mandatory_review_stages import (
+        mandatory_orchestration_decision,
+    )
+
+    loop = ReviewLoop.from_dict(review)
+    if loop.type in {"whole_plan", "whole_output"}:
+        lifecycle = str(loop.lifecycle_status or "")
+        if lifecycle in {
+            "review_pending",
+            "scope_review_pending",
+            "findings_open",
+            "verification_pending",
+            "revision_in_progress",
+        }:
+            return True
+        decision = mandatory_orchestration_decision(loop)
+        return decision in {"pending", "advisory_pending"}
+    return status in {"pending", "advisory_pending"}
+
+
+def reviewer_session_release_required_after_respond(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+) -> bool:
+    """Return True when a persisted respond means the reviewer session may end."""
+
+    return not reviewer_needs_further_provider_turns_after_respond(
+        store,
+        run_id,
+        loop_id,
+    )
+
+
 def reviewer_turn_closure_ready(
     store: RunStore,
     run_id: str,
@@ -2149,6 +2270,25 @@ def consume_producer_provider_turn_with_session_recovery(
         allowed_signals=_NO_COMPLETION_SIGNALS,
         recovery=recovery,
         on_boundary=build_producer_turn_boundary_observer(store, run_id),
+    )
+
+
+def consume_planner_provider_turn_with_session_recovery(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    session_id: str,
+    *,
+    recovery: PrimarySessionRecoverySpec,
+) -> ProviderTurnOutcome:
+    """Drain a planner primary turn; same store boundaries as production."""
+
+    return consume_producer_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        recovery=recovery,
     )
 
 
