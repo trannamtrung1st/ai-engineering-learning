@@ -119,3 +119,43 @@ def test_cursor_resume_rejects_durable_b_when_b_owned_elsewhere(tmp_path: Path) 
         list(provider.stream_events(durable_a))
 
     assert provider.canonical_session_id(durable_a) == durable_a
+
+
+def test_cursor_resume_rejects_third_durable_identity_in_same_turn(tmp_path: Path) -> None:
+    durable_a = "chat-session-stored-a"
+    durable_b = "chat-session-stream-b"
+    durable_c = "chat-session-stream-c"
+
+    def runner(argv: list[str], cwd: Path):
+        yield json.dumps({"type": "system", "subtype": "init", "session_id": durable_b})
+        yield json.dumps(
+            {
+                "type": "assistant",
+                "session_id": durable_c,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "later id"}],
+                },
+            }
+        )
+
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        {"limits": {"provider": {"max_retries_per_call": 0}}},
+        workspace=tmp_path,
+        runner=runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+    provider._ensure_durable_session(durable_a, role="producer", kind="primary")
+    provider.resume_primary_session(
+        durable_a,
+        {"action": "continue", "phase": "production"},
+        role="producer",
+    )
+
+    with pytest.raises(ProviderSessionMismatchError, match="unexpected session id"):
+        list(provider.stream_events(durable_a))
+
+    assert provider.canonical_session_id(durable_a) == durable_b

@@ -46,5 +46,13 @@ def test_close_and_reap_iterator_kills_descendants_and_raw_reaps_leader(
     close_and_reap_iterator(iterator)
     raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
     assert raw_poll() is not None
-    with pytest.raises(OSError):
-        os.kill(child_pid, 0)
+    import time
+
+    for _ in range(100):
+        try:
+            os.kill(child_pid, 0)
+        except OSError:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("child process still alive after iterator close/reap")

@@ -45,12 +45,18 @@ from top_down_planning.orchestrator.errors import (
     SessionRecoveryExhausted,
     SessionRecoveryPaused,
 )
+from top_down_planning.domain.session_lineage import (
+    REASON_PROVIDER_SESSION_MISMATCH_AFTER_DOMAIN_COMMIT,
+)
+from top_down_planning.orchestrator.phase_action_domain_audit import (
+    phase_action_domain_boundary_signal,
+    phase_action_domain_proven_by_audit,
+)
 from top_down_planning.orchestrator.session_recovery_enforcement import (
     assert_replacement_allowed,
     fail_session_recovery_exhausted,
     finalize_successful_phase_action_turn,
     mark_replacement_attempt,
-    phase_action_domain_proven_by_audit,
 )
 from top_down_planning.orchestrator.recovery_manifest import (
     build_planner_recovery_manifest,
@@ -1457,19 +1463,75 @@ def _consume_provider_turn_with_session_recovery(
             domain_budget_committed=domain_budget_committed,
         )
     except ProviderSessionMismatchError as exc:
-        if phase_action_domain_proven_by_audit(store, run_id, phase_action_id):
-            domain_budget_committed = _finalize_phase_action_turn(
+        if not phase_action_domain_proven_by_audit(store, run_id, phase_action_id):
+            raise ProviderRunError(str(exc)) from exc
+        if not isinstance(recovery, PrimarySessionRecoverySpec):
+            raise ProviderRunError(str(exc)) from exc
+        assert_replacement_allowed(
+            store,
+            run_id,
+            phase_action_id=phase_action_id,
+            phase=phase,
+            role=role,
+            provider_session_id=session_id,
+            loop_id=loop_id,
+        )
+        boundary_signal = phase_action_domain_boundary_signal(
+            store,
+            run_id,
+            phase_action_id,
+        )
+        domain_budget_committed = _finalize_phase_action_turn(
+            store,
+            run_id,
+            phase_action_id,
+        )
+        mark_replacement_attempt(store, run_id, phase_action_id)
+        manifest = recovery.build_recovery_manifest(phase_action_id)
+        try:
+            new_session_id = replace_primary_session(
                 store,
                 run_id,
+                provider,
+                role=recovery.role,
+                phase=recovery.phase,
+                old_provider_session_id=session_id,
+                phase_action_id=phase_action_id,
+                append_event=recovery.append_event,
+                model=recovery.model,
+                manifest=manifest,
+                workspace=recovery.workspace,
+                recovery_reason=REASON_PROVIDER_SESSION_MISMATCH_AFTER_DOMAIN_COMMIT,
+            )
+        except ProducerReplacementBlocked as blocked:
+            _emit_replacement_blocked(
+                store,
+                run_id,
+                recovery,
                 phase_action_id,
+                session_id,
+                str(blocked),
             )
-            return ProviderTurnOutcome(
-                signal=None,
-                session_id=provider.canonical_session_id(session_id),
-                replaced=False,
-                domain_budget_committed=domain_budget_committed,
-            )
-        raise ProviderRunError(str(exc)) from exc
+            raise ProviderRunError(str(blocked)) from blocked
+        except SessionRecoveryPaused:
+            raise
+        capability_token = issue_session_capability(
+            store,
+            run_id,
+            role=recovery.role,
+            phase=recovery.phase,
+            session_id=new_session_id,
+            session_kind="primary",
+            loop_id=None,
+        )
+        bind_provider_capability(provider, capability_token, store=store, run_id=run_id)
+        return ProviderTurnOutcome(
+            signal=boundary_signal,
+            session_id=provider.canonical_session_id(new_session_id),
+            replaced=True,
+            domain_budget_committed=domain_budget_committed,
+            capability_token=capability_token,
+        )
     except (ProviderSessionNotFoundError, ProviderTurnStalledError) as exc:
         recovery_reason = recovery_reason_for_session_loss(exc)
         assert_replacement_allowed(

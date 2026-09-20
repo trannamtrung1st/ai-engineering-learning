@@ -41,7 +41,9 @@ from tests.support.focused_review import (
 from tests.support.focused_until_completed import (
     assert_focused_output_workflow_complete,
     script_focused_output_through_completion,
+    script_focused_plan_through_plan_target,
     seed_focused_output_owner_pending_after_evidence,
+    seed_focused_plan_owner_pending,
 )
 from tests.support.stub_provider_factory import RotatingStubProviderFactory
 
@@ -51,7 +53,7 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009001-009001"
-    factory = RotatingStubProviderFactory(store, run_id)
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
         store,
@@ -140,81 +142,10 @@ def test_until_completed_recovers_recoverably_incomplete_focused_output_to_compl
 def test_until_plan_continues_focused_plan_owner_handoff(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009010-009010"
-    factory = RotatingStubProviderFactory(store, run_id)
-    loop_id = "review-focused-plan-01"
-    create_planning_run(store, run_id)
-    owner_loop = focused_owner_revision_pending_loop(item_ids=["item-api"])
-    owner_loop["id"] = loop_id
-    owner_loop["type"] = "focused_plan"
-    owner_loop["scope"] = {"kind": "focused_plan", "item_ids": ["item-api"]}
-    owner_loop["target_revision"] = 0
-    owner_loop["revision_cycles"] = 0
-    save_review_payload(store, run_id, owner_loop)
-
-    def _owner_plan_work() -> None:
-        apply_plan_and_complete_focused_owner_revision(
-            store,
-            run_id,
-            base_revision=int(store.load_plan_model(run_id).revision),
-            operations=with_root_contract(
-                [
-                    {
-                        "op": "update_item",
-                        "item_id": "item-api",
-                        "patch": {
-                            "outcome": "REST API endpoints exist.",
-                            "acceptance": ["GET /health returns 200."],
-                        },
-                    },
-                ]
-            ),
-            phase=PLANNING,
-            loop_id=loop_id,
-            role="planner",
-        )()
-
-    factory.script_turn(done_events(text="planning primary resume"))
-    factory.script_turn(done_events(text="focused plan owner rotate"))
-    factory.script_turn(done_events(text="focused plan owner revision"))
-    _owner_plan_work()
-    recheck_provider = StubProvider()
-    loop_payload = store.load_review(run_id, loop_id)
-    target_revision = int(store.load_plan_model(run_id).revision)
-
-    def _verify_focused_plan() -> None:
-        respond_review(
-            store,
-            run_id,
-            {
-                "loop_id": loop_id,
-                "target_revision": target_revision,
-                "stage": "finding_verification",
-                "decision": "verified",
-                "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
-                "finding_results": [
-                    {
-                        "finding_id": "finding-01",
-                        "disposition": "resolved",
-                        "evidence": ["acceptance criteria added"],
-                        "direct_side_effects": [],
-                    }
-                ],
-                "new_direct_side_effect_findings": [],
-                "target_digest": mandatory_plan_digest(store, run_id),
-                "summary": "focused plan verification",
-            },
-            phase=PLANNING,
-            loop_id=loop_id,
-        )()
-
-    recheck_provider.script_turn(done_events(text="recheck delivery without respond"))
-    recheck_provider.script_turn(
-        done_events(text="reviewer verify"),
-        mutate_store=_verify_focused_plan,
-    )
-    assert FocusedReviewOrchestrator(store, run_id, recheck_provider).run(loop_id).ok
-    factory.register_autofill_mutate(lambda: None)
-    factory.script_turn(done_events(signal="candidate_plan_ready", text="planning complete"))
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
+    loop_id = seed_focused_plan_owner_pending(store, run_id=run_id)
+    assert not store.load_review(run_id, loop_id).get("finding_actions")
+    script_focused_plan_through_plan_target(factory, store, run_id, loop_id)
 
     continuation = RunEngine(
         store,
@@ -224,6 +155,10 @@ def test_until_plan_continues_focused_plan_owner_handoff(tmp_path: Path) -> None
     assert continuation.ok is True
     assert continuation.target_reached is True
     assert store.load_run(run_id)["phase"] != PLANNING
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
+    events = store.load_events(run_id)
+    assert any(event.get("type") == "focused_review_recheck_requested" for event in events)
+    assert any(event.get("type") == "focused_review_approved" for event in events)
 
 
 def test_default_resume_single_step_stops_after_one_phase_invocation(
@@ -329,7 +264,7 @@ def test_cli_resume_until_completed_exits_zero_with_target_reached(
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009004-009004"
-    factory = RotatingStubProviderFactory(store, run_id)
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
         store, seed_provider, run_id=run_id

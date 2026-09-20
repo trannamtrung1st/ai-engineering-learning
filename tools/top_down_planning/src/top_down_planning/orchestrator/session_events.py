@@ -1235,6 +1235,7 @@ def commit_primary_provider_identity_rotation(
     new_provider_session_id: str,
     provider: str | None = "cursor",
     session_provider: Provider | None = None,
+    phase_action_id: str | None = None,
 ) -> dict[str, Any]:
     """Persist provider resume identity rotation without bumping replacement generation."""
 
@@ -1283,6 +1284,7 @@ def commit_primary_provider_identity_rotation(
             new_provider_session_id=resolved,
             reason=REASON_PROVIDER_RESUME_IDENTITY_ROTATION,
             provider=binding.provider,
+            phase_action_id=phase_action_id,
         )
     ]
     store.commit(
@@ -1373,6 +1375,8 @@ def sync_persisted_session_id(
         and not is_transient_provider_session_id(current)
         and resolve_provider_session_identity_chain(provider, current) == resolved
     ):
+        rotation_run = store.load_run(run_id)
+        rotation_phase_action_id = str(rotation_run.get("phase_action_id") or "").strip() or None
         commit_primary_provider_identity_rotation(
             store,
             run_id,
@@ -1381,6 +1385,7 @@ def sync_persisted_session_id(
             new_provider_session_id=resolved,
             provider="cursor",
             session_provider=provider,
+            phase_action_id=rotation_phase_action_id,
         )
     else:
         commit_primary_provider_session_binding(

@@ -980,6 +980,7 @@ class _CursorSession:
     collector_thread: threading.Thread | None = None
     pinned_durable_id: str | None = None
     turn_resume_launch_id: str | None = None
+    turn_resume_rotation_consumed: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
     condition: threading.Condition = field(init=False)
 
@@ -1783,6 +1784,7 @@ class CursorProvider:
             session.pending_events.clear()
             session.pending_argv = argv
             session.turn_resume_launch_id = _resume_session_id_from_argv(argv)
+            session.turn_resume_rotation_consumed = False
             session.turn_diagnostics = cursor_turn_diagnostics(
                 argv,
                 prompt=prompt,
@@ -2162,6 +2164,8 @@ class CursorProvider:
         pinned: str,
         event_session_id: str,
     ) -> str | None:
+        if session.turn_resume_rotation_consumed:
+            return None
         launch_id = session.turn_resume_launch_id
         if launch_id is None:
             return None
@@ -2170,9 +2174,11 @@ class CursorProvider:
         canonical_launch = self.canonical_session_id(launch_id)
         canonical_pinned = self.canonical_session_id(pinned)
         canonical_current = self.canonical_session_id(session_id)
-        if canonical_launch != canonical_pinned or canonical_current != canonical_launch:
+        if canonical_pinned != canonical_launch or canonical_current != canonical_launch:
             return None
-        return self._migrate_session_identity(canonical_launch, event_session_id)
+        migrated = self._migrate_session_identity(canonical_launch, event_session_id)
+        session.turn_resume_rotation_consumed = True
+        return migrated
 
     def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
         if current_id == provider_session_id:

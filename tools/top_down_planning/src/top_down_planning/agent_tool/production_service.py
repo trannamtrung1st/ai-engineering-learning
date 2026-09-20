@@ -440,14 +440,20 @@ class ProductionAgentService:
                     if owner_cycle is not None:
                         claim["owner_revision_cycle"] = owner_cycle
                     updated["completion_claim"] = claim
+                    completion_event: dict[str, Any] = {
+                        "type": "production_completion_claimed",
+                        "run_id": self._run_id,
+                        "production_revision": updated["revision"],
+                        "output_revision": claim["output_revision"],
+                    }
+                    completion_phase_action_id = str(
+                        run.get("phase_action_id") or ""
+                    ).strip()
+                    if completion_phase_action_id:
+                        completion_event["phase_action_id"] = completion_phase_action_id
                     events.append(
                         apply_request_audit_fields(
-                            {
-                                "type": "production_completion_claimed",
-                                "run_id": self._run_id,
-                                "production_revision": updated["revision"],
-                                "output_revision": claim["output_revision"],
-                            },
+                            completion_event,
                             request_audit,
                         )
                     )

@@ -348,40 +348,48 @@ def test_provider_turn_stalled_error_is_exported() -> None:
     assert exported is ProviderTurnStalledError
 
 
-def test_cursor_resume_rejects_unexpected_durable_session_id(tmp_path: Path) -> None:
-    turns = {"n": 0}
+def test_cursor_resume_rejects_second_durable_identity_in_same_turn(tmp_path: Path) -> None:
+    """Resume A may rotate once to B; a later C in the same turn is rejected."""
+
+    durable_a = "chat-session-a"
+    durable_b = "chat-session-b"
+    durable_c = "chat-session-c"
 
     def fake_runner(argv: list[str], cwd: Path):
-        turns["n"] += 1
-        session_id = "chat-abc" if turns["n"] == 1 else "chat-xyz"
-        yield json.dumps({"type": "system", "subtype": "init", "session_id": session_id})
+        yield json.dumps({"type": "system", "subtype": "init", "session_id": durable_b})
         yield json.dumps(
             {
-                "type": "result",
-                "subtype": "success",
-                "session_id": session_id,
-                "is_error": False,
-                "result": "ok",
+                "type": "assistant",
+                "session_id": durable_c,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "conflict"}],
+                },
             }
         )
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
     provider = CursorProvider(
-        {},
+        {"limits": {"provider": {"max_retries_per_call": 0}}},
         workspace=tmp_path,
         runner=fake_runner,
         binary=str(agent_path),
         skip_probe=True,
     )
-    session_id = provider.start_primary_session("planner", {"goal": "build"})
-    list(provider.stream_events(session_id))
-    canonical_id = provider.canonical_session_id(session_id)
-    provider.terminate_all_sessions()
-    provider.resume_primary_session(canonical_id, {"action": "continue"}, role="planner")
+    provider._ensure_durable_session(durable_a, role="planner", kind="primary")
+    provider.resume_primary_session(
+        durable_a,
+        {"action": "continue"},
+        role="planner",
+    )
 
-    with pytest.raises(ProviderTurnError, match="unexpected session id"):
-        list(provider.stream_events(canonical_id))
+    from core_tools.provider.errors import ProviderSessionMismatchError
+
+    with pytest.raises((ProviderTurnError, ProviderSessionMismatchError), match="unexpected session id"):
+        list(provider.stream_events(durable_a))
+
+    assert provider.canonical_session_id(durable_a) == durable_b
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

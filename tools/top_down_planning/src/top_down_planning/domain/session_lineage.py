@@ -26,6 +26,9 @@ REASON_PROVIDER_SESSION_NOT_FOUND = "provider_session_not_found"
 REASON_PROVIDER_TURN_STALLED = "provider_turn_stalled"
 REASON_LEGACY_IDENTITY_UNRECOVERABLE = "legacy_identity_unrecoverable"
 REASON_PROVIDER_RESUME_IDENTITY_ROTATION = "provider_resume_identity_rotation"
+REASON_PROVIDER_SESSION_MISMATCH_AFTER_DOMAIN_COMMIT = (
+    "provider_session_mismatch_after_domain_commit"
+)
 
 
 def _base_fields(

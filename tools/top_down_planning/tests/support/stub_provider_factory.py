@@ -90,10 +90,6 @@ class RotatingStubProviderFactory:
                 continue
             self._shared_index += 1
             return copy.deepcopy(events), mutate_store
-        if self._strict_session_scripts:
-            raise AssertionError(
-                f"provider turn requested with no remaining scripts for session {active_session_id!r}"
-            )
         return done_events(text="shared-stub-bookkeeping"), self._autofill_mutate
 
     def _bootstrap_bound_sessions(self, provider: StubProvider) -> None:

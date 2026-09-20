@@ -8,21 +8,25 @@ from typing import Any
 from core_tools.provider import StubProvider
 from top_down_planning.agent_tool import ProductionAgentService
 from top_down_planning.domain.reviews import ReviewLoop
-from top_down_planning.orchestrator.phases import PRODUCTION, WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
+    apply_plan_and_complete_focused_owner_revision,
     apply_production,
     done_events,
     grant_capability,
     mandatory_initial_respond_request,
     mandatory_output_digest,
+    mandatory_plan_digest,
     mandatory_scope_review_respond_request,
     prepare_loop_for_scope_review_respond,
     record_finding_actions,
     respond_review,
     save_review_payload,
+    with_root_contract,
 )
 from tests.support.focused_review import (
+    create_planning_run,
     create_production_run_open_item_second,
     focused_owner_revision_pending_loop,
 )
@@ -320,6 +324,108 @@ def script_focused_output_through_completion(
             _whole_output_autofill()
 
     factory.register_autofill_mutate(_autofill_mutate)
+
+
+def seed_focused_plan_owner_pending(
+    store: FileRunStore,
+    *,
+    run_id: str,
+    loop_id: str = "review-focused-plan-01",
+) -> str:
+    create_planning_run(store, run_id)
+    loop = focused_owner_revision_pending_loop(item_ids=["item-api"])
+    loop["id"] = loop_id
+    loop["type"] = "focused_plan"
+    loop["scope"] = {"kind": "focused_plan", "item_ids": ["item-api"]}
+    loop["target_revision"] = 0
+    loop["finding_actions"] = []
+    save_review_payload(store, run_id, loop)
+    return loop_id
+
+
+def script_focused_plan_through_plan_target(
+    factory: RotatingStubProviderFactory,
+    store: FileRunStore,
+    run_id: str,
+    loop_id: str,
+) -> None:
+    state = {"finding_actions": False, "verified": False}
+
+    def _owner_plan_revision() -> None:
+        if state["finding_actions"]:
+            return
+        base_revision = int(store.load_plan_model(run_id).revision)
+        apply_plan_and_complete_focused_owner_revision(
+            store,
+            run_id,
+            base_revision=base_revision,
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "update_item",
+                        "item_id": "item-api",
+                        "patch": {
+                            "outcome": "REST API endpoints exist.",
+                            "acceptance": ["GET /health returns 200."],
+                        },
+                    },
+                ]
+            ),
+            phase=PLANNING,
+            loop_id=loop_id,
+            role="planner",
+            rationale="Owner plan revision completed.",
+        )()
+        state["finding_actions"] = True
+
+    def _verify_focused_plan() -> None:
+        if state["verified"]:
+            return
+        loop_payload = store.load_review(run_id, loop_id)
+        if str(loop_payload.get("status") or "") == "approved":
+            state["verified"] = True
+            return
+        if not state["finding_actions"]:
+            return
+        if str(loop_payload.get("active_stage") or "") != "finding_verification":
+            return
+        respond_review(
+            store,
+            run_id,
+            {
+                "loop_id": loop_id,
+                "target_revision": int(loop_payload["target_revision"]),
+                "stage": "finding_verification",
+                "decision": "verified",
+                "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+                "finding_results": [
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["acceptance criteria added"],
+                        "direct_side_effects": [],
+                    }
+                ],
+                "new_direct_side_effect_findings": [],
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "summary": "focused plan verification",
+            },
+            phase=PLANNING,
+            loop_id=loop_id,
+        )()
+        state["verified"] = True
+
+    factory.script_turn(done_events(text="owner revision session start"))
+    factory.script_turn(
+        done_events(text="owner revision turn"),
+        mutate_store=_owner_plan_revision,
+    )
+    factory.script_turn(done_events(text="recheck delivery without respond"))
+    factory.script_turn(
+        done_events(text="reviewer verify"),
+        mutate_store=_verify_focused_plan,
+    )
+    factory.script_turn(done_events(signal="candidate_plan_ready", text="planning complete"))
 
 
 def assert_focused_output_workflow_complete(
