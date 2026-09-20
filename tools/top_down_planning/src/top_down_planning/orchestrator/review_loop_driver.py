@@ -14,6 +14,7 @@ from top_down_planning.domain.reviews import (
     finding_actions_for_active_set,
     findings_permit_approval_for_loop,
     focused_review_producer_owner_work_pending,
+    focused_review_owner_revision_cycle_charged,
     focused_review_revision_limit_from_config,
     increment_gate_agent_turns,
     is_mandatory_review_loop,
@@ -868,6 +869,15 @@ class ReviewLoopDriver:
             retried = prepare_review_incomplete_retry(loop)
             retried, _finding_set_id = allocate_discovery_finding_set_id(retried)
             return self._persist_loop(retried), False
+
+        if (
+            not self.profile.is_mandatory_gate
+            and focused_review_owner_revision_cycle_charged(loop)
+            and loop.active_stage != "finding_verification"
+        ):
+            if self._owner_revision_complete(loop):
+                return self._prepare_recheck(loop), True
+            return loop, False
 
         if loop.lifecycle_status == "revision_in_progress":
             if pending_unconsumed_revision_cycle_entry(loop):
