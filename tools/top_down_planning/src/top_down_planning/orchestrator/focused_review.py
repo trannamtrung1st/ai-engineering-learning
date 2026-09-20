@@ -321,7 +321,7 @@ class FocusedReviewAdapter:
             status=loop.status,
             reviewer_session_id=reviewer_loop_provider_session_id(loop),
             revision_cycles=loop.revision_cycles,
-            reason="focused output owner revision in progress",
+            reason="focused review owner revision in progress",
         )
 
     def complete_success(self, loop: ReviewLoop) -> FocusedReviewResult:

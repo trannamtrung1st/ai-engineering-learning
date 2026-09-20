@@ -1995,6 +1995,81 @@ def whole_output_revision_target_ids(reviews: list[dict[str, Any]]) -> set[str]:
     return evidence_revision_target_ids_for_loop(loop)
 
 
+def focused_review_owner_revision_cycle_charged(loop: ReviewLoop) -> bool:
+    """True after ``enter_revision_cycle`` charged an owner revision (not initial reviewer pending)."""
+
+    if loop.type not in {"focused_plan", "focused_output"} or is_terminal_review_loop(
+        loop
+    ):
+        return False
+    return loop.status == "pending" and int(loop.revision_cycles) > 0
+
+
+def focused_review_owner_artifact_revision_pending(
+    loop: ReviewLoop,
+    *,
+    store: Any,
+    run_id: str,
+) -> bool:
+    """True when owner revision is charged but artifact revision has not advanced past ``target_revision``."""
+
+    if not focused_review_owner_revision_cycle_charged(loop):
+        return False
+    if loop.type == "focused_output":
+        production = store.load_production(run_id)
+        return int(production["output_revision"]) <= int(loop.target_revision)
+    if loop.type == "focused_plan":
+        plan = store.load_plan(run_id)
+        return int(plan["revision"]) <= int(loop.target_revision)
+    return False
+
+
+def focused_review_owner_actions_complete(loop: ReviewLoop) -> bool:
+    """True when required (and applicable optional) owner finding responses are recorded."""
+
+    threshold = loop_revise_at(loop)
+    owner_revision_cycle = int(loop.revision_cycles)
+    if required_findings_missing_owner_response(
+        loop.findings,
+        loop.finding_actions,
+        threshold,
+        finding_set_id=loop.finding_set_id,
+        owner_revision_cycle=owner_revision_cycle,
+    ):
+        return False
+    if not required_open_findings(loop.findings, threshold):
+        if open_optional_findings_missing_owner_response(
+            loop.findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=loop.finding_set_id,
+            owner_revision_cycle=owner_revision_cycle,
+        ):
+            return False
+    return True
+
+
+def focused_review_producer_owner_work_pending(
+    loop: ReviewLoop,
+    *,
+    store: Any,
+    run_id: str,
+) -> bool:
+    """True while producer must finish owner revision before reviewer recheck."""
+
+    if not focused_review_owner_revision_cycle_charged(loop):
+        return False
+    if loop.active_stage == "finding_verification":
+        return False
+    if focused_review_owner_artifact_revision_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    ):
+        return True
+    return not focused_review_owner_actions_complete(loop)
+
+
 def focused_review_owner_revision_in_progress(
     loop: ReviewLoop,
     *,
@@ -2003,19 +2078,13 @@ def focused_review_owner_revision_in_progress(
 ) -> bool:
     """True when a focused loop is waiting on primary owner-revision work."""
 
-    if loop.type not in {"focused_plan", "focused_output"} or is_terminal_review_loop(
-        loop
-    ):
-        return False
-    if loop.status != "pending" or int(loop.revision_cycles) <= 0:
-        return False
-    if store is not None and run_id is not None:
-        from top_down_planning.orchestrator.provider_turns import owner_revision_complete
-
-        return not owner_revision_complete(store, run_id, loop.id)
-    if loop.active_stage == "finding_verification":
-        return False
-    return True
+    if store is None or run_id is None:
+        return focused_review_owner_revision_cycle_charged(loop)
+    return focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    )
 
 
 def focused_output_owner_revision_in_progress(
@@ -2034,7 +2103,9 @@ def focused_output_owner_revision_in_progress(
 
     if loop.type != "focused_output":
         return False
-    return focused_review_owner_revision_in_progress(
+    if store is None or run_id is None:
+        return focused_review_owner_revision_cycle_charged(loop)
+    return focused_review_producer_owner_work_pending(
         loop,
         store=store,
         run_id=run_id,
@@ -2053,7 +2124,13 @@ def focused_output_evidence_revision_allowed(
         return False
     if loop.status == "changes_requested":
         return True
-    return focused_output_owner_revision_in_progress(
+    if not focused_review_owner_revision_cycle_charged(loop):
+        return False
+    if loop.active_stage == "finding_verification":
+        return False
+    if store is None or run_id is None:
+        return True
+    return focused_review_owner_artifact_revision_pending(
         loop,
         store=store,
         run_id=run_id,

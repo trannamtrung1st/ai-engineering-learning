@@ -5,12 +5,18 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from unittest.mock import patch
+
 import pytest
 
 from core_tools.provider import StubProvider
 from core_tools.provider.errors import ProviderSessionError
 from top_down_planning.agent_tool import ProductionAgentService
-from top_down_planning.domain.production_blockers import BLOCKER_KIND_EXTERNAL
+from top_down_planning.domain.production_blockers import (
+    BLOCKER_KIND_EXTERNAL,
+    BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+    BLOCKER_STATUS_RESOLVED,
+)
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     focused_output_evidence_revision_allowed,
@@ -51,6 +57,7 @@ def _owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
             "status": "pending",
             "revise_at": "blocker",
             "revision_cycles": 1,
+            "finding_set_id": "fs-owner-revision-01",
             "findings": [
                 {
                     "id": "finding-01",
@@ -66,6 +73,170 @@ def _owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
     )
     loop["reviewer_binding"] = binding.to_dict()
     return loop
+
+
+def test_evidence_revision_allowed_after_owner_actions_recorded_before_artifact(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import owner_revision_complete
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000551-000551"
+    _create_run(store)
+    loop_payload = _owner_revision_pending_loop(item_ids=["item-first"])
+    loop_payload["finding_actions"] = [
+        {
+            "finding_id": "finding-01",
+            "finding_set_id": "fs-owner-revision-01",
+            "action": "fix",
+            "actor_role": "producer",
+            "owner_revision_cycle": 1,
+            "artifact_revision": 1,
+            "rationale": "Evidence revision will follow.",
+        }
+    ]
+    save_review_payload(store, run_id, loop_payload)
+    loop = ReviewLoop.from_dict(store.load_review(run_id, "review-focused-output-01"))
+    assert owner_revision_complete(store, run_id, loop.id) is True
+    assert focused_output_evidence_revision_allowed(
+        loop, store=store, run_id=run_id
+    )
+    assert (
+        find_pending_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        is None
+    )
+    artifact = tmp_path / "first-v2.txt"
+    artifact.write_text("revised", encoding="utf-8")
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    result = ProductionAgentService(store, run_id).apply(
+        {
+            "production_revision": 1,
+            "evidence_revision": True,
+            "focused_review_loop_id": "review-focused-output-01",
+            "plan_items": ["item-first"],
+            "dispositions": {
+                "item-first": {
+                    "disposition": "completed",
+                    "evidence": "Revised artifact.",
+                }
+            },
+            "outputs": [
+                {"id": "output-first-v2", "type": "artifact", "ref": "first-v2.txt"}
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-first",
+                    "output_refs": ["output-first-v2"],
+                    "summary": "Evidence after owner actions.",
+                }
+            ],
+            "summary": "Focused evidence revision.",
+        },
+        capability_token=token,
+    )
+    assert result["ok"] is True
+    assert int(store.load_production(run_id)["output_revision"]) == 2
+    assert (
+        find_pending_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == "review-focused-output-01"
+    )
+
+
+def test_active_wait_blocker_runs_focused_review_before_pause(tmp_path: Path) -> None:
+    from tests.helpers import make_review_loop
+
+    from top_down_planning.orchestrator import production as production_module
+    from top_down_planning.orchestrator.provider_turns import (
+        restore_primary_capability_after_focused_review,
+    )
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    create_production_run(store, provider=provider)
+    run_id = "run-20260101T000501-000501"
+    loop_id = "review-focused-output-01"
+    loop = make_review_loop(
+        id=loop_id,
+        type="focused_output",
+        target_revision=int(store.load_production(run_id)["output_revision"]),
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="pending",
+        reviewer_session_id="sess-fr",
+    )
+    save_review_payload(store, run_id, loop.to_dict())
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    updated = dict(production)
+    updated["revision"] = expected + 1
+    updated["blocker_report"] = {
+        "kind": BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
+        "status": "active",
+        "review_loop_id": loop_id,
+        "target_revision": int(production["output_revision"]),
+        "evidence": "Waiting on focused review.",
+        "affected_refs": ["item-first"],
+        "summary": "focused review pending",
+    }
+    store.save_production(run_id, updated, expected)
+    provider.script_session_turn(
+        "sess-fr",
+        done_events(text="reviewer approve"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                decision="approved",
+            ),
+            phase=PRODUCTION,
+            loop_id=loop_id,
+        ),
+    )
+
+    orchestrator = ProductionPhaseOrchestrator(store, run_id, provider)
+    session_id = "stub-session-1"
+    order: list[str] = []
+
+    def tracked_restore(*args: object, **kwargs: object) -> object:
+        order.append("restore")
+        return restore_primary_capability_after_focused_review(*args, **kwargs)
+
+    assert orchestrator._terminate_if_terminal_blocker(session_id) is None
+    blocker = orchestrator._evaluate_blocker_report()
+    assert blocker.disposition == "active_wait"
+
+    with patch.object(
+        production_module,
+        "restore_primary_capability_after_focused_review",
+        side_effect=tracked_restore,
+    ):
+        orchestrator._capability_token = (
+            production_module.restore_primary_capability_after_focused_review(
+                store,
+                run_id,
+                provider,
+                review_type="focused_output",
+                role="producer",
+                current_token=None,
+            )
+        )
+
+    assert order == ["restore"]
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
+    after = orchestrator._handle_blocker_after_focused_review(session_id)
+    assert after is None
+    report = store.load_production(run_id).get("blocker_report") or {}
+    assert report.get("status") == BLOCKER_STATUS_RESOLVED
 
 
 def test_focused_evidence_revision_allowed_after_owner_revision_handoff(

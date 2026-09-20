@@ -2176,7 +2176,7 @@ def find_pending_focused_review_loop_id(
 
     from top_down_planning.domain.reviews import (
         ReviewLoop,
-        focused_review_owner_revision_in_progress,
+        focused_review_producer_owner_work_pending,
     )
 
     for review in store.list_reviews(run_id):
@@ -2188,7 +2188,7 @@ def find_pending_focused_review_loop_id(
         if loop_id is None:
             continue
         loop = ReviewLoop.from_dict(review)
-        if focused_review_owner_revision_in_progress(
+        if focused_review_producer_owner_work_pending(
             loop,
             store=store,
             run_id=run_id,
@@ -2213,16 +2213,13 @@ def run_pending_focused_review(
     from top_down_planning.domain.production_blockers import evaluate_blocker_report
     from top_down_planning.domain.reviews import (
         ReviewLoop,
-        focused_review_owner_revision_in_progress,
+        focused_review_producer_owner_work_pending,
     )
     from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 
-    production_payload: dict[str, Any] = {}
-    try:
-        loaded = store.load_production(run_id)
-        if isinstance(loaded, dict):
-            production_payload = loaded
-    except Exception:
+    if review_type == "focused_output":
+        production_payload = store.load_production(run_id)
+    else:
         production_payload = {}
     reviews = [ReviewLoop.from_dict(raw) for raw in store.list_reviews(run_id)]
     blocker = evaluate_blocker_report(
@@ -2247,7 +2244,7 @@ def run_pending_focused_review(
             loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
         except Exception:
             loop = None
-        if loop is not None and focused_review_owner_revision_in_progress(
+        if loop is not None and focused_review_producer_owner_work_pending(
             loop,
             store=store,
             run_id=run_id,

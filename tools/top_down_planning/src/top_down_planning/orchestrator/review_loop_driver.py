@@ -12,6 +12,7 @@ from top_down_planning.domain.reviews import (
     budgets_snapshot,
     complete_advisory_handoff_if_owner_responses_recorded,
     finding_actions_for_active_set,
+    focused_review_producer_owner_work_pending,
     focused_review_revision_limit_from_config,
     increment_gate_agent_turns,
     is_mandatory_review_loop,
@@ -376,14 +377,18 @@ class ReviewLoopDriver:
                         return resumed
                     loop = resumed
                     run = self._store.load_run(self._run_id)
-                if str(run.get("status") or "") != "running":
-                    return self.result_from_run(run, ok=False, loop=loop)
-                continue
+                    if str(run.get("status") or "") != "running":
+                        return self.result_from_run(run, ok=False, loop=loop)
+                    continue
             if (
                 not self.profile.is_mandatory_gate
                 and loop.status == "pending"
                 and int(loop.revision_cycles) > 0
-                and not self._owner_revision_complete(loop)
+                and focused_review_producer_owner_work_pending(
+                    loop,
+                    store=self._store,
+                    run_id=self._run_id,
+                )
             ):
                 run = self._store.load_run(self._run_id)
                 if str(run.get("status") or "") != "running":
