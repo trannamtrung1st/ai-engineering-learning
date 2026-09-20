@@ -70,6 +70,7 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
         deadline=None,
         watchdogs=None,
         cleanup_failures=None,
+        turn_cleanup_deadline=None,
     ):
         stream = args[-1]
         seen_deadline["value"] = deadline
@@ -82,6 +83,7 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
             deadline=deadline,
             watchdogs=watchdogs,
             cleanup_failures=cleanup_failures,
+            turn_cleanup_deadline=turn_cleanup_deadline,
         )
 
     def mark_stall(*args, **kwargs):

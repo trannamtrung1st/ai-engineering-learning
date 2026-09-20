@@ -2455,6 +2455,7 @@ class CursorProvider:
         deadline: float | None = None,
         watchdogs: _TurnWatchdogs | None = None,
         cleanup_failures: list[ProviderTurnCleanupError] | None = None,
+        turn_cleanup_deadline: list[float | None] | None = None,
     ) -> Iterator[str]:
         """Yield stdout lines, raising when no line arrives within the watchdog window."""
 
@@ -2492,13 +2493,17 @@ class CursorProvider:
             name="cursor-idle-stream",
         )
         thread.start()
-        cleanup_deadline: float | None = None
+        local_cleanup_deadline: float | None = None
 
         def ensure_cleanup_deadline() -> float:
-            nonlocal cleanup_deadline
-            if cleanup_deadline is None:
-                cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
-            return cleanup_deadline
+            nonlocal local_cleanup_deadline
+            if turn_cleanup_deadline is not None:
+                if turn_cleanup_deadline[0] is None:
+                    turn_cleanup_deadline[0] = CursorProvider._turn_tree_cleanup_deadline()
+                return turn_cleanup_deadline[0]
+            if local_cleanup_deadline is None:
+                local_cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
+            return local_cleanup_deadline
 
         try:
             while True:
@@ -3106,9 +3111,15 @@ class CursorProvider:
             iterator: _SubprocessStdoutIterator | None = None
             stream: Iterator[str] | None = None
             raw_stream: Iterator[str] | None = None
-            teardown_deadline: list[float | None] = [None]
+            turn_cleanup_deadline: list[float | None] = [None]
             detect_deadline: float | None = None
             owner_id = uuid.uuid4().hex
+
+            def ensure_turn_cleanup_deadline() -> float:
+                if turn_cleanup_deadline[0] is None:
+                    turn_cleanup_deadline[0] = CursorProvider._turn_tree_cleanup_deadline()
+                return turn_cleanup_deadline[0]
+
             self._collect_context.owner_id = owner_id
             watchdogs: _TurnWatchdogs | None = None
             generic_idle_stream_managed = False
@@ -3165,14 +3176,12 @@ class CursorProvider:
 
                 def on_idle() -> None:
                     proc = active_proc[0]
-                    if teardown_deadline[0] is None:
-                        teardown_deadline[0] = (
-                            time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                        )
                     if proc is None:
                         return
                     tracked = self._tracked_turn_procs.get(proc.pid)
-                    remaining = max(0.0, teardown_deadline[0] - time.monotonic())
+                    remaining = CursorProvider._remaining_turn_tree_cleanup_seconds(
+                        ensure_turn_cleanup_deadline()
+                    )
                     terminate_process_tree(
                         proc,
                         pgid=tracked.pgid if tracked is not None else None,
@@ -3185,7 +3194,9 @@ class CursorProvider:
                     if proc.pid in self._tracked_turn_procs:
                         live = self._tracked_tree_is_live(
                             self._tracked_turn_procs[proc.pid],
-                            timeout=max(0.0, teardown_deadline[0] - time.monotonic()),
+                            timeout=CursorProvider._remaining_turn_tree_cleanup_seconds(
+                                ensure_turn_cleanup_deadline()
+                            ),
                         )
                         if not live:
                             self._unregister_tracked_turn_proc(proc)
@@ -3205,6 +3216,7 @@ class CursorProvider:
                         deadline=detect_deadline,
                         watchdogs=watchdogs,
                         cleanup_failures=idle_stream_cleanup_failures,
+                        turn_cleanup_deadline=turn_cleanup_deadline,
                     )
                     if iterator is None:
                         generic_idle_stream_managed = True
@@ -3228,11 +3240,10 @@ class CursorProvider:
 
                 yield from _observe()
             finally:
-                final_cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
                 context = self._get_collect_context()
                 wait_session_id = context[0] if context is not None else None
                 remaining = CursorProvider._remaining_turn_tree_cleanup_seconds(
-                    final_cleanup_deadline
+                    ensure_turn_cleanup_deadline()
                 )
                 self._wait_turn_enrichment(
                     timeout=remaining,
@@ -3253,7 +3264,7 @@ class CursorProvider:
                             self._refresh_tracked_members(
                                 tracked,
                                 timeout=CursorProvider._remaining_turn_tree_cleanup_seconds(
-                                    final_cleanup_deadline
+                                    ensure_turn_cleanup_deadline()
                                 ),
                             )
                         tree_clean = terminate_process_tree(
@@ -3266,7 +3277,7 @@ class CursorProvider:
                                 else None
                             ),
                             timeout=CursorProvider._remaining_turn_tree_cleanup_seconds(
-                                final_cleanup_deadline
+                                ensure_turn_cleanup_deadline()
                             ),
                         )
                         if tree_clean:

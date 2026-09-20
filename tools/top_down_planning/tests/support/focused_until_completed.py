@@ -124,13 +124,23 @@ def seed_focused_output_owner_pending_after_evidence(
     return loop_id
 
 
-def script_focused_output_through_completion(
+def script_focused_output_pre_handoff_resume(factory: RotatingStubProviderFactory) -> None:
+    """Queue only the production primary turn that may run before an internal handoff."""
+
+    factory.script_turn(
+        done_events(text="production primary resume"),
+        expected_role="producer",
+        expected_kind="primary",
+    )
+
+
+def script_focused_output_after_owner_handoff(
     factory: RotatingStubProviderFactory,
     store: FileRunStore,
     run_id: str,
     loop_id: str,
 ) -> None:
-    """Queue provider turns that complete owner work, recheck, production, and whole-output review."""
+    """Queue strict owner/reviewer turns and downstream autofill after the handoff gate opens."""
 
     loop_snapshot = store.load_review(run_id, loop_id)
     state = {
@@ -140,12 +150,19 @@ def script_focused_output_through_completion(
         "whole_output": False,
     }
 
+    def _primary_finding_id(loop_payload: dict[str, Any]) -> str:
+        findings = loop_payload.get("findings") or []
+        if findings and isinstance(findings[0], dict):
+            return str(findings[0].get("id") or "finding-01")
+        return "finding-01"
+
     def _record_owner_actions() -> None:
         if not _OWNER_FINDING_ACTION_RECORDING_ALLOWED:
             return
         if state["finding_actions"]:
             return
         loop_payload = store.load_review(run_id, loop_id)
+        finding_id = _primary_finding_id(loop_payload)
         record_finding_actions(
             store,
             run_id,
@@ -154,7 +171,7 @@ def script_focused_output_through_completion(
                 "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
                 "finding_actions": [
                     {
-                        "finding_id": "finding-01",
+                        "finding_id": finding_id,
                         "action": "fix",
                         "actor_role": "producer",
                         "rationale": "Evidence revision completed.",
@@ -178,6 +195,7 @@ def script_focused_output_through_completion(
             return
         if str(loop.get("active_stage") or "") != "finding_verification":
             return
+        finding_id = _primary_finding_id(loop)
         respond_review(
             store,
             run_id,
@@ -189,7 +207,7 @@ def script_focused_output_through_completion(
                 "finding_set_id": str(loop.get("finding_set_id") or ""),
                 "finding_results": [
                     {
-                        "finding_id": "finding-01",
+                        "finding_id": finding_id,
                         "disposition": "resolved",
                         "evidence": ["revised artifact attached"],
                         "direct_side_effects": [],
@@ -301,15 +319,34 @@ def script_focused_output_through_completion(
         )()
         state["whole_output"] = True
 
+    if not state["finding_actions"]:
+        factory.script_turn(
+            done_events(text="owner session rotate"),
+            expected_role="producer",
+            expected_kind="primary",
+        )
+        factory.script_turn(
+            done_events(text="producer owner revision turn"),
+            mutate_store=_record_owner_actions,
+            expected_role="producer",
+            expected_kind="primary",
+        )
+        factory.script_turn(
+            done_events(text="producer owner revision follow-up"),
+            mutate_store=_record_owner_actions,
+            expected_role="producer",
+            expected_kind="primary",
+        )
     factory.script_turn(
-        done_events(text="production primary resume"),
-        expected_role="producer",
-        expected_kind="primary",
+        done_events(text="recheck delivery without respond"),
+        expected_role="reviewer",
+        expected_kind="reviewer",
     )
     factory.script_turn(
-        done_events(text="owner session rotate"),
-        expected_role="producer",
-        expected_kind="primary",
+        done_events(text="reviewer verify"),
+        mutate_store=_verify_focused_review,
+        expected_role="reviewer",
+        expected_kind="reviewer",
     )
     factory.allow_autofill_after_expected_scripts()
     whole_output_gate_state = {"initial": False}
@@ -329,12 +366,157 @@ def script_focused_output_through_completion(
         run = store.load_run(run_id)
         phase = str(run.get("phase") or "")
         if phase == PRODUCTION:
-            if not state["finding_actions"]:
-                _record_owner_actions()
-            if not state["finding_actions"]:
+            if not state["finding_actions"] or not state["verified"]:
                 return
-            if not state["verified"]:
-                _verify_focused_review()
+            _complete_item_second()
+            return
+        if phase == WHOLE_OUTPUT_REVIEW:
+            _whole_output_autofill()
+
+    factory.register_autofill_mutate(_autofill_mutate)
+
+
+def script_focused_output_through_completion(
+    factory: RotatingStubProviderFactory,
+    store: FileRunStore,
+    run_id: str,
+    loop_id: str,
+) -> None:
+    """Queue provider turns that complete owner work, recheck, production, and whole-output review."""
+
+    script_focused_output_pre_handoff_resume(factory)
+    script_focused_output_after_owner_handoff(factory, store, run_id, loop_id)
+
+
+def script_focused_output_production_tail_after_approval(
+    factory: RotatingStubProviderFactory,
+    store: FileRunStore,
+    run_id: str,
+    loop_id: str,
+) -> None:
+    """Resume production and whole-output review when focused review is already approved."""
+
+    loop_snapshot = store.load_review(run_id, loop_id)
+    assert str(loop_snapshot.get("status") or "") == "approved"
+    state = {
+        "finding_actions": True,
+        "verified": True,
+        "item_second": False,
+        "whole_output": False,
+    }
+    whole_output_loop_id = "review-whole-output-01"
+
+    def _complete_item_second() -> None:
+        if state["item_second"]:
+            return
+        apply_production(
+            store,
+            run_id,
+            {
+                "production_revision": int(store.load_production(run_id)["revision"]),
+                "plan_items": ["item-second"],
+                "dispositions": {
+                    "item-second": {
+                        "disposition": "completed",
+                        "evidence": "Second item complete.",
+                    }
+                },
+                "outputs": [
+                    {
+                        "id": "output-second-done",
+                        "type": "artifact",
+                        "ref": "artifacts/second.txt",
+                    }
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-second",
+                        "output_refs": ["output-second-done"],
+                        "summary": "Second item batch.",
+                    }
+                ],
+                "summary": "Complete item-second.",
+            },
+            handler="apply",
+        )()
+        apply_production(
+            store,
+            run_id,
+            {"goal_assessment": "Output goal is fully met."},
+            handler="submit_completion",
+        )()
+        state["item_second"] = True
+
+    def _whole_output_initial_respond() -> None:
+        if state["whole_output"]:
+            return
+        run = store.load_run(run_id)
+        if str(run.get("phase") or "") != WHOLE_OUTPUT_REVIEW:
+            return
+        loop_payload = store.load_review(run_id, whole_output_loop_id)
+        target_revision = int(loop_payload["target_revision"])
+        respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=whole_output_loop_id,
+                target_revision=target_revision,
+                review_type="whole_output",
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=whole_output_loop_id,
+        )()
+        prepare_loop_for_scope_review_respond(
+            store,
+            run_id,
+            whole_output_loop_id,
+            target_revision=target_revision,
+        )
+
+    def _whole_output_scope_respond() -> None:
+        if state["whole_output"]:
+            return
+        run = store.load_run(run_id)
+        if str(run.get("phase") or "") != WHOLE_OUTPUT_REVIEW:
+            return
+        loop_payload = store.load_review(run_id, whole_output_loop_id)
+        target_revision = int(loop_payload["target_revision"])
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=whole_output_loop_id,
+                target_revision=target_revision,
+                review_type="whole_output",
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=whole_output_loop_id,
+        )()
+        state["whole_output"] = True
+
+    script_focused_output_pre_handoff_resume(factory)
+    factory.allow_autofill_after_expected_scripts()
+    whole_output_gate_state = {"initial": False}
+
+    def _whole_output_autofill() -> None:
+        run = store.load_run(run_id)
+        if str(run.get("phase") or "") != WHOLE_OUTPUT_REVIEW:
+            return
+        if not whole_output_gate_state["initial"]:
+            _whole_output_initial_respond()
+            whole_output_gate_state["initial"] = True
+            return
+        if not state["whole_output"]:
+            _whole_output_scope_respond()
+
+    def _autofill_mutate() -> None:
+        run = store.load_run(run_id)
+        phase = str(run.get("phase") or "")
+        if phase == PRODUCTION:
             _complete_item_second()
             return
         if phase == WHOLE_OUTPUT_REVIEW:

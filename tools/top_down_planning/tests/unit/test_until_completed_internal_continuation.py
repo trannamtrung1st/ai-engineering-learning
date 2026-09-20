@@ -10,8 +10,9 @@ from core_tools.provider import StubProvider
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.reviews import ReviewLoop, mark_advisory_handoff_incomplete
 from top_down_planning.orchestrator import RunEngine
-from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
+from top_down_planning.orchestrator import engine as engine_module
 from top_down_planning.orchestrator.phase_step_disposition import PhaseStepDisposition
+from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.orchestrator.production import (
     ProductionPhaseOrchestrator,
@@ -42,6 +43,8 @@ from tests.support.focused_until_completed import (
     allow_owner_finding_action_recording,
     assert_focused_output_workflow_complete,
     reset_owner_finding_action_recording_gate,
+    script_focused_output_pre_handoff_resume,
+    script_focused_output_production_tail_after_approval,
     script_focused_output_through_completion,
     script_focused_plan_through_plan_target,
     seed_focused_output_owner_pending_after_evidence,
@@ -56,7 +59,6 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     reset_owner_finding_action_recording_gate()
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009001-009001"
-    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
         store,
@@ -66,10 +68,11 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     )
     loop_before = store.load_review(run_id, loop_id)
     assert not loop_before.get("finding_actions")
-    script_focused_output_through_completion(factory, store, run_id, loop_id)
-
-    engine = RunEngine(store, create_provider=factory.create_provider)
-    first_step = engine.continue_run(run_id, single_step=True)
+    handoff_factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=False)
+    first_step = RunEngine(
+        store,
+        create_provider=handoff_factory.create_provider,
+    ).continue_run(run_id, single_step=True)
     assert not store.load_review(run_id, loop_id).get("finding_actions")
     assert any(
         step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
@@ -83,7 +86,12 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     assert handoff.progress_key[0] == loop_id
 
     allow_owner_finding_action_recording()
-    continuation = engine.continue_run(run_id, until="completed")
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
+    script_focused_output_through_completion(factory, store, run_id, loop_id)
+    continuation = RunEngine(
+        store,
+        create_provider=factory.create_provider,
+    ).continue_run(run_id, until="completed")
 
     assert continuation.ok is True
     assert continuation.target_reached is True
@@ -143,8 +151,8 @@ def test_until_completed_recovers_recoverably_incomplete_focused_output_to_compl
         )()
 
     _defer_optional()
-    factory.script_turn(done_events(text="production primary resume"))
-    script_focused_output_through_completion(factory, store, run_id, loop_id)
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
+    script_focused_output_production_tail_after_approval(factory, store, run_id, loop_id)
 
     continuation = RunEngine(
         store,
@@ -284,7 +292,6 @@ def test_cli_resume_until_completed_exits_zero_with_target_reached(
     tmp_path: Path,
 ) -> None:
     reset_owner_finding_action_recording_gate()
-    allow_owner_finding_action_recording()
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009004-009004"
     factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
@@ -295,13 +302,26 @@ def test_cli_resume_until_completed_exits_zero_with_target_reached(
         run_id=run_id,
         record_owner_finding_actions=False,
     )
+    assert not store.load_review(run_id, loop_id).get("finding_actions")
     script_focused_output_through_completion(factory, store, run_id, loop_id)
+
+    original_finalize = engine_module._finalize_run_step
+
+    def _finalize_and_open_owner_gate(store, run_id, step, **kwargs):
+        step = original_finalize(store, run_id, step, **kwargs)
+        if step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF:
+            allow_owner_finding_action_recording()
+        return step
 
     with patch(
         "top_down_planning.cli.user.create_provider",
         side_effect=lambda config, workspace, **_kwargs: factory.create_provider(
             config, workspace
         ),
+    ), patch.object(
+        engine_module,
+        "_finalize_run_step",
+        side_effect=_finalize_and_open_owner_gate,
     ):
         result = run_cli(
             [
@@ -321,6 +341,17 @@ def test_cli_resume_until_completed_exits_zero_with_target_reached(
     assert payload["ok"] is True
     assert payload["target_reached"] is True
     assert payload["status"] == "completed"
+    event_types = [event.get("type") for event in store.load_events(run_id)]
+    assert "focused_review_recheck_requested" in event_types
+    assert "focused_review_approved" in event_types
+    assert (
+        event_types.index("focused_review_recheck_requested")
+        < event_types.index("focused_review_approved")
+    )
+    assert any(
+        event.get("type") == "production_batch_recorded" for event in store.load_events(run_id)
+    )
+    assert_focused_output_workflow_complete(store, run_id, loop_id)
 
 
 def test_cli_resume_single_step_without_until(tmp_path: Path) -> None:

@@ -140,7 +140,14 @@ def test_cleanup_deadline_starts_at_finalization_not_first_event(tmp_path: Path)
         f"print({result!r}, flush=True)\n"
     )
     captured: list[float | None] = []
+    deadline_mints = 0
     real_term = terminate_process_tree
+    real_deadline = CursorProvider._turn_tree_cleanup_deadline
+
+    def counting_deadline(start: float | None = None) -> float:
+        nonlocal deadline_mints
+        deadline_mints += 1
+        return real_deadline(start)
 
     def fake_term(proc, **kwargs):
         captured.append(kwargs.get("timeout"))
@@ -156,14 +163,23 @@ def test_cleanup_deadline_starts_at_finalization_not_first_event(tmp_path: Path)
     with patch(
         "core_tools.provider.cursor.DEFAULT_TURN_TREE_CLEANUP_SECONDS",
         0.05,
+    ), patch.object(
+        CursorProvider,
+        "_turn_tree_cleanup_deadline",
+        side_effect=counting_deadline,
     ), patch(
         "core_tools.provider.cursor.terminate_process_tree",
         side_effect=fake_term,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
         list(provider.stream_events(session_id))
+    assert deadline_mints == 1
     assert captured
-    assert captured[-1] == pytest.approx(0.05, abs=0.03)
+    configured = 0.05
+    assert all(timeout is not None and timeout <= configured + 0.001 for timeout in captured)
+    for earlier, later in zip(captured, captured[1:]):
+        assert later is not None and earlier is not None
+        assert later <= earlier + 0.001
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX waitpid ownership")
