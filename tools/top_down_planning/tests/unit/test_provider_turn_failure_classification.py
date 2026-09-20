@@ -90,7 +90,7 @@ def test_pending_focused_review_failure_is_review_state_conflict(
     _create_planning_run(store, run_id)
 
     with patch(
-        "top_down_planning.orchestrator.provider_turns.find_pending_focused_review_loop_id",
+        "top_down_planning.orchestrator.provider_turns.find_resumable_focused_review_loop_id",
         return_value="review-focused-plan-01",
     ):
         with patch.object(

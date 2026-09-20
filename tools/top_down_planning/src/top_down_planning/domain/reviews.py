@@ -2109,6 +2109,44 @@ def focused_output_revision_transaction_active(loop: ReviewLoop) -> bool:
     return False
 
 
+def focused_review_orchestrator_resume_eligible(
+    loop: ReviewLoop,
+    *,
+    store: Any,
+    run_id: str,
+) -> bool:
+    """True when production/planning should run ``FocusedReviewOrchestrator`` for this loop.
+
+    Excludes loops waiting on producer owner-revision work (producer session owns
+    that turn). Includes reviewer-pending loops and focused-output revision
+    transactions that must not be abandoned across process restarts.
+    """
+
+    if loop.type not in {"focused_plan", "focused_output"}:
+        return False
+    if is_terminal_review_loop(loop):
+        return False
+    if focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    ):
+        return False
+    if str(loop.status or "").strip() == "pending":
+        return True
+    if loop.type == "focused_output":
+        return focused_output_revision_transaction_active(loop)
+    if loop.status in {"advisory_pending", "review_incomplete"}:
+        return True
+    if is_revision_requested_status(loop.status):
+        return True
+    if loop.active_stage == "finding_verification":
+        return True
+    if focused_review_owner_revision_cycle_charged(loop):
+        return True
+    return False
+
+
 def focused_output_revision_transaction_active_loop(
     store: Any,
     run_id: str,

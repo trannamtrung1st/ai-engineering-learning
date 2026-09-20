@@ -36,6 +36,7 @@ from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
 from top_down_planning.orchestrator.provider_turns import (
     find_pending_focused_review_loop_id,
+    find_resumable_focused_review_loop_id,
     owner_revision_complete,
 )
 from top_down_planning.orchestrator.review_loop_driver import ReviewLoopDriver
@@ -1256,6 +1257,147 @@ def test_focused_output_orchestrator_advisory_defer_completes_and_allows_normal_
         handler="apply",
     )()
     assert store.load_production(run_id)["dispositions"]["item-second"] == "completed"
+
+
+def test_production_phase_rediscovers_review_incomplete_focused_output(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.persistence.session_bindings import primary_provider_session_id
+
+    from top_down_planning.orchestrator.provider_turns import (
+        restore_primary_capability_after_focused_review,
+    )
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000510-000510"
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    loop = ReviewLoop.from_dict(_advisory_optional_focused_output_loop(item_ids=["item-first"]))
+    incomplete = mark_advisory_handoff_incomplete(
+        loop,
+        missing_finding_ids=["finding-opt"],
+    )
+    save_review_payload(store, run_id, incomplete.to_dict())
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
+    assert (
+        find_resumable_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == loop_id
+    )
+
+    def _producer_defers() -> None:
+        loop_payload = store.load_review(run_id, loop_id)
+        token = grant_capability(
+            store,
+            run_id,
+            role="producer",
+            phase=PRODUCTION,
+            session_id=str(
+                primary_provider_session_id(store.load_run(run_id), "producer") or ""
+            ),
+        )
+        ReviewAgentService(store, run_id).record_finding_actions(
+            {
+                "loop_id": loop_id,
+                "target_revision": int(store.load_production(run_id)["output_revision"]),
+                "target_digest": mandatory_output_digest(store, run_id),
+                "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+                "finding_actions": [
+                    {
+                        "finding_id": "finding-opt",
+                        "action": "defer",
+                        "actor_role": "producer",
+                        "rationale": "Accept risk for now.",
+                    }
+                ],
+            },
+            capability_token=token,
+        )
+
+    provider.script_turn(
+        done_events(text="producer defer after restart"),
+        mutate_store=_producer_defers,
+    )
+
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    restore_primary_capability_after_focused_review(
+        store,
+        run_id,
+        provider,
+        review_type="focused_output",
+        role="producer",
+        current_token=token,
+    )
+
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
+    assert focused_output_revision_transaction_active_loop(store, run_id) is None
+    apply_production(
+        store,
+        run_id,
+        _normal_apply_item_second_request(store, run_id),
+        handler="apply",
+    )()
+    assert store.load_production(run_id)["dispositions"]["item-second"] == "completed"
+
+
+def test_production_phase_rediscovers_changes_requested_focused_output(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000511-000511"
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    request_focused_review(
+        store,
+        run_id,
+        {"type": "focused_output", "scope": {"item_ids": ["item-first"]}},
+        role="producer",
+        phase=PRODUCTION,
+    )()
+    respond_review(
+        store,
+        run_id,
+        review_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            decision="changes_requested",
+            target_revision=int(store.load_review(run_id, loop_id)["target_revision"]),
+            findings=[
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-first"],
+                    "issue": "Evidence is incomplete.",
+                    "recommended_change": "Add a revised artifact.",
+                    "status": "unresolved",
+                }
+            ],
+        ),
+        phase=PRODUCTION,
+        loop_id=loop_id,
+    )()
+
+    assert store.load_review(run_id, loop_id)["status"] == "changes_requested"
+    assert (
+        find_resumable_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == loop_id
+    )
+
+    provider.script_turn(done_events(text="owner revision handoff"))
+    FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
+
+    assert int(store.load_review(run_id, loop_id)["revision_cycles"]) >= 1
 
 
 def test_focused_output_producer_advisory_handoff_uses_record_actions_boundary(

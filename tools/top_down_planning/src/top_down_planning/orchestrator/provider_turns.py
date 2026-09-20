@@ -2166,36 +2166,48 @@ def build_reviewer_turn_recovery(
     )
 
 
+def find_resumable_focused_review_loop_id(
+    store: RunStore,
+    run_id: str,
+    *,
+    review_type: str,
+) -> str | None:
+    """Return the newest focused review loop production/planning should resume."""
+
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        focused_review_orchestrator_resume_eligible,
+    )
+
+    for review in reversed(store.list_reviews(run_id)):
+        if str(review.get("type") or "") != review_type:
+            continue
+        loop_id = review.get("id")
+        if loop_id is None:
+            continue
+        loop = ReviewLoop.from_dict(review)
+        if focused_review_orchestrator_resume_eligible(
+            loop,
+            store=store,
+            run_id=run_id,
+        ):
+            return str(loop_id)
+    return None
+
+
 def find_pending_focused_review_loop_id(
     store: RunStore,
     run_id: str,
     *,
     review_type: str,
 ) -> str | None:
-    """Return a pending focused review loop that production should drive or resume."""
+    """Return a focused review loop that production should drive or resume."""
 
-    from top_down_planning.domain.reviews import (
-        ReviewLoop,
-        focused_review_producer_owner_work_pending,
+    return find_resumable_focused_review_loop_id(
+        store,
+        run_id,
+        review_type=review_type,
     )
-
-    for review in store.list_reviews(run_id):
-        if str(review.get("type") or "") != review_type:
-            continue
-        if str(review.get("status") or "") != "pending":
-            continue
-        loop_id = review.get("id")
-        if loop_id is None:
-            continue
-        loop = ReviewLoop.from_dict(review)
-        if focused_review_producer_owner_work_pending(
-            loop,
-            store=store,
-            run_id=run_id,
-        ):
-            continue
-        return str(loop_id)
-    return None
 
 
 def run_pending_focused_review(
@@ -2230,7 +2242,7 @@ def run_pending_focused_review(
     if blocker.disposition == "active_terminal":
         return False
 
-    loop_id = find_pending_focused_review_loop_id(
+    loop_id = find_resumable_focused_review_loop_id(
         store,
         run_id,
         review_type=review_type,

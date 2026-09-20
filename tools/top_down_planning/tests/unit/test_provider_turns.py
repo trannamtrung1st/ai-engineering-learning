@@ -15,6 +15,7 @@ from top_down_planning.orchestrator.provider_turns import (
     ensure_phase_action_id,
     extract_completion_signal_from_text,
     find_pending_focused_review_loop_id,
+    find_resumable_focused_review_loop_id,
     resolve_turn_signal,
     review_decision_from_store,
 )
@@ -222,6 +223,113 @@ def test_find_pending_focused_review_includes_in_progress_reviewer_session(
         run_id,
         review_type="focused_plan",
     ) == "review-focused-plan-01"
+
+
+def test_find_resumable_focused_output_includes_review_incomplete(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        mark_advisory_handoff_incomplete,
+    )
+    from tests.helpers import review_loop_dict_with_binding, save_review_payload
+    from tests.support.focused_review import create_production_run_open_item_second
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000902-000902"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    loop = ReviewLoop.from_dict(
+        review_loop_dict_with_binding(
+            {
+                "id": "review-focused-output-01",
+                "type": "focused_output",
+                "target_revision": 1,
+                "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
+                "status": "advisory_pending",
+                "revise_at": "blocker",
+                "revision_cycles": 0,
+                "finding_set_id": "fs-advisory-01",
+                "findings": [
+                    {
+                        "id": "finding-opt",
+                        "severity": "minor",
+                        "category": "correctness",
+                        "target_refs": ["item-first"],
+                        "issue": "Optional polish.",
+                        "recommended_change": "Improve wording.",
+                        "status": "unresolved",
+                    }
+                ],
+                "finding_actions": [],
+            }
+        )
+    )
+    incomplete = mark_advisory_handoff_incomplete(
+        loop,
+        missing_finding_ids=["finding-opt"],
+    )
+    from tests.helpers import save_review_payload
+
+    save_review_payload(store, run_id, incomplete.to_dict())
+
+    assert (
+        find_resumable_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == "review-focused-output-01"
+    )
+    assert (
+        find_pending_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == "review-focused-output-01"
+    )
+
+
+def test_find_resumable_focused_output_includes_changes_requested(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import make_review_loop, save_review_payload
+    from tests.support.focused_review import create_production_run
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000903-000903"
+    create_production_run(store, run_id=run_id)
+    loop = make_review_loop(
+        id="review-focused-output-01",
+        type="focused_output",
+        target_revision=1,
+        scope={"kind": "focused_output", "item_ids": ["item-first"]},
+        status="changes_requested",
+        revise_at="blocker",
+        revision_cycles=0,
+        findings=[
+            {
+                "id": "finding-01",
+                "severity": "blocker",
+                "category": "correctness",
+                "target_refs": ["item-first"],
+                "issue": "Fix evidence.",
+                "recommended_change": "Revise.",
+                "status": "unresolved",
+            }
+        ],
+    )
+    save_review_payload(store, run_id, loop.to_dict())
+
+    assert (
+        find_resumable_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        == "review-focused-output-01"
+    )
 
 
 def test_build_reviewer_decision_boundary_observer_detects_terminal_decision(
