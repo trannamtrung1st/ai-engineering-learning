@@ -11,7 +11,10 @@ from top_down_planning.domain.reviews import (
     focused_review_owner_revision_cycle_charged,
     focused_review_producer_owner_work_pending,
 )
-from top_down_planning.orchestrator.focused_review import FocusedReviewAdapter
+from top_down_planning.orchestrator.focused_review import (
+    FocusedReviewAdapter,
+    FocusedReviewOrchestrator,
+)
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.orchestrator.provider_turns import owner_revision_complete
 from top_down_planning.orchestrator.review_loop_driver import ReviewLoopDriver
@@ -117,6 +120,35 @@ def _inject_focused_owner_actions_before_artifact_advance(
             "owner_revision_cycle": cycle,
             "artifact_revision": artifact_revision,
             "rationale": "Simulate crash before artifact revision advanced.",
+        }
+    ]
+    loop_payload["status"] = "pending"
+    loop_payload["revision_cycles"] = cycle
+    save_review_payload(store, run_id, loop_payload)
+
+
+def _inject_focused_owner_challenge_action(
+    store: FileRunStore,
+    run_id: str,
+    loop_id: str,
+    *,
+    role: str,
+    artifact_revision: int,
+) -> None:
+    loop_payload = dict(store.load_review(run_id, loop_id))
+    finding_set_id = str(loop_payload.get("finding_set_id") or "")
+    cycle = max(int(loop_payload.get("revision_cycles") or 0), 1)
+    loop_payload["finding_actions"] = [
+        {
+            "finding_id": "finding-01",
+            "finding_set_id": finding_set_id,
+            "action": "challenge",
+            "actor_role": role,
+            "owner_revision_cycle": cycle,
+            "artifact_revision": artifact_revision,
+            "proposed_disposition": "invalid",
+            "challenge_reason": "invalid",
+            "rationale": "Dispute finding without artifact revision.",
         }
     ]
     loop_payload["status"] = "pending"
@@ -483,6 +515,145 @@ def test_focused_output_restart_actions_before_artifact_skips_recheck(
     assert review.get("active_stage") != "finding_verification"
     assert int(review["target_revision"]) == target_revision
     assert int(store.load_production(run_id)["output_revision"]) == output_revision_before
+
+
+def test_focused_producer_owner_work_pending_challenge_without_artifact_revision(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000707-000707"
+    create_planning_run(store, run_id)
+    loop_id, target_revision = _charge_focused_plan_owner_cycle(store, run_id)
+    plan_revision = int(store.load_plan(run_id)["revision"])
+    _inject_focused_owner_challenge_action(
+        store,
+        run_id,
+        loop_id,
+        role="planner",
+        artifact_revision=plan_revision,
+    )
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert int(store.load_plan_model(run_id).revision) == target_revision
+    assert focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    ) is False
+
+
+def test_focused_plan_orchestrator_actions_before_artifact_skips_recheck(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000708-000708"
+    create_planning_run(store, run_id)
+    loop_id, target_revision = _charge_focused_plan_owner_cycle(store, run_id)
+    plan_revision = int(store.load_plan(run_id)["revision"])
+    _inject_focused_owner_actions_before_artifact_advance(
+        store,
+        run_id,
+        loop_id,
+        role="planner",
+        artifact_revision=plan_revision,
+    )
+    provider.script_turn(done_events(text="planner primary session start"))
+    provider.script_turn(done_events(text="owner revision session start"))
+    provider.script_turn(done_events(text="owner revision turn"))
+
+    result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
+
+    assert result.ok is False
+    assert "owner revision" in (result.reason or "").lower()
+    review = store.load_review(run_id, loop_id)
+    assert review.get("active_stage") != "finding_verification"
+    assert int(review["target_revision"]) == target_revision
+    assert int(store.load_plan_model(run_id).revision) == target_revision
+    assert not any(
+        event.get("type") == "focused_review_recheck_requested"
+        for event in store.load_events(run_id)
+    )
+
+    apply_plan(
+        store,
+        run_id,
+        base_revision=target_revision,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-api",
+                "patch": {"outcome": "REST API endpoints exist."},
+            }
+        ],
+        phase=PLANNING,
+    )()
+    loop_payload = dict(store.load_review(run_id, loop_id))
+    loop_payload["status"] = "pending"
+    loop_payload["revision_cycles"] = max(int(loop_payload.get("revision_cycles") or 0), 1)
+    save_review_payload(store, run_id, loop_payload)
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    reviewer_session_id = reviewer_loop_provider_session_id(loop) or "reviewer-sess"
+    provider.script_session_turn(
+        reviewer_session_id,
+        done_events(text="verification recheck delivery"),
+    )
+    normalized, reviewer_turn_delivered = _normalize_focused_plan_loop(
+        store,
+        run_id,
+        provider,
+        loop_id,
+    )
+    assert reviewer_turn_delivered is True
+    assert normalized.active_stage == "finding_verification"
+    review = store.load_review(run_id, loop_id)
+    assert int(review["target_revision"]) == target_revision + 1
+    assert any(
+        event.get("type") == "focused_review_recheck_requested"
+        for event in store.load_events(run_id)
+    )
+
+
+def test_focused_plan_challenge_normalize_prepares_recheck_without_artifact(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000709-000709"
+    create_planning_run(store, run_id)
+    loop_id, target_revision = _charge_focused_plan_owner_cycle(store, run_id)
+    plan_revision = int(store.load_plan(run_id)["revision"])
+    _inject_focused_owner_challenge_action(
+        store,
+        run_id,
+        loop_id,
+        role="planner",
+        artifact_revision=plan_revision,
+    )
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    ) is False
+
+    normalized, reviewer_turn_delivered = _normalize_focused_plan_loop(
+        store,
+        run_id,
+        provider,
+        loop_id,
+    )
+
+    assert reviewer_turn_delivered is True
+    review = store.load_review(run_id, loop_id)
+    assert review["active_stage"] == "finding_verification"
+    assert int(review["target_revision"]) == target_revision
+    assert int(store.load_plan_model(run_id).revision) == target_revision
+    assert any(
+        event.get("type") == "focused_review_recheck_requested"
+        for event in store.load_events(run_id)
+    )
+    assert normalized.active_stage == "finding_verification"
 
 
 def test_focused_output_normalize_owner_complete_commits_recheck(

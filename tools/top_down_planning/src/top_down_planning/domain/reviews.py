@@ -2061,13 +2061,16 @@ def focused_review_producer_owner_work_pending(
         return False
     if loop.active_stage == "finding_verification":
         return False
-    if focused_review_owner_artifact_revision_pending(
-        loop,
-        store=store,
-        run_id=run_id,
-    ):
+    if not focused_review_owner_actions_complete(loop):
         return True
-    return not focused_review_owner_actions_complete(loop)
+    active_actions = finding_actions_for_active_set(loop)
+    if owner_actions_require_revision(active_actions):
+        return focused_review_owner_artifact_revision_pending(
+            loop,
+            store=store,
+            run_id=run_id,
+        )
+    return False
 
 
 def focused_review_owner_revision_in_progress(

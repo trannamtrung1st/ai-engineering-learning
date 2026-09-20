@@ -698,7 +698,7 @@ class ReviewLoopDriver:
 
             self._resume_owner_with_findings(loop)
             loop = self._reload_loop(loop.id)
-            if self._owner_revision_complete(loop):
+            if self._owner_work_complete_for_recheck(loop):
                 loop = self._prepare_recheck(loop)
             else:
                 continue
@@ -1275,6 +1275,15 @@ class ReviewLoopDriver:
     def _owner_revision_complete(self, loop: ReviewLoop) -> bool:
         return owner_revision_complete(self._store, self._run_id, loop.id)
 
+    def _owner_work_complete_for_recheck(self, loop: ReviewLoop) -> bool:
+        if self.profile.is_mandatory_gate:
+            return self._owner_revision_complete(loop)
+        return not focused_review_producer_owner_work_pending(
+            loop,
+            store=self._store,
+            run_id=self._run_id,
+        )
+
     def _owner_revision_ready_for_recheck(self, loop: ReviewLoop) -> bool:
         if pending_verification_owner_cycle_charge(
             self._store, self._run_id, loop
@@ -1376,7 +1385,7 @@ class ReviewLoopDriver:
         loop = self._persist_loop(updated)
         self._resume_owner_with_findings(loop)
         loop = self._reload_loop(loop.id)
-        if self._owner_revision_complete(loop):
+        if self._owner_work_complete_for_recheck(loop):
             return self._prepare_recheck(loop), None
         return loop, None
 
@@ -1409,14 +1418,14 @@ class ReviewLoopDriver:
             )
             self._resume_owner_with_findings(loop)
             loop = self._reload_loop(loop.id)
-            if self._owner_revision_complete(loop):
+            if self._owner_work_complete_for_recheck(loop):
                 return self._prepare_recheck(loop)
             return loop
-        if self._owner_revision_complete(loop):
+        if self._owner_work_complete_for_recheck(loop):
             return self._prepare_recheck(loop)
         self._resume_owner_with_findings(loop)
         loop = self._reload_loop(loop.id)
-        if self._owner_revision_complete(loop):
+        if self._owner_work_complete_for_recheck(loop):
             return self._prepare_recheck(loop)
         return loop
 
