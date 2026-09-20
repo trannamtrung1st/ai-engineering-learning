@@ -2087,6 +2087,26 @@ def focused_review_owner_revision_in_progress(
     )
 
 
+def focused_output_owner_revision_in_progress_loop(
+    store: Any,
+    run_id: str,
+) -> ReviewLoop | None:
+    """Return the focused-output loop blocking normal production apply, if any."""
+
+    run = store.load_run(run_id)
+    if str(run.get("phase") or "") != "production":
+        return None
+    for payload in reversed(store.list_reviews(run_id)):
+        loop = ReviewLoop.from_dict(payload)
+        if focused_output_owner_revision_in_progress(
+            loop,
+            store=store,
+            run_id=run_id,
+        ):
+            return loop
+    return None
+
+
 def focused_output_owner_revision_in_progress(
     loop: ReviewLoop,
     *,

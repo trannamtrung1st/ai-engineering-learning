@@ -48,6 +48,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     blocking_focused_findings_for_items,
     find_whole_plan_approval,
+    focused_output_owner_revision_in_progress_loop,
     focused_output_revision_target_ids,
     mandatory_owner_revision_in_progress_loop,
     whole_output_revision_target_ids,
@@ -225,6 +226,16 @@ class ProductionAgentService:
             }
         plan_item_ids = [str(item_id) for item_id in plan_items]
         if not evidence_revision:
+            owner_revision_loop = focused_output_owner_revision_in_progress_loop(
+                self._store,
+                self._run_id,
+            )
+            if owner_revision_loop is not None:
+                raise RequestError(
+                    "focused-output owner revision is active; complete the focused "
+                    "evidence revision before normal production apply "
+                    f"(loop_id={owner_revision_loop.id})"
+                )
             blocked = blocking_focused_findings_for_items(
                 reviews,
                 "focused_output",

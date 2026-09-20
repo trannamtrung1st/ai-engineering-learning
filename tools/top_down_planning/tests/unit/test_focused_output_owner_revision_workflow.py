@@ -11,7 +11,7 @@ import pytest
 
 from core_tools.provider import StubProvider
 from core_tools.provider.errors import ProviderSessionError
-from top_down_planning.agent_tool import ProductionAgentService
+from top_down_planning.agent_tool import ProductionAgentService, RequestError
 from top_down_planning.domain.production_blockers import (
     BLOCKER_KIND_EXTERNAL,
     BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
@@ -31,6 +31,7 @@ from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
     done_events,
     grant_capability,
+    record_finding_actions,
     request_focused_review,
     respond_review,
     review_loop_dict_with_binding,
@@ -41,6 +42,107 @@ from tests.unit.test_focused_evidence_revision import (
     _create_run,
     _focused_review,
 )
+
+
+def _create_run_with_open_item_second(
+    store: FileRunStore,
+    tmp_path: Path,
+    run_id: str = "run-20260101T000551-000551",
+) -> None:
+    from top_down_planning.domain.models import Plan, PlanItem
+    from tests.helpers import bind_evidence_snapshot, create_run_kwargs, whole_plan_approval_record
+
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        kind="aggregate",
+    )
+    first = PlanItem(
+        id="item-first",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="First",
+        outcome="First outcome.",
+        kind="work",
+    )
+    second = PlanItem(
+        id="item-second",
+        parent_id="item-root",
+        order_key="0000000100",
+        title="Second",
+        outcome="Second outcome.",
+        kind="work",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root, "item-first": first, "item-second": second},
+    )
+    config = {
+        "run": {"output_goal": "Deliver.", "input_refs": ["README.md"]},
+        "planning": {
+            "stop_hint": "Stop.",
+            "max_depth": 4,
+            "max_expansion_per_item": 7,
+        },
+        "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+    }
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=config),
+        phase=PRODUCTION,
+    )
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
+    run = store.load_run(run_id)
+    workspace = Path(str(run["workspace"]))
+    (workspace / "first.txt").write_text("1\n", encoding="utf-8")
+    (workspace / "second.txt").write_text("2\n", encoding="utf-8")
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    production = dict(production)
+    production["revision"] = expected + 1
+    production["output_revision"] = 1
+    production["dispositions"] = {"item-first": "completed"}
+    output_evidence, nested_output = bind_evidence_snapshot(
+        store,
+        run_id,
+        {
+            "id": "output-first",
+            "type": "artifact",
+            "ref": "first.txt",
+            "media_type": "text/plain",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "batch_id": "batch-01",
+        },
+        content=(workspace / "first.txt").read_bytes(),
+    )
+    production["batches"] = [
+        {
+            "id": "batch-01",
+            "plan_items": ["item-first"],
+            "status": "completed",
+            "result": {
+                "outputs": [nested_output],
+                "contributions": [
+                    {
+                        "item_id": "item-first",
+                        "output_refs": ["output-first"],
+                        "summary": "initial",
+                    }
+                ],
+                "dispositions": {
+                    "item-first": {"disposition": "completed", "evidence": "initial"},
+                },
+                "summary": "initial",
+            },
+        }
+    ]
+    production["output_evidence"] = [output_evidence]
+    store.save_production(run_id, production, expected)
 
 
 def _owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
@@ -261,6 +363,205 @@ def test_focused_evidence_revision_allowed_after_owner_revision_handoff(
         store=store,
         run_id="run-20260101T000551-000551",
     ) == {"item-first"}
+
+
+def test_normal_production_apply_rejected_during_focused_output_owner_revision(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000551-000551"
+    _create_run_with_open_item_second(store, tmp_path, run_id=run_id)
+    save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
+    service = ProductionAgentService(store, run_id)
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    production_revision = int(store.load_production(run_id)["revision"])
+
+    with pytest.raises(RequestError, match="focused-output owner revision is active"):
+        service.apply(
+            {
+                "production_revision": production_revision,
+                "plan_items": ["item-second"],
+                "dispositions": {
+                    "item-second": {
+                        "disposition": "completed",
+                        "evidence": "Unrelated work.",
+                    }
+                },
+                "outputs": [
+                    {"id": "output-second-v2", "type": "artifact", "ref": "second.txt"}
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-second",
+                        "output_refs": ["output-second-v2"],
+                        "summary": "Unrelated item during owner revision.",
+                    }
+                ],
+                "summary": "Should be rejected.",
+            },
+            capability_token=token,
+        )
+
+    assert int(store.load_production(run_id)["output_revision"]) == 1
+
+
+def test_evidence_revision_then_owner_actions_before_reviewer_recheck(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.reviews import (
+        focused_review_owner_actions_complete,
+        focused_review_owner_artifact_revision_pending,
+        focused_review_producer_owner_work_pending,
+    )
+    from top_down_planning.orchestrator.provider_turns import owner_revision_complete
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000551-000551"
+    _create_run(store)
+    save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
+    loop_id = "review-focused-output-01"
+    artifact = tmp_path / "first-v2.txt"
+    artifact.write_text("revised", encoding="utf-8")
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, run_id)
+
+    result = service.apply(
+        {
+            "production_revision": 1,
+            "evidence_revision": True,
+            "focused_review_loop_id": loop_id,
+            "plan_items": ["item-first"],
+            "dispositions": {
+                "item-first": {
+                    "disposition": "completed",
+                    "evidence": "Revised artifact.",
+                }
+            },
+            "outputs": [
+                {"id": "output-first-v2", "type": "artifact", "ref": "first-v2.txt"}
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-first",
+                    "output_refs": ["output-first-v2"],
+                    "summary": "Evidence before owner actions.",
+                }
+            ],
+            "summary": "Focused evidence revision first.",
+        },
+        capability_token=token,
+    )
+    assert result["ok"] is True
+    assert int(store.load_production(run_id)["output_revision"]) == 2
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert focused_review_owner_artifact_revision_pending(
+        loop, store=store, run_id=run_id
+    ) is False
+    assert focused_review_owner_actions_complete(loop) is False
+    assert (
+        find_pending_focused_review_loop_id(
+            store,
+            run_id,
+            review_type="focused_output",
+        )
+        is None
+    )
+
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": "fs-owner-revision-01",
+            "finding_actions": [
+                {
+                    "finding_id": "finding-01",
+                    "action": "fix",
+                    "actor_role": "producer",
+                    "rationale": "Evidence revision completed.",
+                }
+            ],
+        },
+        role="producer",
+        phase=PRODUCTION,
+        loop_id=loop_id,
+    )()
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert owner_revision_complete(store, run_id, loop_id) is True
+    assert focused_review_producer_owner_work_pending(
+        loop, store=store, run_id=run_id
+    ) is False
+
+
+def test_focused_owner_revision_allows_evidence_apply_then_blocks_unrelated_normal_apply(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000551-000551"
+    _create_run_with_open_item_second(store, tmp_path, run_id=run_id)
+    save_review_payload(store, run_id, _owner_revision_pending_loop(item_ids=["item-first"]))
+    loop_id = "review-focused-output-01"
+    first_v2 = tmp_path / "first-v2.txt"
+    first_v2.write_text("revised", encoding="utf-8")
+    service = ProductionAgentService(store, run_id)
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+
+    evidence = service.apply(
+        {
+            "production_revision": 1,
+            "evidence_revision": True,
+            "focused_review_loop_id": loop_id,
+            "plan_items": ["item-first"],
+            "dispositions": {
+                "item-first": {
+                    "disposition": "completed",
+                    "evidence": "Revised artifact.",
+                }
+            },
+            "outputs": [
+                {"id": "output-first-v2", "type": "artifact", "ref": "first-v2.txt"}
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-first",
+                    "output_refs": ["output-first-v2"],
+                    "summary": "Focused evidence revision.",
+                }
+            ],
+            "summary": "Evidence revision for item-first.",
+        },
+        capability_token=token,
+    )
+    assert evidence["ok"] is True
+    assert int(store.load_production(run_id)["output_revision"]) == 2
+
+    with pytest.raises(RequestError, match="focused-output owner revision is active"):
+        service.apply(
+            {
+                "production_revision": int(store.load_production(run_id)["revision"]),
+                "plan_items": ["item-second"],
+                "dispositions": {
+                    "item-second": {
+                        "disposition": "completed",
+                        "evidence": "Unrelated.",
+                    }
+                },
+                "outputs": [
+                    {"id": "output-second-v2", "type": "artifact", "ref": "second.txt"}
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-second",
+                        "output_refs": ["output-second-v2"],
+                        "summary": "Still blocked until owner actions.",
+                    }
+                ],
+                "summary": "Unrelated normal apply.",
+            },
+            capability_token=token,
+        )
 
 
 def test_focused_evidence_revision_apply_after_owner_handoff(tmp_path: Path) -> None:
