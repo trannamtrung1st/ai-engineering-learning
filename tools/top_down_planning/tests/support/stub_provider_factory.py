@@ -31,9 +31,16 @@ class _SharedScriptStubProvider(StubProvider):
 class RotatingStubProviderFactory:
     """Create a new StubProvider for each factory call with shared turn scripting."""
 
-    def __init__(self, store: FileRunStore, run_id: str) -> None:
+    def __init__(
+        self,
+        store: FileRunStore,
+        run_id: str,
+        *,
+        strict_session_scripts: bool = False,
+    ) -> None:
         self._store = store
         self._run_id = run_id
+        self._strict_session_scripts = strict_session_scripts
         self._turn_scripts: list[
             tuple[str | None, list[dict[str, Any]], Callable[[], None] | None]
         ] = []
@@ -72,10 +79,21 @@ class RotatingStubProviderFactory:
     ) -> tuple[list[dict[str, Any]], Callable[[], None] | None]:
         while self._shared_index < len(self._turn_scripts):
             session_id, events, mutate_store = self._turn_scripts[self._shared_index]
-            self._shared_index += 1
             if session_id is not None and session_id != active_session_id:
+                if self._strict_session_scripts:
+                    raise AssertionError(
+                        "unexpected provider session for scripted turn: "
+                        f"expected {session_id!r}, active {active_session_id!r} "
+                        f"(script index {self._shared_index})"
+                    )
+                self._shared_index += 1
                 continue
+            self._shared_index += 1
             return copy.deepcopy(events), mutate_store
+        if self._strict_session_scripts:
+            raise AssertionError(
+                f"provider turn requested with no remaining scripts for session {active_session_id!r}"
+            )
         return done_events(text="shared-stub-bookkeeping"), self._autofill_mutate
 
     def _bootstrap_bound_sessions(self, provider: StubProvider) -> None:

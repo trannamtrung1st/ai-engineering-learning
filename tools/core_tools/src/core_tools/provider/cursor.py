@@ -953,6 +953,15 @@ def build_agent_argv(
     return argv
 
 
+def _resume_session_id_from_argv(argv: list[str]) -> str | None:
+    for index, token in enumerate(argv):
+        if token == "--resume" and index + 1 < len(argv):
+            candidate = str(argv[index + 1]).strip()
+            if candidate:
+                return candidate
+    return None
+
+
 @dataclass
 class _CursorSession:
     role: str
@@ -970,6 +979,7 @@ class _CursorSession:
     turn_remote_observed: bool = False
     collector_thread: threading.Thread | None = None
     pinned_durable_id: str | None = None
+    turn_resume_launch_id: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     condition: threading.Condition = field(init=False)
 
@@ -1772,6 +1782,7 @@ class CursorProvider:
                 )
             session.pending_events.clear()
             session.pending_argv = argv
+            session.turn_resume_launch_id = _resume_session_id_from_argv(argv)
             session.turn_diagnostics = cursor_turn_diagnostics(
                 argv,
                 prompt=prompt,
@@ -2122,16 +2133,46 @@ class CursorProvider:
         pinned = session.pinned_durable_id or expected_durable_id
         if pinned is not None:
             if event_session_id != pinned:
-                raise ProviderSessionMismatchError(
-                    "Cursor CLI resume returned unexpected session id "
-                    f"{event_session_id!r} (expected {pinned!r})",
-                    session_id=session_id,
-                )
+                migrated = None
+                if str(raw.get("type") or "") != "error":
+                    migrated = self._try_resume_durable_identity_rotation(
+                        session,
+                        session_id,
+                        pinned=str(pinned),
+                        event_session_id=event_session_id,
+                    )
+                if migrated is None:
+                    raise ProviderSessionMismatchError(
+                        "Cursor CLI resume returned unexpected session id "
+                        f"{event_session_id!r} (expected {pinned!r})",
+                        session_id=session_id,
+                    )
+                session_id = migrated
             return session_id, event_session_id
         session_id = self._maybe_migrate_session(session_id, event_session_id)
         session.pinned_durable_id = event_session_id
         self._set_collect_context(session_id, session.role)
         return session_id, event_session_id
+
+    def _try_resume_durable_identity_rotation(
+        self,
+        session: _CursorSession,
+        session_id: str,
+        *,
+        pinned: str,
+        event_session_id: str,
+    ) -> str | None:
+        launch_id = session.turn_resume_launch_id
+        if launch_id is None:
+            return None
+        if event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+            return None
+        canonical_launch = self.canonical_session_id(launch_id)
+        canonical_pinned = self.canonical_session_id(pinned)
+        canonical_current = self.canonical_session_id(session_id)
+        if canonical_launch != canonical_pinned or canonical_current != canonical_launch:
+            return None
+        return self._migrate_session_identity(canonical_launch, event_session_id)
 
     def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
         if current_id == provider_session_id:
@@ -2142,27 +2183,43 @@ class CursorProvider:
                 f"{provider_session_id!r} (expected {current_id!r})",
                 session_id=current_id,
             )
+        return self._migrate_session_identity(current_id, provider_session_id)
+
+    def _migrate_session_identity(
+        self,
+        current_id: str,
+        provider_session_id: str,
+    ) -> str:
+        if current_id == provider_session_id:
+            return current_id
+        if provider_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+            raise ProviderSessionMismatchError(
+                "Cursor CLI resume returned unexpected session id "
+                f"{provider_session_id!r} (expected {current_id!r})",
+                session_id=current_id,
+            )
 
         with self._session_registry_lock:
-            current = self._sessions.get(current_id)
+            current_key = self.canonical_session_id(current_id)
             existing = self._sessions.get(provider_session_id)
-            if existing is not None and current is not None and existing is not current:
+            current_session = self._sessions.get(current_key)
+            if existing is not None and current_session is not None and existing is not current_session:
                 raise ProviderSessionError(
                     (
                         f"durable provider session {provider_session_id} is already owned "
-                        f"by a different live session; refusing to migrate {current_id}"
+                        f"by a different live session; refusing to migrate {current_key}"
                     ),
-                    session_id=current_id,
+                    session_id=current_key,
                 )
-            session = self._sessions.pop(current_id, None)
+            session = self._sessions.pop(current_key, None)
             if session is None:
                 session = self._require_session(provider_session_id)
                 migrated_id = provider_session_id
             else:
                 self._sessions[provider_session_id] = session
-                self._session_aliases[current_id] = provider_session_id
+                self._session_aliases[current_key] = provider_session_id
                 migrated_id = provider_session_id
-        self._retag_tracked_turn_procs(current_id, migrated_id)
+        self._retag_tracked_turn_procs(current_key, migrated_id)
         return migrated_id
 
     def _retag_tracked_turn_procs(

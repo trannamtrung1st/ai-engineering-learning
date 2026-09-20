@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 SESSION_PROVIDER_ID_BOUND = "session_provider_id_bound"
+SESSION_PROVIDER_IDENTITY_ROTATED = "session_provider_identity_rotated"
 SESSION_REPLACED = "session_replaced"
 SESSION_REPLACEMENT_STARTED = "session_replacement_started"
 SESSION_REPLACEMENT_FAILED = "session_replacement_failed"
@@ -13,6 +14,7 @@ SESSION_RESUME_FAILED = "session_resume_failed"
 LINEAGE_EVENT_TYPES = frozenset(
     {
         SESSION_PROVIDER_ID_BOUND,
+        SESSION_PROVIDER_IDENTITY_ROTATED,
         SESSION_REPLACED,
         SESSION_REPLACEMENT_STARTED,
         SESSION_REPLACEMENT_FAILED,
@@ -23,6 +25,7 @@ LINEAGE_EVENT_TYPES = frozenset(
 REASON_PROVIDER_SESSION_NOT_FOUND = "provider_session_not_found"
 REASON_PROVIDER_TURN_STALLED = "provider_turn_stalled"
 REASON_LEGACY_IDENTITY_UNRECOVERABLE = "legacy_identity_unrecoverable"
+REASON_PROVIDER_RESUME_IDENTITY_ROTATION = "provider_resume_identity_rotation"
 
 
 def _base_fields(
@@ -69,6 +72,36 @@ def session_provider_id_bound_payload(
         payload["provider"] = str(provider).strip()
     if loop_id is not None and str(loop_id).strip():
         payload["loop_id"] = str(loop_id).strip()
+    return payload
+
+
+def session_provider_identity_rotated_payload(
+    *,
+    run_id: str,
+    phase: str,
+    role: str,
+    session_instance_id: str,
+    generation: int,
+    old_provider_session_id: str,
+    new_provider_session_id: str,
+    reason: str = REASON_PROVIDER_RESUME_IDENTITY_ROTATION,
+    provider: str | None = None,
+    phase_action_id: str | None = None,
+) -> dict[str, Any]:
+    payload = _base_fields(
+        run_id=run_id,
+        phase=phase,
+        role=role,
+        phase_action_id=phase_action_id,
+    )
+    payload["type"] = SESSION_PROVIDER_IDENTITY_ROTATED
+    payload["session_instance_id"] = str(session_instance_id).strip()
+    payload["generation"] = int(generation)
+    payload["old_provider_session_id"] = str(old_provider_session_id).strip()
+    payload["new_provider_session_id"] = str(new_provider_session_id).strip()
+    payload["reason"] = str(reason).strip()
+    if provider is not None and str(provider).strip():
+        payload["provider"] = str(provider).strip()
     return payload
 
 

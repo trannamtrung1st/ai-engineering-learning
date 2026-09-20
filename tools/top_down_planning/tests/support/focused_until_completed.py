@@ -9,7 +9,6 @@ from core_tools.provider import StubProvider
 from top_down_planning.agent_tool import ProductionAgentService
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.phases import PRODUCTION, WHOLE_OUTPUT_REVIEW
-from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
     apply_production,
@@ -155,6 +154,10 @@ def script_focused_output_through_completion(
         if str(loop.get("status") or "") == "approved":
             state["verified"] = True
             return
+        if not state["finding_actions"]:
+            return
+        if str(loop.get("active_stage") or "") != "finding_verification":
+            return
         respond_review(
             store,
             run_id,
@@ -183,6 +186,9 @@ def script_focused_output_through_completion(
 
     def _complete_item_second() -> None:
         if state["item_second"]:
+            return
+        loop_payload = store.load_review(run_id, loop_id)
+        if str(loop_payload.get("status") or "") != "approved":
             return
         apply_production(
             store,
@@ -275,32 +281,17 @@ def script_focused_output_through_completion(
         )()
         state["whole_output"] = True
 
-    reviewer_session_id = reviewer_loop_provider_session_id(
-        store.load_review(run_id, loop_id)
-    )
-
     factory.script_turn(done_events(text="production primary resume"))
     factory.script_turn(done_events(text="owner session rotate"))
     factory.script_turn(
         done_events(text="producer owner revision turn"),
         mutate_store=_record_owner_actions,
     )
-    if reviewer_session_id:
-        factory.script_session_turn(
-            reviewer_session_id,
-            done_events(text="recheck delivery without respond"),
-        )
-        factory.script_session_turn(
-            reviewer_session_id,
-            done_events(text="reviewer verify"),
-            mutate_store=_verify_focused_review,
-        )
-    else:
-        factory.script_turn(done_events(text="recheck delivery without respond"))
-        factory.script_turn(
-            done_events(text="reviewer verify"),
-            mutate_store=_verify_focused_review,
-        )
+    factory.script_turn(done_events(text="recheck delivery without respond"))
+    factory.script_turn(
+        done_events(text="reviewer verify"),
+        mutate_store=_verify_focused_review,
+    )
     whole_output_gate_state = {"initial": False}
 
     def _whole_output_autofill() -> None:
@@ -319,7 +310,9 @@ def script_focused_output_through_completion(
         phase = str(run.get("phase") or "")
         if phase == PRODUCTION:
             _record_owner_actions()
-            if state["finding_actions"] and not state["verified"]:
+            if not state["finding_actions"]:
+                return
+            if not state["verified"]:
                 _verify_focused_review()
             _complete_item_second()
             return

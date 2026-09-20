@@ -17,10 +17,12 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.domain.session_lineage import (
     REASON_LEGACY_IDENTITY_UNRECOVERABLE,
+    REASON_PROVIDER_RESUME_IDENTITY_ROTATION,
     SESSION_PROVIDER_ID_BOUND,
     SESSION_REPLACED,
     SESSION_REPLACEMENT_FAILED,
     SESSION_REPLACEMENT_STARTED,
+    session_provider_identity_rotated_payload,
     session_provider_id_bound_payload,
     session_replaced_payload,
 )
@@ -1224,27 +1226,83 @@ def _complete_replacement_if_durable(
     )
 
 
+def commit_primary_provider_identity_rotation(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    old_provider_session_id: str,
+    new_provider_session_id: str,
+    provider: str | None = "cursor",
+    session_provider: Provider | None = None,
+) -> dict[str, Any]:
+    """Persist provider resume identity rotation without bumping replacement generation."""
+
+    resolved = _assert_session_binding_before_persist(
+        session_provider,
+        store,
+        run_id,
+        new_provider_session_id,
+        owner_role=role,
+        kind="primary",
+    )
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    phase = str(run.get("phase") or "")
+    existing = get_primary_binding(run, role)
+    if existing is None:
+        raise ProviderSessionError(
+            f"cannot rotate provider session id for missing primary binding role={role}",
+            session_id=new_provider_session_id,
+        )
+    old_id = str(old_provider_session_id).strip()
+    if old_id != str(existing.provider_session_id or "").strip():
+        raise ProviderSessionMismatchError(
+            "primary session id mismatch during identity rotation: "
+            f"stored {existing.provider_session_id!r}, expected {old_id!r}",
+            session_id=new_provider_session_id,
+        )
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["sessions"] = update_primary_binding(
+        dict(run.get("sessions") or {}),
+        role=role,
+        provider_session_id=resolved,
+        provider=provider,
+    )
+    binding = get_primary_binding(run, role)
+    assert binding is not None
+    events = [
+        session_provider_identity_rotated_payload(
+            run_id=run_id,
+            phase=phase,
+            role=role,
+            session_instance_id=binding.session_instance_id,
+            generation=binding.generation,
+            old_provider_session_id=old_id,
+            new_provider_session_id=resolved,
+            reason=REASON_PROVIDER_RESUME_IDENTITY_ROTATION,
+            provider=binding.provider,
+        )
+    ]
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=expected_revision,
+            events=events,
+        ),
+    )
+    return store.load_run(run_id)
+
+
 def resolve_provider_session_identity_chain(
     provider: Provider,
     session_id: str,
 ) -> str:
-    """Follow provider-native alias chains to the durable session identity."""
+    """Resolve the provider-native durable session identity."""
 
-    current = provider.canonical_session_id(session_id)
-    seen: set[str] = set()
-    aliases = getattr(provider, "aliases", None)
-    while current not in seen:
-        seen.add(current)
-        if not isinstance(aliases, dict):
-            break
-        target = aliases.get(current)
-        if not target:
-            break
-        next_id = provider.canonical_session_id(str(target))
-        if next_id == current:
-            break
-        current = next_id
-    return current
+    return provider.canonical_session_id(session_id)
 
 
 def sync_persisted_session_id(
@@ -1308,14 +1366,31 @@ def sync_persisted_session_id(
                 session_id=session_id,
             )
 
-    commit_primary_provider_session_binding(
-        store,
-        run_id,
-        role=role,
-        provider_session_id=resolved,
-        provider="cursor",
-        session_provider=provider,
-    )
+    if (
+        existing is not None
+        and current
+        and current != resolved
+        and not is_transient_provider_session_id(current)
+        and resolve_provider_session_identity_chain(provider, current) == resolved
+    ):
+        commit_primary_provider_identity_rotation(
+            store,
+            run_id,
+            role=role,
+            old_provider_session_id=current,
+            new_provider_session_id=resolved,
+            provider="cursor",
+            session_provider=provider,
+        )
+    else:
+        commit_primary_provider_session_binding(
+            store,
+            run_id,
+            role=role,
+            provider_session_id=resolved,
+            provider="cursor",
+            session_provider=provider,
+        )
     rebind_primary_session_capability(store, run_id, provider, role=role)
     _complete_replacement_if_durable(
         store,

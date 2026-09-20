@@ -22,6 +22,7 @@ from core_tools.provider import Provider
 from core_tools.provider.cursor_session_errors import classify_cursor_failure
 from core_tools.provider.errors import (
     ProviderReplacementIdentityError,
+    ProviderSessionMismatchError,
     ProviderSessionNotFoundError,
     ProviderTurnStalledError,
     ProviderUnsupportedPlatformError,
@@ -49,6 +50,7 @@ from top_down_planning.orchestrator.session_recovery_enforcement import (
     fail_session_recovery_exhausted,
     finalize_successful_phase_action_turn,
     mark_replacement_attempt,
+    phase_action_domain_proven_by_audit,
 )
 from top_down_planning.orchestrator.recovery_manifest import (
     build_planner_recovery_manifest,
@@ -1454,6 +1456,20 @@ def _consume_provider_turn_with_session_recovery(
             replaced=False,
             domain_budget_committed=domain_budget_committed,
         )
+    except ProviderSessionMismatchError as exc:
+        if phase_action_domain_proven_by_audit(store, run_id, phase_action_id):
+            domain_budget_committed = _finalize_phase_action_turn(
+                store,
+                run_id,
+                phase_action_id,
+            )
+            return ProviderTurnOutcome(
+                signal=None,
+                session_id=provider.canonical_session_id(session_id),
+                replaced=False,
+                domain_budget_committed=domain_budget_committed,
+            )
+        raise ProviderRunError(str(exc)) from exc
     except (ProviderSessionNotFoundError, ProviderTurnStalledError) as exc:
         recovery_reason = recovery_reason_for_session_loss(exc)
         assert_replacement_allowed(

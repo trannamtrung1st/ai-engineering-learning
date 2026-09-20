@@ -147,6 +147,27 @@ def finalize_successful_phase_action_turn(
     return committed
 
 
+def phase_action_domain_proven_by_audit(
+    store: RunStore,
+    run_id: str,
+    phase_action_id: str,
+) -> bool:
+    """True when durable audit proves the phase action crossed its domain boundary."""
+
+    run = store.load_run(run_id)
+    if domain_budget_committed_for_phase_action(run, phase_action_id):
+        return True
+    action = str(phase_action_id).strip()
+    if not action:
+        return False
+    for event in store.load_events(run_id):
+        if event.get("type") != "production_batch_recorded":
+            continue
+        if str(event.get("phase_action_id") or "").strip() == action:
+            return True
+    return False
+
+
 def domain_budget_should_apply(store: RunStore, run_id: str, phase_action_id: str) -> bool:
     """Return whether orchestrators should apply domain counters for this action."""
 
@@ -244,6 +265,7 @@ __all__ = [
     "domain_budget_should_apply",
     "fail_session_recovery_exhausted",
     "finalize_successful_phase_action_turn",
+    "phase_action_domain_proven_by_audit",
     "mark_replacement_attempt",
     "record_phase_action_domain_commit",
     "record_session_replacement_attempt",

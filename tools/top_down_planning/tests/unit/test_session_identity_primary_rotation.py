@@ -9,6 +9,10 @@ import pytest
 from core_tools.provider.errors import ProviderSessionMismatchError
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.orchestrator.provider_turns import production_batch_count
+from top_down_planning.domain.session_lineage import (
+    SESSION_PROVIDER_IDENTITY_ROTATED,
+    SESSION_PROVIDER_ID_BOUND,
+)
 from top_down_planning.orchestrator.session_events import (
     commit_primary_provider_session_binding,
     sync_persisted_session_id,
@@ -25,25 +29,66 @@ def test_legitimate_primary_session_alias_rotation_rebinds(tmp_path: Path) -> No
     run_id = "run-20260101T010201-010201"
     create_minimal_planning_run(store, run_id)
     provider = ForcedIdStub()
+    stored = "cursor-durable-stored-a"
+    durable = "cursor-durable-producer-b"
+    provider._ensure_durable_session(durable, role="producer", kind="primary")
+    commit_primary_provider_session_binding(
+        store,
+        run_id,
+        role="producer",
+        provider_session_id=stored,
+        provider="stub",
+        session_provider=None,
+    )
+    provider.aliases[stored] = durable
+    resolved = sync_persisted_session_id(
+        provider, store, run_id, stored, role="producer"
+    )
+    assert resolved == durable
+    binding = get_primary_binding(store.load_run(run_id), "producer")
+    assert binding is not None
+    assert binding.provider_session_id == durable
+    events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == SESSION_PROVIDER_IDENTITY_ROTATED
+    ]
+    assert len(events) == 1
+    assert events[0]["old_provider_session_id"] == stored
+    assert events[0]["new_provider_session_id"] == durable
+
+
+def test_transient_pending_alias_promotion_emits_bound_not_rotation(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T010204-010204"
+    create_minimal_planning_run(store, run_id)
+    provider = ForcedIdStub()
     pending = "cursor-pending-producer"
     durable = "cursor-durable-producer-b"
     provider._ensure_durable_session(durable, role="producer", kind="primary")
-    provider.aliases[pending] = durable
     commit_primary_provider_session_binding(
         store,
         run_id,
         role="producer",
         provider_session_id=pending,
         provider="stub",
-        session_provider=provider,
+        session_provider=None,
     )
-    resolved = sync_persisted_session_id(
-        provider, store, run_id, pending, role="producer"
-    )
-    assert resolved == durable
-    binding = get_primary_binding(store.load_run(run_id), "producer")
-    assert binding is not None
-    assert binding.provider_session_id == durable
+    provider.aliases[pending] = durable
+    sync_persisted_session_id(provider, store, run_id, pending, role="producer")
+    rotated = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == SESSION_PROVIDER_IDENTITY_ROTATED
+    ]
+    bound = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == SESSION_PROVIDER_ID_BOUND
+    ]
+    assert rotated == []
+    assert bound
+    assert bound[-1]["provider_session_id"] == durable
 
 
 def test_unsafe_unrelated_primary_session_identity_rejected(tmp_path: Path) -> None:

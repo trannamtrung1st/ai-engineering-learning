@@ -196,11 +196,13 @@ def _internal_handoff_stalled(steps: list[RunStepResult]) -> bool:
         for step in steps
         if step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
     ]
-    if len(handoff_steps) < 2:
+    if len(handoff_steps) < 3:
         return False
     current = handoff_steps[-1].progress_key
-    prior_keys = [step.progress_key for step in handoff_steps[:-1]]
-    return current in prior_keys
+    prior_matches = sum(
+        1 for step in handoff_steps[:-1] if step.progress_key == current
+    )
+    return prior_matches >= 1
 
 
 def _continuation_ok_from_run(run: dict[str, Any]) -> bool:

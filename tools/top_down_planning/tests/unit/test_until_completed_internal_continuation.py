@@ -54,8 +54,13 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     factory = RotatingStubProviderFactory(store, run_id)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
-        store, seed_provider, run_id=run_id
+        store,
+        seed_provider,
+        run_id=run_id,
+        record_owner_finding_actions=False,
     )
+    loop_before = store.load_review(run_id, loop_id)
+    assert not loop_before.get("finding_actions")
     script_focused_output_through_completion(factory, store, run_id, loop_id)
 
     continuation = RunEngine(
@@ -63,6 +68,10 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
         create_provider=factory.create_provider,
     ).continue_run(run_id, until="completed")
 
+    assert any(
+        step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
+        for step in continuation.steps
+    )
     assert continuation.ok is True
     assert continuation.target_reached is True
     assert continuation.status == "completed"

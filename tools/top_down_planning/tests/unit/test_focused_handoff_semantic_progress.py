@@ -87,18 +87,48 @@ def test_internal_handoff_stall_detects_repeated_semantic_token(tmp_path: Path) 
         progress_key=token,
     )
     assert not _internal_handoff_stalled([step])
-    assert _internal_handoff_stalled([step, step])
+    assert not _internal_handoff_stalled([step, step])
+    assert _internal_handoff_stalled([step, step, step])
 
 
-def test_internal_handoff_allows_a_b_a_semantic_progress(tmp_path: Path) -> None:
+def test_internal_handoff_stall_detects_semantic_a_b_a_despite_record_revision_churn(
+    tmp_path: Path,
+) -> None:
     from top_down_planning.orchestrator.engine import (
         RunStepResult,
         _internal_handoff_stalled,
     )
     from top_down_planning.orchestrator.phase_step_disposition import PhaseStepDisposition
+    from top_down_planning.persistence.review_commit import review_record_revision
 
-    token_a = ("loop", "focused_output", "pending", "", 1, "fs", 1, (), False, 2, 1, "rev", "")
-    token_b = ("loop", "focused_output", "pending", "finding_verification", 1, "fs", 2, (), True, 2, 1, "rev", "")
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T010103-010103"
+    loop_id = seed_focused_output_owner_pending_after_evidence(
+        store,
+        provider,
+        run_id=run_id,
+        record_owner_finding_actions=False,
+    )
+    token_a = focused_review_semantic_progress_token(store, run_id, loop_id)
+    revision_a = review_record_revision(store.load_review(run_id, loop_id))
+
+    loop_payload = store.load_review(run_id, loop_id)
+    loop_payload = dict(loop_payload)
+    loop_payload["active_stage"] = "finding_verification"
+    save_review_payload(store, run_id, loop_payload)
+    token_b = focused_review_semantic_progress_token(store, run_id, loop_id)
+    revision_b = review_record_revision(store.load_review(run_id, loop_id))
+    assert revision_b > revision_a
+    assert token_a != token_b
+
+    loop_payload["active_stage"] = ""
+    save_review_payload(store, run_id, loop_payload)
+    token_a_again = focused_review_semantic_progress_token(store, run_id, loop_id)
+    revision_a_again = review_record_revision(store.load_review(run_id, loop_id))
+    assert revision_a_again > revision_b
+    assert token_a_again == token_a
+
     steps = [
         RunStepResult(
             phase="production",
@@ -122,7 +152,7 @@ def test_internal_handoff_allows_a_b_a_semantic_progress(tmp_path: Path) -> None
             status="running",
             outcome=None,
             disposition=PhaseStepDisposition.INTERNAL_HANDOFF,
-            progress_key=token_a,
+            progress_key=token_a_again,
         ),
     ]
     assert _internal_handoff_stalled(steps)
