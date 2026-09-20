@@ -21,8 +21,10 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     focused_output_evidence_revision_allowed,
     focused_output_owner_revision_in_progress_loop,
+    focused_output_revision_transaction_active,
     focused_output_revision_transaction_active_loop,
     focused_output_revision_target_ids,
+    mark_advisory_handoff_completed,
 )
 from top_down_planning.domain.session_bindings import new_session_binding
 from top_down_planning.orchestrator.focused_review import (
@@ -35,6 +37,7 @@ from top_down_planning.orchestrator.provider_turns import (
     find_pending_focused_review_loop_id,
     owner_revision_complete,
 )
+from top_down_planning.orchestrator.review_loop_driver import ReviewLoopDriver
 from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
@@ -91,6 +94,66 @@ def _owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
     loop["reviewer_binding"] = binding.to_dict()
     return loop
 
+
+def _advisory_optional_focused_output_loop(*, item_ids: list[str]) -> dict:
+    binding = new_session_binding(
+        role="reviewer",
+        kind="reviewer",
+    ).with_provider_session_id("reviewer-sess-advisory")
+    loop = review_loop_dict_with_binding(
+        {
+            "id": "review-focused-output-01",
+            "type": "focused_output",
+            "target_revision": 1,
+            "scope": {"kind": "focused_output", "item_ids": item_ids},
+            "status": "advisory_pending",
+            "revise_at": "blocker",
+            "revision_cycles": 0,
+            "finding_set_id": "fs-advisory-01",
+            "findings": [
+                {
+                    "id": "finding-opt",
+                    "severity": "minor",
+                    "category": "correctness",
+                    "target_refs": item_ids[:1],
+                    "issue": "Optional polish.",
+                    "recommended_change": "Improve wording.",
+                    "status": "unresolved",
+                }
+            ],
+            "finding_actions": [],
+        }
+    )
+    loop["reviewer_binding"] = binding.to_dict()
+    return loop
+
+
+def _normal_apply_item_second_request(store: FileRunStore, run_id: str) -> dict:
+    return {
+        "production_revision": int(store.load_production(run_id)["revision"]),
+        "plan_items": ["item-second"],
+        "dispositions": {
+            "item-second": {
+                "disposition": "completed",
+                "evidence": "Unrelated normal apply during focused review.",
+            }
+        },
+        "outputs": [
+            {
+                "id": "output-second-race",
+                "type": "artifact",
+                "ref": "artifacts/second.txt",
+            }
+        ],
+        "contributions": [
+            {
+                "item_id": "item-second",
+                "output_refs": ["output-second-race"],
+                "summary": "Race batch.",
+            }
+        ],
+        "summary": "Unrelated normal apply.",
+    }
 
 def test_evidence_revision_allowed_after_owner_actions_recorded_before_artifact(
     tmp_path: Path,
@@ -979,3 +1042,174 @@ def test_focused_owner_revision_recheck_then_normal_production_resumes(
     run = store.load_run(run_id)
     assert run.get("phase") == PRODUCTION
     assert run.get("status") == "running"
+
+
+def test_focused_output_revision_transaction_active_for_advisory_and_revision_statuses() -> None:
+    advisory = ReviewLoop.from_dict(
+        _advisory_optional_focused_output_loop(item_ids=["item-first"])
+    )
+    assert focused_output_revision_transaction_active(advisory) is True
+
+    needs_revision = replace(advisory, status="needs_revision")
+    assert focused_output_revision_transaction_active(needs_revision) is True
+
+    approved = replace(advisory, status="approved")
+    assert focused_output_revision_transaction_active(approved) is False
+
+
+def test_normal_apply_blocked_during_focused_output_advisory_pending(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000502-000502"
+    provider = StubProvider()
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _advisory_optional_focused_output_loop(item_ids=["item-first"]),
+    )
+    output_revision_before = int(store.load_production(run_id)["output_revision"])
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
+
+    service = ProductionAgentService(store, run_id)
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        service.apply(
+            _normal_apply_item_second_request(store, run_id),
+            capability_token=token,
+        )
+    assert int(store.load_production(run_id)["output_revision"]) == output_revision_before
+
+
+def test_focused_output_advisory_then_owner_revision_still_blocks_normal_apply(
+    tmp_path: Path,
+) -> None:
+    """Optional finding advisory window and charged owner revision stay in one transaction."""
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000503-000503"
+    provider = StubProvider()
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _advisory_optional_focused_output_loop(item_ids=["item-first"]),
+    )
+    service = ProductionAgentService(store, run_id)
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        service.apply(
+            _normal_apply_item_second_request(store, run_id),
+            capability_token=token,
+        )
+
+    loop_payload = dict(store.load_review(run_id, loop_id))
+    loop_payload["status"] = "changes_requested"
+    save_review_payload(store, run_id, loop_payload)
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    adapter = FocusedReviewAdapter(store, run_id)
+    adapter.bind_loop(loop)
+    entered = adapter.enter_revision_cycle(loop, 1)
+    save_review_payload(store, run_id, entered.to_dict())
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
+
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        service.apply(
+            _normal_apply_item_second_request(store, run_id),
+            capability_token=token,
+        )
+
+def test_focused_output_advisory_defer_closes_transaction_and_allows_normal_apply(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000504-000504"
+    provider = StubProvider()
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _advisory_optional_focused_output_loop(item_ids=["item-first"]),
+    )
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
+
+    loop_payload = store.load_review(run_id, loop_id)
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+            "finding_actions": [
+                {
+                    "finding_id": "finding-opt",
+                    "action": "defer",
+                    "actor_role": "producer",
+                    "rationale": "Accept risk for now.",
+                }
+            ],
+        },
+        role="producer",
+        phase=PRODUCTION,
+        loop_id=loop_id,
+    )()
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    completed = mark_advisory_handoff_completed(loop)
+    save_review_payload(store, run_id, replace(completed, status="approved").to_dict())
+
+    assert focused_output_revision_transaction_active_loop(store, run_id) is None
+    apply_production(
+        store,
+        run_id,
+        _normal_apply_item_second_request(store, run_id),
+        handler="apply",
+    )()
+    assert store.load_production(run_id)["dispositions"]["item-second"] == "completed"
+
+
+def test_focused_output_producer_advisory_handoff_uses_record_actions_boundary(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import ProviderTurnOutcome
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000505-000505"
+    session_id = create_production_run_open_item_second(store, provider, run_id=run_id)
+    save_review_payload(
+        store,
+        run_id,
+        _advisory_optional_focused_output_loop(item_ids=["item-first"]),
+    )
+    loop_id = "review-focused-output-01"
+    adapter = FocusedReviewAdapter(store, run_id)
+    adapter.bind_loop(ReviewLoop.from_dict(store.load_review(run_id, loop_id)))
+    driver = ReviewLoopDriver(store, run_id, provider, adapter)
+    calls: list[str] = []
+
+    def _fake_finding_turn(*_args, **kwargs):
+        calls.append(str(kwargs.get("loop_id")))
+        return ProviderTurnOutcome(
+            signal=None,
+            session_id=session_id,
+            replaced=False,
+            domain_budget_committed=False,
+        )
+
+    with patch(
+        "top_down_planning.orchestrator.review_loop_driver."
+        "consume_owner_finding_action_turn_with_session_recovery",
+        side_effect=_fake_finding_turn,
+    ):
+        driver._consume_owner_turn(
+            session_id,
+            PRODUCTION,
+            loop_id=loop_id,
+            handoff="advisory",
+        )
+
+    assert calls == [loop_id]

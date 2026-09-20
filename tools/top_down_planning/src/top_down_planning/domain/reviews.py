@@ -2090,13 +2090,15 @@ def focused_review_owner_revision_in_progress(
 def focused_output_revision_transaction_active(loop: ReviewLoop) -> bool:
     """True while a focused-output loop blocks normal production until review closes.
 
-    Covers owner-revision work and post-owner reviewer recheck/verification, not
-    merely ``focused_review_producer_owner_work_pending``.
+    Covers owner advisory handoff, owner-revision work, and post-owner reviewer
+    recheck/verification, not merely ``focused_review_producer_owner_work_pending``.
     """
 
     if loop.type != "focused_output" or is_terminal_review_loop(loop):
         return False
-    if loop.status == "changes_requested":
+    if loop.status == "advisory_pending":
+        return True
+    if is_revision_requested_status(loop.status):
         return True
     if loop.active_stage == "finding_verification":
         return True

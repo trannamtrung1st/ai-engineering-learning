@@ -1471,7 +1471,16 @@ class ReviewLoopDriver:
             role_context.model,
         )
         try:
-            if handoff in {"advisory", "revision"} and spec.owner_role != "producer":
+            if handoff == "advisory":
+                consume_owner_finding_action_turn_with_session_recovery(
+                    self._store,
+                    self._run_id,
+                    self._provider,
+                    session_id,
+                    loop_id=loop_id,
+                    recovery=recovery,
+                )
+            elif handoff == "revision" and spec.owner_role != "producer":
                 consume_owner_finding_action_turn_with_session_recovery(
                     self._store,
                     self._run_id,
