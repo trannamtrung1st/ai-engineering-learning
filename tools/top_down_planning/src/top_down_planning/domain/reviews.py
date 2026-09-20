@@ -2098,6 +2098,8 @@ def focused_output_revision_transaction_active(loop: ReviewLoop) -> bool:
         return False
     if loop.status == "advisory_pending":
         return True
+    if loop.status == "review_incomplete":
+        return True
     if is_revision_requested_status(loop.status):
         return True
     if loop.active_stage == "finding_verification":

@@ -12,6 +12,7 @@ from top_down_planning.domain.reviews import (
     budgets_snapshot,
     complete_advisory_handoff_if_owner_responses_recorded,
     finding_actions_for_active_set,
+    findings_permit_approval_for_loop,
     focused_review_producer_owner_work_pending,
     focused_review_revision_limit_from_config,
     increment_gate_agent_turns,
@@ -559,7 +560,7 @@ class ReviewLoopDriver:
                 loop = self._handle_advisory_handoff(loop)
                 if loop.status == "review_incomplete":
                     return self._focused_adapter().handle_review_incomplete(loop)
-                if loop.status == "approved":
+                if loop.status == "approved" or findings_permit_approval_for_loop(loop):
                     if self.profile.is_mandatory_gate:
                         if ready_for_mandatory_final_approval(loop):
                             return self._adapter.complete_approval(loop)
@@ -573,6 +574,8 @@ class ReviewLoopDriver:
                             deliver_on_existing_session = False
                             continue
                     else:
+                        if loop.status != "approved":
+                            loop = self._persist_loop(replace(loop, status="approved"))
                         return self._adapter.complete_success(loop)
                 if required_open_findings(loop.findings, loop_revise_at(loop)):
                     if (
@@ -599,6 +602,21 @@ class ReviewLoopDriver:
                 elif needs_advisory_handoff(loop):
                     loop = self._pause_advisory_handoff_incomplete(loop)
                     return self._focused_adapter().handle_review_incomplete(loop)
+                elif findings_permit_approval_for_loop(loop):
+                    loop = self._persist_loop(replace(loop, status="approved"))
+                    if self.profile.is_mandatory_gate:
+                        if ready_for_mandatory_final_approval(loop):
+                            return self._adapter.complete_approval(loop)
+                        if approved_means_start_scope_review(loop) or needs_fresh_scope_review_clear(
+                            loop
+                        ):
+                            transition = self._begin_scope_review(loop, limits)
+                            if isinstance(transition, MandatoryWholeReviewResult):
+                                return transition
+                            loop = transition
+                            deliver_on_existing_session = False
+                            continue
+                    return self._adapter.complete_success(loop)
                 else:
                     raise OrchestratorInvariantError(
                         "advisory handoff completed without resolving optional "

@@ -11,7 +11,7 @@ import pytest
 
 from core_tools.provider import StubProvider
 from core_tools.provider.errors import ProviderSessionError
-from top_down_planning.agent_tool import ProductionAgentService, RequestError
+from top_down_planning.agent_tool import ProductionAgentService, RequestError, ReviewAgentService
 from top_down_planning.domain.production_blockers import (
     BLOCKER_KIND_EXTERNAL,
     BLOCKER_KIND_FOCUSED_REVIEW_WAIT,
@@ -24,7 +24,8 @@ from top_down_planning.domain.reviews import (
     focused_output_revision_transaction_active,
     focused_output_revision_transaction_active_loop,
     focused_output_revision_target_ids,
-    mark_advisory_handoff_completed,
+    mark_advisory_handoff_incomplete,
+    prepare_review_incomplete_retry,
 )
 from top_down_planning.domain.session_bindings import new_session_binding
 from top_down_planning.orchestrator.focused_review import (
@@ -1053,6 +1054,9 @@ def test_focused_output_revision_transaction_active_for_advisory_and_revision_st
     needs_revision = replace(advisory, status="needs_revision")
     assert focused_output_revision_transaction_active(needs_revision) is True
 
+    incomplete = replace(advisory, status="review_incomplete")
+    assert focused_output_revision_transaction_active(incomplete) is True
+
     approved = replace(advisory, status="approved")
     assert focused_output_revision_transaction_active(approved) is False
 
@@ -1122,45 +1126,128 @@ def test_focused_output_advisory_then_owner_revision_still_blocks_normal_apply(
             capability_token=token,
         )
 
-def test_focused_output_advisory_defer_closes_transaction_and_allows_normal_apply(
+def test_focused_output_review_incomplete_keeps_transaction_until_retry(
     tmp_path: Path,
 ) -> None:
     store = FileRunStore(tmp_path)
-    run_id = "run-20260101T000504-000504"
+    run_id = "run-20260101T000506-000506"
     provider = StubProvider()
-    loop_id = "review-focused-output-01"
     create_production_run_open_item_second(store, provider, run_id=run_id)
-    save_review_payload(
-        store,
-        run_id,
-        _advisory_optional_focused_output_loop(item_ids=["item-first"]),
+    loop = ReviewLoop.from_dict(
+        _advisory_optional_focused_output_loop(item_ids=["item-first"])
     )
+    incomplete = mark_advisory_handoff_incomplete(
+        loop,
+        missing_finding_ids=["finding-opt"],
+    )
+    save_review_payload(store, run_id, incomplete.to_dict())
+    assert focused_output_revision_transaction_active(incomplete) is True
     assert focused_output_revision_transaction_active_loop(store, run_id) is not None
 
-    loop_payload = store.load_review(run_id, loop_id)
-    record_finding_actions(
+    service = ProductionAgentService(store, run_id)
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        service.apply(
+            _normal_apply_item_second_request(store, run_id),
+            capability_token=token,
+        )
+
+    retried = prepare_review_incomplete_retry(incomplete)
+    assert retried.status == "advisory_pending"
+    save_review_payload(store, run_id, retried.to_dict())
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
+
+
+def test_focused_output_orchestrator_advisory_defer_completes_and_allows_normal_apply(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.persistence.session_bindings import primary_provider_session_id
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000504-000504"
+    loop_id = "review-focused-output-01"
+    create_production_run_open_item_second(store, provider, run_id=run_id)
+    request_focused_review(
         store,
         run_id,
-        {
-            "loop_id": loop_id,
-            "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
-            "finding_actions": [
+        {"type": "focused_output", "scope": {"item_ids": ["item-first"]}},
+        role="producer",
+        phase=PRODUCTION,
+    )()
+    respond_review(
+        store,
+        run_id,
+        review_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            decision="approved",
+            target_revision=int(store.load_review(run_id, loop_id)["target_revision"]),
+            findings=[
                 {
-                    "finding_id": "finding-opt",
-                    "action": "defer",
-                    "actor_role": "producer",
-                    "rationale": "Accept risk for now.",
+                    "id": "finding-opt",
+                    "severity": "minor",
+                    "category": "correctness",
+                    "target_refs": ["item-first"],
+                    "issue": "Optional polish.",
+                    "recommended_change": "Improve wording.",
                 }
             ],
-        },
-        role="producer",
+        ),
         phase=PRODUCTION,
         loop_id=loop_id,
     )()
-    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
-    completed = mark_advisory_handoff_completed(loop)
-    save_review_payload(store, run_id, replace(completed, status="approved").to_dict())
+    assert store.load_review(run_id, loop_id)["status"] == "advisory_pending"
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
 
+    service = ProductionAgentService(store, run_id)
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        service.apply(
+            _normal_apply_item_second_request(store, run_id),
+            capability_token=grant_capability(store, run_id, role="producer", phase=PRODUCTION),
+        )
+
+    def _producer_defers() -> None:
+        loop = store.load_review(run_id, loop_id)
+        producer_session_id = str(
+            primary_provider_session_id(store.load_run(run_id), "producer") or ""
+        )
+        token = grant_capability(
+            store,
+            run_id,
+            role="producer",
+            phase=PRODUCTION,
+            session_id=producer_session_id,
+        )
+        ReviewAgentService(store, run_id).record_finding_actions(
+            {
+                "loop_id": loop_id,
+                "target_revision": int(store.load_production(run_id)["output_revision"]),
+                "target_digest": mandatory_output_digest(store, run_id),
+                "finding_set_id": str(loop.get("finding_set_id") or ""),
+                "finding_actions": [
+                    {
+                        "finding_id": "finding-opt",
+                        "action": "defer",
+                        "actor_role": "producer",
+                        "rationale": "Accept risk for now.",
+                    }
+                ],
+            },
+            capability_token=token,
+        )
+
+    provider.script_turn(
+        done_events(text="producer defer"),
+        mutate_store=_producer_defers,
+    )
+
+    result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
+
+    assert result.ok is True
+    assert result.status == "approved"
+    assert store.load_review(run_id, loop_id)["status"] == "approved"
     assert focused_output_revision_transaction_active_loop(store, run_id) is None
     apply_production(
         store,
