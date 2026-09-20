@@ -881,7 +881,10 @@ class ReviewLoopDriver:
             ):
                 return loop, False
             if loop.active_stage == "finding_verification":
-                if self._owner_work_complete_for_recheck(loop):
+                if (
+                    self._owner_work_complete_for_recheck(loop)
+                    and self._focused_verification_binding_is_stale(loop)
+                ):
                     return self._prepare_recheck(loop), True
                 return loop, False
             return self._prepare_recheck(loop), True
@@ -1290,6 +1293,10 @@ class ReviewLoopDriver:
         ):
             return False
         return verification_required_for_loop(loop)
+
+    def _focused_verification_binding_is_stale(self, loop: ReviewLoop) -> bool:
+        artifact_revision, _digest = self._adapter.current_artifact_binding()
+        return int(artifact_revision) > int(loop.target_revision)
 
     def _owner_revision_ready_for_recheck(self, loop: ReviewLoop) -> bool:
         if pending_verification_owner_cycle_charge(
