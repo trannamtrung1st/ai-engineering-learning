@@ -683,11 +683,17 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
 def test_blocking_focused_output_findings_prevent_production_apply(
     tmp_path: Path,
 ) -> None:
-    store = FileRunStore(tmp_path)
-    provider = StubProvider()
-    producer_session_id = _create_production_run(store, provider=provider)
+    from top_down_planning.agent_tool import ProductionAgentService
+    from top_down_planning.orchestrator.phases import PRODUCTION
+    from tests.helpers import grant_capability
 
-    save_review_payload(store, "run-20260101T000501-000501", {
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+
+    save_review_payload(
+        store,
+        "run-20260101T000501-000501",
+        {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "revise_at": "blocker",
@@ -706,18 +712,16 @@ def test_blocking_focused_output_findings_prevent_production_apply(
                     "status": "unresolved",
                 }
             ],
-            "revision_cycles": 1,
+            "revision_cycles": 0,
         },
     )
 
-    provider.script_session_turn(
-        producer_session_id,
-        done_events(signal="batch_complete", text="production turn"),
-        mutate_store=apply_production(
-            store,
-            "run-20260101T000501-000501",
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        ProductionAgentService(store, "run-20260101T000501-000501").apply(
             {
-                "production_revision": 0,
+                "production_revision": int(
+                    store.load_production("run-20260101T000501-000501")["revision"]
+                ),
                 "plan_items": ["item-first"],
                 "dispositions": {"item-first": {"disposition": "completed"}},
                 "outputs": [],
@@ -725,9 +729,10 @@ def test_blocking_focused_output_findings_prevent_production_apply(
                 "summary": "batch complete",
                 "empty_output": False,
             },
-            handler="apply",
-        ),
-    )
-
-    with pytest.raises(RequestError, match="focused output findings"):
-        ProductionPhaseOrchestrator(store, "run-20260101T000501-000501", provider).run()
+            capability_token=grant_capability(
+                store,
+                "run-20260101T000501-000501",
+                role="producer",
+                phase=PRODUCTION,
+            ),
+        )

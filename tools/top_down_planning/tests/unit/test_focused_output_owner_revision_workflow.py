@@ -21,6 +21,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     focused_output_evidence_revision_allowed,
     focused_output_owner_revision_in_progress_loop,
+    focused_output_revision_transaction_active_loop,
     focused_output_revision_target_ids,
 )
 from top_down_planning.domain.session_bindings import new_session_binding
@@ -290,7 +291,7 @@ def test_normal_production_apply_rejected_during_focused_output_owner_revision(
     token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
     production_revision = int(store.load_production(run_id)["revision"])
 
-    with pytest.raises(RequestError, match="focused-output owner revision is active"):
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
         service.apply(
             {
                 "production_revision": production_revision,
@@ -451,7 +452,7 @@ def test_focused_owner_revision_allows_evidence_apply_then_blocks_unrelated_norm
     assert evidence["ok"] is True
     assert int(store.load_production(run_id)["output_revision"]) == 2
 
-    with pytest.raises(RequestError, match="focused-output owner revision is active"):
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
         service.apply(
             {
                 "production_revision": int(store.load_production(run_id)["revision"]),
@@ -758,7 +759,7 @@ def test_focused_owner_revision_recheck_then_normal_production_resumes(
     output_revision_before = int(store.load_production(run_id)["output_revision"])
     service = ProductionAgentService(store, run_id)
 
-    with pytest.raises(RequestError, match="focused-output owner revision is active"):
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
         service.apply(
             {
                 "production_revision": int(store.load_production(run_id)["revision"]),
@@ -847,6 +848,40 @@ def test_focused_owner_revision_recheck_then_normal_production_resumes(
 
     assert owner_revision_complete(store, run_id, loop_id) is True
     assert focused_output_owner_revision_in_progress_loop(store, run_id) is None
+    assert focused_output_revision_transaction_active_loop(store, run_id) is not None
+
+    normal_item_second_request = {
+        "production_revision": int(store.load_production(run_id)["revision"]),
+        "plan_items": ["item-second"],
+        "dispositions": {
+            "item-second": {
+                "disposition": "completed",
+                "evidence": "Must wait for reviewer recheck.",
+            }
+        },
+        "outputs": [
+            {
+                "id": "output-second-premature",
+                "type": "artifact",
+                "ref": "artifacts/second.txt",
+            }
+        ],
+        "contributions": [
+            {
+                "item_id": "item-second",
+                "output_refs": ["output-second-premature"],
+                "summary": "Blocked until focused review closes.",
+            }
+        ],
+        "summary": "Premature normal apply after owner work.",
+    }
+    with pytest.raises(RequestError, match="focused-output review revision is in progress"):
+        service.apply(
+            normal_item_second_request,
+            capability_token=grant_capability(
+                store, run_id, role="producer", phase=PRODUCTION
+            ),
+        )
 
     reviewer_session_id = reviewer_loop_provider_session_id(
         store.load_review(run_id, loop_id)
@@ -902,6 +937,7 @@ def test_focused_owner_revision_recheck_then_normal_production_resumes(
 
     assert recheck_result.ok is True
     assert store.load_review(run_id, loop_id)["status"] == "approved"
+    assert focused_output_revision_transaction_active_loop(store, run_id) is None
     assert any(
         event.get("type") == "focused_review_recheck_requested"
         and event.get("loop_id") == loop_id

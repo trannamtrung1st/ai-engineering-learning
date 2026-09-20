@@ -2087,11 +2087,45 @@ def focused_review_owner_revision_in_progress(
     )
 
 
-def focused_output_owner_revision_in_progress_loop(
+def focused_output_revision_transaction_active(loop: ReviewLoop) -> bool:
+    """True while a focused-output loop blocks normal production until review closes.
+
+    Covers owner-revision work and post-owner reviewer recheck/verification, not
+    merely ``focused_review_producer_owner_work_pending``.
+    """
+
+    if loop.type != "focused_output" or is_terminal_review_loop(loop):
+        return False
+    if loop.status == "changes_requested":
+        return True
+    if loop.active_stage == "finding_verification":
+        return True
+    if focused_review_owner_revision_cycle_charged(loop):
+        return True
+    return False
+
+
+def focused_output_revision_transaction_active_loop(
     store: Any,
     run_id: str,
 ) -> ReviewLoop | None:
     """Return the focused-output loop blocking normal production apply, if any."""
+
+    run = store.load_run(run_id)
+    if str(run.get("phase") or "") != "production":
+        return None
+    for payload in reversed(store.list_reviews(run_id)):
+        loop = ReviewLoop.from_dict(payload)
+        if focused_output_revision_transaction_active(loop):
+            return loop
+    return None
+
+
+def focused_output_owner_revision_in_progress_loop(
+    store: Any,
+    run_id: str,
+) -> ReviewLoop | None:
+    """Return the focused-output loop with producer owner-revision work pending."""
 
     run = store.load_run(run_id)
     if str(run.get("phase") or "") != "production":
