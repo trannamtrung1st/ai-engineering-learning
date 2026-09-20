@@ -8,6 +8,7 @@ from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.session_recovery_state import (
     domain_budget_committed_for_phase_action,
     replacement_attempted_for_phase_action,
+    session_replacement_phase_action_id,
 )
 from top_down_planning.orchestrator.errors import SessionRecoveryExhausted
 from top_down_planning.orchestrator.run_transitions import fail_run
@@ -135,6 +136,26 @@ def mark_replacement_attempt(
     record_session_replacement_attempt(store, run_id, phase_action_id)
 
 
+def clear_session_replacement_attempt_marker(
+    store: RunStore,
+    run_id: str,
+    phase_action_id: str,
+) -> None:
+    """Clear replacement marker after successful recovery for a finalized action."""
+
+    run = store.load_run(run_id)
+    recorded = session_replacement_phase_action_id(run)
+    action = str(phase_action_id).strip()
+    if recorded is None or recorded != action:
+        return
+
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["session_replacement_phase_action_id"] = None
+    store.save_run(run_id, updated, expected_revision)
+
+
 def finalize_successful_phase_action_turn(
     store: RunStore,
     run_id: str,
@@ -244,6 +265,7 @@ __all__ = [
     "domain_budget_should_apply",
     "fail_session_recovery_exhausted",
     "finalize_successful_phase_action_turn",
+    "clear_session_replacement_attempt_marker",
     "mark_replacement_attempt",
     "record_phase_action_domain_commit",
     "record_session_replacement_attempt",

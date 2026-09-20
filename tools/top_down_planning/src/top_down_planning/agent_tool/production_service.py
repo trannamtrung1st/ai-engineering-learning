@@ -82,6 +82,21 @@ from top_down_planning.persistence.commit import CommitSpec, StagedArtifact
 from top_down_planning.persistence.digests import compute_output_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 
+def with_active_production_phase_action_id(
+    store: RunStore,
+    run_id: str,
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    """Attach the active provider-turn ``phase_action_id`` when present on the run."""
+
+    run = store.load_run(run_id)
+    phase_action_id = str(run.get("phase_action_id") or "").strip()
+    if not phase_action_id:
+        return dict(event)
+    merged = dict(event)
+    merged["phase_action_id"] = phase_action_id
+    return merged
+
 _PRODUCTION_SNAPSHOT_ACTION = (
     "Call `tdp agent production snapshot` and retry with the current revision."
 )
@@ -408,18 +423,18 @@ class ProductionAgentService:
             )
 
             updated = self._merge_batch(production, batch, disposition_records, outputs)
-            batch_event: dict[str, Any] = {
-                "type": "production_batch_recorded",
-                "run_id": self._run_id,
-                "batch_id": batch_id,
-                "plan_items": batch.plan_items,
-                "production_revision": updated["revision"],
-                "output_revision": updated["output_revision"],
-            }
-            run = self._store.load_run(self._run_id)
-            phase_action_id = str(run.get("phase_action_id") or "").strip()
-            if phase_action_id:
-                batch_event["phase_action_id"] = phase_action_id
+            batch_event = with_active_production_phase_action_id(
+                self._store,
+                self._run_id,
+                {
+                    "type": "production_batch_recorded",
+                    "run_id": self._run_id,
+                    "batch_id": batch_id,
+                    "plan_items": batch.plan_items,
+                    "production_revision": updated["revision"],
+                    "output_revision": updated["output_revision"],
+                },
+            )
             events = [
                 apply_request_audit_fields(
                     batch_event,
@@ -440,17 +455,16 @@ class ProductionAgentService:
                     if owner_cycle is not None:
                         claim["owner_revision_cycle"] = owner_cycle
                     updated["completion_claim"] = claim
-                    completion_event: dict[str, Any] = {
-                        "type": "production_completion_claimed",
-                        "run_id": self._run_id,
-                        "production_revision": updated["revision"],
-                        "output_revision": claim["output_revision"],
-                    }
-                    completion_phase_action_id = str(
-                        run.get("phase_action_id") or ""
-                    ).strip()
-                    if completion_phase_action_id:
-                        completion_event["phase_action_id"] = completion_phase_action_id
+                    completion_event = with_active_production_phase_action_id(
+                        self._store,
+                        self._run_id,
+                        {
+                            "type": "production_completion_claimed",
+                            "run_id": self._run_id,
+                            "production_revision": updated["revision"],
+                            "output_revision": claim["output_revision"],
+                        },
+                    )
                     events.append(
                         apply_request_audit_fields(
                             completion_event,
@@ -671,12 +685,16 @@ class ProductionAgentService:
                 production_expected_revision=expected_revision,
                 events=[
                     apply_request_audit_fields(
-                        {
-                            "type": "production_completion_claimed",
-                            "run_id": self._run_id,
-                            "production_revision": updated["revision"],
-                            "output_revision": claim["output_revision"],
-                        },
+                        with_active_production_phase_action_id(
+                            self._store,
+                            self._run_id,
+                            {
+                                "type": "production_completion_claimed",
+                                "run_id": self._run_id,
+                                "production_revision": updated["revision"],
+                                "output_revision": claim["output_revision"],
+                            },
+                        ),
                         request_audit,
                     )
                 ],

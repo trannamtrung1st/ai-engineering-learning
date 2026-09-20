@@ -290,12 +290,15 @@ def script_focused_output_through_completion(
     factory.script_turn(
         done_events(text="producer owner revision turn"),
         mutate_store=_record_owner_actions,
+        expected_role="producer",
+        expected_kind="primary",
     )
     factory.script_turn(done_events(text="recheck delivery without respond"))
     factory.script_turn(
         done_events(text="reviewer verify"),
         mutate_store=_verify_focused_review,
     )
+    factory.allow_autofill_after_expected_scripts()
     whole_output_gate_state = {"initial": False}
 
     def _whole_output_autofill() -> None:
@@ -419,6 +422,8 @@ def script_focused_plan_through_plan_target(
     factory.script_turn(
         done_events(text="owner revision turn"),
         mutate_store=_owner_plan_revision,
+        expected_role="planner",
+        expected_kind="primary",
     )
     factory.script_turn(done_events(text="recheck delivery without respond"))
     factory.script_turn(
@@ -426,6 +431,7 @@ def script_focused_plan_through_plan_target(
         mutate_store=_verify_focused_plan,
     )
     factory.script_turn(done_events(signal="candidate_plan_ready", text="planning complete"))
+    factory.allow_autofill_after_expected_scripts()
 
 
 def assert_focused_output_workflow_complete(

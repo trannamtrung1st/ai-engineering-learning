@@ -39,7 +39,7 @@ packages = ["src/top_down_planning"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "../core_tools/src"]
+pythonpath = ["src"]
 addopts = ["-m", "not integration and not packaging", "-n", "auto", "--dist", "worksteal"]
 markers = [
   "integration: stub-provider e2e and multi-layer smoke tests.",

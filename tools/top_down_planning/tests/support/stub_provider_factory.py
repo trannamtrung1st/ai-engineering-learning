@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 from core_tools.provider import StubProvider
 from top_down_planning.domain.session_bindings import resumable_binding_provider_session_id
@@ -12,6 +12,14 @@ from top_down_planning.orchestrator.reviewer_session import reviewer_loop_bindin
 from tests.helpers import done_events
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import get_primary_binding
+
+
+class _QueuedTurnScript(NamedTuple):
+    events: list[dict[str, Any]]
+    mutate_store: Callable[[], None] | None
+    session_id: str | None = None
+    expected_role: str | None = None
+    expected_kind: str | None = None
 
 
 class _SharedScriptStubProvider(StubProvider):
@@ -23,7 +31,11 @@ class _SharedScriptStubProvider(StubProvider):
 
     def _resolve_script(self, session_id: str) -> list[dict[str, Any]]:
         session = self._require_session(session_id)
-        scripted, hook = self._factory._pop_next_script(session_id)
+        scripted, hook = self._factory._pop_next_script(
+            session_id,
+            role=str(session.role or ""),
+            kind=str(session.kind or ""),
+        )
         session.pending_hook = hook
         return scripted
 
@@ -41,9 +53,8 @@ class RotatingStubProviderFactory:
         self._store = store
         self._run_id = run_id
         self._strict_session_scripts = strict_session_scripts
-        self._turn_scripts: list[
-            tuple[str | None, list[dict[str, Any]], Callable[[], None] | None]
-        ] = []
+        self._autofill_permitted = not strict_session_scripts
+        self._turn_scripts: list[_QueuedTurnScript] = []
         self._shared_index = 0
         self._autofill_mutate: Callable[[], None] | None = None
         self.instances: list[StubProvider] = []
@@ -51,14 +62,29 @@ class RotatingStubProviderFactory:
     def register_autofill_mutate(self, mutate: Callable[[], None] | None) -> None:
         self._autofill_mutate = mutate
 
+    def allow_autofill_after_expected_scripts(self) -> None:
+        """Permit shared-stub autofill after the critical scripted sequence."""
+
+        self._autofill_permitted = True
+
     def script_turn(
         self,
         events: list[dict[str, Any]],
         *,
         mutate_store: Callable[[], None] | None = None,
         session_id: str | None = None,
+        expected_role: str | None = None,
+        expected_kind: str | None = None,
     ) -> None:
-        self._turn_scripts.append((session_id, events, mutate_store))
+        self._turn_scripts.append(
+            _QueuedTurnScript(
+                events=events,
+                mutate_store=mutate_store,
+                session_id=session_id,
+                expected_role=expected_role,
+                expected_kind=expected_kind,
+            )
+        )
 
     def script_session_turn(
         self,
@@ -66,8 +92,16 @@ class RotatingStubProviderFactory:
         events: list[dict[str, Any]],
         *,
         mutate_store: Callable[[], None] | None = None,
+        expected_role: str | None = None,
+        expected_kind: str | None = None,
     ) -> None:
-        self.script_turn(events, mutate_store=mutate_store, session_id=session_id)
+        self.script_turn(
+            events,
+            mutate_store=mutate_store,
+            session_id=session_id,
+            expected_role=expected_role,
+            expected_kind=expected_kind,
+        )
 
     def script_many_turns(self, events: list[dict[str, Any]], count: int) -> None:
         for _ in range(count):
@@ -76,20 +110,46 @@ class RotatingStubProviderFactory:
     def _pop_next_script(
         self,
         active_session_id: str,
+        *,
+        role: str,
+        kind: str,
     ) -> tuple[list[dict[str, Any]], Callable[[], None] | None]:
         while self._shared_index < len(self._turn_scripts):
-            session_id, events, mutate_store = self._turn_scripts[self._shared_index]
-            if session_id is not None and session_id != active_session_id:
+            spec = self._turn_scripts[self._shared_index]
+            if spec.session_id is not None and spec.session_id != active_session_id:
                 if self._strict_session_scripts:
                     raise AssertionError(
                         "unexpected provider session for scripted turn: "
-                        f"expected {session_id!r}, active {active_session_id!r} "
+                        f"expected {spec.session_id!r}, active {active_session_id!r} "
+                        f"(script index {self._shared_index})"
+                    )
+                self._shared_index += 1
+                continue
+            if spec.expected_role is not None and spec.expected_role != role:
+                if self._strict_session_scripts:
+                    raise AssertionError(
+                        "unexpected provider role for scripted turn: "
+                        f"expected {spec.expected_role!r}, active {role!r} "
+                        f"(script index {self._shared_index})"
+                    )
+                self._shared_index += 1
+                continue
+            if spec.expected_kind is not None and spec.expected_kind != kind:
+                if self._strict_session_scripts:
+                    raise AssertionError(
+                        "unexpected provider session kind for scripted turn: "
+                        f"expected {spec.expected_kind!r}, active {kind!r} "
                         f"(script index {self._shared_index})"
                     )
                 self._shared_index += 1
                 continue
             self._shared_index += 1
-            return copy.deepcopy(events), mutate_store
+            return copy.deepcopy(spec.events), spec.mutate_store
+        if self._strict_session_scripts and not self._autofill_permitted:
+            raise AssertionError(
+                "provider turn requested with no remaining critical scripts for "
+                f"session {active_session_id!r} (role={role!r}, kind={kind!r})"
+            )
         return done_events(text="shared-stub-bookkeeping"), self._autofill_mutate
 
     def _bootstrap_bound_sessions(self, provider: StubProvider) -> None:

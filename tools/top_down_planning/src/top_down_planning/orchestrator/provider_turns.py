@@ -54,6 +54,7 @@ from top_down_planning.orchestrator.phase_action_domain_audit import (
 )
 from top_down_planning.orchestrator.session_recovery_enforcement import (
     assert_replacement_allowed,
+    clear_session_replacement_attempt_marker,
     fail_session_recovery_exhausted,
     finalize_successful_phase_action_turn,
     mark_replacement_attempt,
@@ -1525,6 +1526,9 @@ def _consume_provider_turn_with_session_recovery(
             loop_id=None,
         )
         bind_provider_capability(provider, capability_token, store=store, run_id=run_id)
+        # Post-commit recovery replaces immediately so later production/review owner
+        # work can bind a healthy producer lineage without replaying domain commits.
+        clear_session_replacement_attempt_marker(store, run_id, phase_action_id)
         return ProviderTurnOutcome(
             signal=boundary_signal,
             session_id=provider.canonical_session_id(new_session_id),

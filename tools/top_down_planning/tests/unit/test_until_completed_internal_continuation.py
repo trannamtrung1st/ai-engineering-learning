@@ -79,6 +79,13 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     assert continuation.status == "completed"
     assert continuation.outcome == "accepted"
     assert len(factory.instances) >= 2
+    event_types = [event.get("type") for event in store.load_events(run_id)]
+    assert "focused_review_recheck_requested" in event_types
+    assert "focused_review_approved" in event_types
+    assert (
+        event_types.index("focused_review_recheck_requested")
+        < event_types.index("focused_review_approved")
+    )
     assert_focused_output_workflow_complete(store, run_id, loop_id)
 
 
@@ -156,9 +163,12 @@ def test_until_plan_continues_focused_plan_owner_handoff(tmp_path: Path) -> None
     assert continuation.target_reached is True
     assert store.load_run(run_id)["phase"] != PLANNING
     assert store.load_review(run_id, loop_id)["status"] == "approved"
-    events = store.load_events(run_id)
-    assert any(event.get("type") == "focused_review_recheck_requested" for event in events)
-    assert any(event.get("type") == "focused_review_approved" for event in events)
+    events = [event.get("type") for event in store.load_events(run_id)]
+    assert "focused_review_recheck_requested" in events
+    assert "focused_review_approved" in events
+    recheck_index = events.index("focused_review_recheck_requested")
+    approved_index = events.index("focused_review_approved")
+    assert recheck_index < approved_index
 
 
 def test_default_resume_single_step_stops_after_one_phase_invocation(
@@ -267,7 +277,10 @@ def test_cli_resume_until_completed_exits_zero_with_target_reached(
     factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
-        store, seed_provider, run_id=run_id
+        store,
+        seed_provider,
+        run_id=run_id,
+        record_owner_finding_actions=False,
     )
     script_focused_output_through_completion(factory, store, run_id, loop_id)
 
