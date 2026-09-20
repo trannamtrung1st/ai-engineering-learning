@@ -70,8 +70,11 @@ from top_down_planning.orchestrator.run_transitions import (
     reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.provider_turns import (
+    FocusedReviewRestoreResult,
     build_producer_turn_recovery,
     consume_producer_provider_turn_with_session_recovery,
+    focused_review_restore_pending_reason,
+    focused_review_soft_pending_outcome,
     restore_primary_capability_after_focused_review,
 )
 from top_down_planning.persistence.capabilities import (
@@ -238,7 +241,7 @@ class ProductionPhaseOrchestrator:
                 self._persist_resolved_blocker(blocker)
                 continue
 
-            self._capability_token = restore_primary_capability_after_focused_review(
+            focused = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
@@ -246,6 +249,13 @@ class ProductionPhaseOrchestrator:
                 role="producer",
                 current_token=self._capability_token,
             )
+            self._capability_token = focused.capability_token
+            soft_pending = self._result_if_focused_review_soft_pending(
+                focused,
+                session_id=session_id,
+            )
+            if soft_pending is not None:
+                return soft_pending
 
             after_focused = self._handle_blocker_after_focused_review(session_id)
             if after_focused is not None:
@@ -331,7 +341,7 @@ class ProductionPhaseOrchestrator:
             if terminal is not None:
                 return terminal
 
-            self._capability_token = restore_primary_capability_after_focused_review(
+            focused_after_turn = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
@@ -339,6 +349,13 @@ class ProductionPhaseOrchestrator:
                 role="producer",
                 current_token=self._capability_token,
             )
+            self._capability_token = focused_after_turn.capability_token
+            soft_pending = self._result_if_focused_review_soft_pending(
+                focused_after_turn,
+                session_id=session_id,
+            )
+            if soft_pending is not None:
+                return soft_pending
 
             after_focused = self._handle_blocker_after_focused_review(session_id)
             if after_focused is not None:
@@ -793,6 +810,22 @@ class ProductionPhaseOrchestrator:
     def _batch_count(self) -> int:
         production = self._store.load_production(self._run_id)
         return len(production.get("batches") or [])
+
+    def _result_if_focused_review_soft_pending(
+        self,
+        focused: FocusedReviewRestoreResult,
+        *,
+        session_id: str | None,
+    ) -> ProductionPhaseResult | None:
+        if not focused_review_soft_pending_outcome(focused.outcome):
+            return None
+        run = self._store.load_run(self._run_id)
+        return self._result_from_run(
+            run,
+            ok=False,
+            session_id=session_id,
+            reason=focused_review_restore_pending_reason(focused.outcome),
+        )
 
     def _result_from_run(
         self,

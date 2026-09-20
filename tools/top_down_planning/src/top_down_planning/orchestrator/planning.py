@@ -32,8 +32,11 @@ from top_down_planning.orchestrator.planner_session import (
     primary_planner_provider_session_id,
 )
 from top_down_planning.orchestrator.provider_turns import (
+    FocusedReviewRestoreResult,
     build_planner_turn_recovery,
     consume_provider_turn_with_session_recovery,
+    focused_review_restore_pending_reason,
+    focused_review_soft_pending_outcome,
     restore_primary_capability_after_focused_review,
     sync_planning_items_added,
 )
@@ -128,7 +131,7 @@ class PlanningPhaseOrchestrator:
         bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
 
         while True:
-            self._capability_token = restore_primary_capability_after_focused_review(
+            focused = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
@@ -136,6 +139,10 @@ class PlanningPhaseOrchestrator:
                 role="planner",
                 current_token=self._capability_token,
             )
+            self._capability_token = focused.capability_token
+            soft_pending = self._result_if_focused_review_soft_pending(focused)
+            if soft_pending is not None:
+                return soft_pending
 
             plan_item_ids_before = set(
                 self._store.load_plan_model(self._run_id).items.keys()
@@ -178,7 +185,7 @@ class PlanningPhaseOrchestrator:
                     replacement_token=turn_outcome.capability_token,
                     provider=self._provider,
                 )
-            self._capability_token = restore_primary_capability_after_focused_review(
+            focused_after_turn = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
@@ -186,6 +193,10 @@ class PlanningPhaseOrchestrator:
                 role="planner",
                 current_token=self._capability_token,
             )
+            self._capability_token = focused_after_turn.capability_token
+            soft_pending = self._result_if_focused_review_soft_pending(focused_after_turn)
+            if soft_pending is not None:
+                return soft_pending
             sync_planning_items_added(
                 self._store,
                 self._run_id,
@@ -414,6 +425,19 @@ class PlanningPhaseOrchestrator:
             ok=False,
             session_id=session_id,
             reason=message,
+        )
+
+    def _result_if_focused_review_soft_pending(
+        self,
+        focused: FocusedReviewRestoreResult,
+    ) -> PlanningPhaseResult | None:
+        if not focused_review_soft_pending_outcome(focused.outcome):
+            return None
+        run = self._store.load_run(self._run_id)
+        return self._result_from_run(
+            run,
+            ok=False,
+            reason=focused_review_restore_pending_reason(focused.outcome),
         )
 
     def _result_from_run(

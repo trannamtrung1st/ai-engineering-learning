@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -2210,18 +2211,49 @@ def find_pending_focused_review_loop_id(
     )
 
 
+class FocusedReviewRunOutcome(str, Enum):
+    NOT_DUE = "not_due"
+    COMPLETED = "completed"
+    OWNER_WORK_PENDING = "owner_work_pending"
+    REVIEW_INCOMPLETE = "review_incomplete"
+
+
+@dataclass(frozen=True)
+class FocusedReviewRestoreResult:
+    capability_token: str | None
+    outcome: FocusedReviewRunOutcome
+
+
+def focused_review_soft_pending_outcome(outcome: FocusedReviewRunOutcome) -> bool:
+    """True when primary planner/producer work must stay idle for focused review."""
+
+    return outcome in {
+        FocusedReviewRunOutcome.OWNER_WORK_PENDING,
+        FocusedReviewRunOutcome.REVIEW_INCOMPLETE,
+    }
+
+
+def focused_review_restore_pending_reason(outcome: FocusedReviewRunOutcome) -> str:
+    if outcome == FocusedReviewRunOutcome.REVIEW_INCOMPLETE:
+        return "focused review is recoverably incomplete"
+    if outcome == FocusedReviewRunOutcome.OWNER_WORK_PENDING:
+        return "focused review owner work is pending"
+    return "focused review did not complete"
+
+
 def run_pending_focused_review(
     store: RunStore,
     run_id: str,
     provider: Provider,
     *,
     review_type: str,
-) -> bool:
+) -> FocusedReviewRunOutcome:
     """Run a focused review loop when the store shows one is due.
 
-    Returns True when a focused review loop ran to completion. Returns False when
-    no loop is due, owner-revision work is producer-owned, or the loop is
-    recoverably ``review_incomplete`` (focused profile does not pause the run).
+    Returns ``COMPLETED`` when a focused review loop ran to completion.
+    ``NOT_DUE`` when no loop is due. ``OWNER_WORK_PENDING`` and
+    ``REVIEW_INCOMPLETE`` are soft pending states: callers must not resume
+    ordinary planner/producer turns until focused review recovery finishes.
     """
 
     from top_down_planning.domain.production_blockers import evaluate_blocker_report
@@ -2243,7 +2275,7 @@ def run_pending_focused_review(
         events=store.load_events(run_id),
     )
     if blocker.disposition == "active_terminal":
-        return False
+        return FocusedReviewRunOutcome.NOT_DUE
 
     loop_id = find_resumable_focused_review_loop_id(
         store,
@@ -2251,7 +2283,7 @@ def run_pending_focused_review(
         review_type=review_type,
     )
     if loop_id is None:
-        return False
+        return FocusedReviewRunOutcome.NOT_DUE
 
     result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
     if not result.ok:
@@ -2264,15 +2296,15 @@ def run_pending_focused_review(
             store=store,
             run_id=run_id,
         ):
-            return False
+            return FocusedReviewRunOutcome.OWNER_WORK_PENDING
         if loop is not None and focused_review_loop_is_recoverable_incomplete(loop):
-            return False
+            return FocusedReviewRunOutcome.REVIEW_INCOMPLETE
         if str(result.status or "").strip() == "review_incomplete":
-            return False
+            return FocusedReviewRunOutcome.REVIEW_INCOMPLETE
         raise ReviewStateConflict(
             result.reason or f"{review_type} focused review did not complete successfully"
         )
-    return True
+    return FocusedReviewRunOutcome.COMPLETED
 
 
 def restore_primary_capability_after_focused_review(
@@ -2283,18 +2315,19 @@ def restore_primary_capability_after_focused_review(
     review_type: str,
     role: str,
     current_token: str | None,
-) -> str | None:
+) -> FocusedReviewRestoreResult:
     """Run a pending focused review and rebind the primary role capability when needed."""
 
     from top_down_planning.orchestrator.capability import rebind_primary_session_capability
 
-    if not run_pending_focused_review(
+    outcome = run_pending_focused_review(
         store,
         run_id,
         provider,
         review_type=review_type,
-    ):
-        return current_token
+    )
+    if outcome != FocusedReviewRunOutcome.COMPLETED:
+        return FocusedReviewRestoreResult(current_token, outcome)
 
     rebound = rebind_primary_session_capability(
         store,
@@ -2302,7 +2335,8 @@ def restore_primary_capability_after_focused_review(
         provider,
         role=role,
     )
-    return rebound if rebound is not None else current_token
+    token = rebound if rebound is not None else current_token
+    return FocusedReviewRestoreResult(token, FocusedReviewRunOutcome.COMPLETED)
 
 
 def review_decision_from_store(

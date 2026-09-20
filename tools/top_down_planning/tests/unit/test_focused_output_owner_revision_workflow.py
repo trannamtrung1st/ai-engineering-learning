@@ -311,7 +311,7 @@ def test_active_wait_blocker_runs_focused_review_before_pause(tmp_path: Path) ->
                 role="producer",
                 current_token=None,
             )
-        )
+        ).capability_token
 
     assert order == ["restore"]
     assert store.load_review(run_id, loop_id)["status"] == "approved"
@@ -1347,7 +1347,10 @@ def test_production_phase_rediscovers_review_incomplete_focused_output(
 def test_run_pending_focused_review_repeated_review_incomplete_does_not_raise(
     tmp_path: Path,
 ) -> None:
-    from top_down_planning.orchestrator.provider_turns import run_pending_focused_review
+    from top_down_planning.orchestrator.provider_turns import (
+        FocusedReviewRunOutcome,
+        run_pending_focused_review,
+    )
 
     store = FileRunStore(tmp_path)
     provider = StubProvider()
@@ -1371,12 +1374,13 @@ def test_run_pending_focused_review_repeated_review_incomplete_does_not_raise(
 
     provider.script_turn(done_events(text="advisory retry without owner action"))
 
-    run_pending_focused_review(
+    outcome = run_pending_focused_review(
         store,
         run_id,
         provider,
         review_type="focused_output",
     )
+    assert outcome == FocusedReviewRunOutcome.REVIEW_INCOMPLETE
 
     persisted = store.load_review(run_id, loop_id)
     assert persisted["status"] == "review_incomplete"
