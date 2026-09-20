@@ -204,7 +204,7 @@ def test_planning_phase_review_incomplete_does_not_consume_planner_turn(
     provider.script_turn(done_events(text="focused plan advisory retry still incomplete"))
 
     with patch(
-        "top_down_planning.orchestrator.planning.consume_provider_turn_with_session_recovery",
+        "top_down_planning.orchestrator.planning.consume_planner_provider_turn_with_session_recovery",
     ) as consume_mock:
         result = PlanningPhaseOrchestrator(store, run_id, provider).run()
 
@@ -431,7 +431,7 @@ def test_planning_phase_owner_revision_pending_does_not_consume_planner_turn(
     provider.script_turn(done_events(text="owner revision turn"))
 
     with patch(
-        "top_down_planning.orchestrator.planning.consume_provider_turn_with_session_recovery",
+        "top_down_planning.orchestrator.planning.consume_planner_provider_turn_with_session_recovery",
     ) as consume_mock:
         result = PlanningPhaseOrchestrator(store, run_id, provider).run()
 
