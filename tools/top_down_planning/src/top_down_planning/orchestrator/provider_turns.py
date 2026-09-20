@@ -1466,6 +1466,24 @@ def _consume_provider_turn_with_session_recovery(
     except ProviderSessionMismatchError as exc:
         if not phase_action_domain_proven_by_audit(store, run_id, phase_action_id):
             raise ProviderRunError(str(exc)) from exc
+        boundary_signal = phase_action_domain_boundary_signal(
+            store,
+            run_id,
+            phase_action_id,
+        )
+        domain_budget_committed = _finalize_phase_action_turn(
+            store,
+            run_id,
+            phase_action_id,
+        )
+        if isinstance(recovery, ReviewerSessionRecoverySpec):
+            # Reviewer respond already durably committed; do not replay or replace.
+            return ProviderTurnOutcome(
+                signal=boundary_signal,
+                session_id=provider.canonical_session_id(session_id),
+                replaced=False,
+                domain_budget_committed=domain_budget_committed,
+            )
         if not isinstance(recovery, PrimarySessionRecoverySpec):
             raise ProviderRunError(str(exc)) from exc
         assert_replacement_allowed(
@@ -1476,16 +1494,6 @@ def _consume_provider_turn_with_session_recovery(
             role=role,
             provider_session_id=session_id,
             loop_id=loop_id,
-        )
-        boundary_signal = phase_action_domain_boundary_signal(
-            store,
-            run_id,
-            phase_action_id,
-        )
-        domain_budget_committed = _finalize_phase_action_turn(
-            store,
-            run_id,
-            phase_action_id,
         )
         mark_replacement_attempt(store, run_id, phase_action_id)
         manifest = recovery.build_recovery_manifest(phase_action_id)

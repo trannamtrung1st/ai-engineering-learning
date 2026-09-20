@@ -285,18 +285,32 @@ def script_focused_output_through_completion(
         )()
         state["whole_output"] = True
 
-    factory.script_turn(done_events(text="production primary resume"))
-    factory.script_turn(done_events(text="owner session rotate"))
+    factory.script_turn(
+        done_events(text="production primary resume"),
+        expected_role="producer",
+        expected_kind="primary",
+    )
+    factory.script_turn(
+        done_events(text="owner session rotate"),
+        expected_role="producer",
+        expected_kind="primary",
+    )
     factory.script_turn(
         done_events(text="producer owner revision turn"),
         mutate_store=_record_owner_actions,
         expected_role="producer",
         expected_kind="primary",
     )
-    factory.script_turn(done_events(text="recheck delivery without respond"))
+    factory.script_turn(
+        done_events(text="recheck delivery without respond"),
+        expected_role="reviewer",
+        expected_kind="reviewer",
+    )
     factory.script_turn(
         done_events(text="reviewer verify"),
         mutate_store=_verify_focused_review,
+        expected_role="reviewer",
+        expected_kind="reviewer",
     )
     factory.allow_autofill_after_expected_scripts()
     whole_output_gate_state = {"initial": False}
@@ -418,19 +432,33 @@ def script_focused_plan_through_plan_target(
         )()
         state["verified"] = True
 
-    factory.script_turn(done_events(text="owner revision session start"))
+    factory.script_turn(
+        done_events(text="owner revision session start"),
+        expected_role="planner",
+        expected_kind="primary",
+    )
     factory.script_turn(
         done_events(text="owner revision turn"),
         mutate_store=_owner_plan_revision,
         expected_role="planner",
         expected_kind="primary",
     )
-    factory.script_turn(done_events(text="recheck delivery without respond"))
+    factory.script_turn(
+        done_events(text="recheck delivery without respond"),
+        expected_role="reviewer",
+        expected_kind="reviewer",
+    )
     factory.script_turn(
         done_events(text="reviewer verify"),
         mutate_store=_verify_focused_plan,
+        expected_role="reviewer",
+        expected_kind="reviewer",
     )
-    factory.script_turn(done_events(signal="candidate_plan_ready", text="planning complete"))
+    factory.script_turn(
+        done_events(signal="candidate_plan_ready", text="planning complete"),
+        expected_role="planner",
+        expected_kind="primary",
+    )
     factory.allow_autofill_after_expected_scripts()
 
 

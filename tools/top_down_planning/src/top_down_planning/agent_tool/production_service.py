@@ -80,22 +80,8 @@ from top_down_planning.domain.models import Plan
 from top_down_planning.domain.validators import validate_plan
 from top_down_planning.persistence.commit import CommitSpec, StagedArtifact
 from top_down_planning.persistence.digests import compute_output_digest, compute_plan_digest
+from top_down_planning.domain.phase_action_events import with_active_phase_action_id
 from top_down_planning.persistence.interface import RunStore
-
-def with_active_production_phase_action_id(
-    store: RunStore,
-    run_id: str,
-    event: dict[str, Any],
-) -> dict[str, Any]:
-    """Attach the active provider-turn ``phase_action_id`` when present on the run."""
-
-    run = store.load_run(run_id)
-    phase_action_id = str(run.get("phase_action_id") or "").strip()
-    if not phase_action_id:
-        return dict(event)
-    merged = dict(event)
-    merged["phase_action_id"] = phase_action_id
-    return merged
 
 _PRODUCTION_SNAPSHOT_ACTION = (
     "Call `tdp agent production snapshot` and retry with the current revision."
@@ -423,7 +409,7 @@ class ProductionAgentService:
             )
 
             updated = self._merge_batch(production, batch, disposition_records, outputs)
-            batch_event = with_active_production_phase_action_id(
+            batch_event = with_active_phase_action_id(
                 self._store,
                 self._run_id,
                 {
@@ -455,7 +441,7 @@ class ProductionAgentService:
                     if owner_cycle is not None:
                         claim["owner_revision_cycle"] = owner_cycle
                     updated["completion_claim"] = claim
-                    completion_event = with_active_production_phase_action_id(
+                    completion_event = with_active_phase_action_id(
                         self._store,
                         self._run_id,
                         {
@@ -685,7 +671,7 @@ class ProductionAgentService:
                 production_expected_revision=expected_revision,
                 events=[
                     apply_request_audit_fields(
-                        with_active_production_phase_action_id(
+                        with_active_phase_action_id(
                             self._store,
                             self._run_id,
                             {

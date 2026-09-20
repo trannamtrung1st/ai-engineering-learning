@@ -5,6 +5,11 @@ from __future__ import annotations
 from top_down_planning.orchestrator.producer_session import (
     PRODUCER_BATCH_COMPLETE_SIGNAL,
     PRODUCER_COMPLETION_COMPLETE_SIGNAL,
+    PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
+)
+from top_down_planning.orchestrator.reviewer_session import (
+    OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
+    REVIEWER_DECISION_COMPLETE_SIGNAL,
 )
 from top_down_planning.persistence.interface import RunStore
 
@@ -12,12 +17,20 @@ PHASE_ACTION_DOMAIN_BOUNDARY_EVENTS: frozenset[str] = frozenset(
     {
         "production_batch_recorded",
         "production_completion_claimed",
+        "focused_review_requested",
+        "review_finding_action_recorded",
+        "review_challenge_submitted",
+        "review_responded",
     }
 )
 
 _BOUNDARY_EVENT_SIGNALS: dict[str, str] = {
     "production_batch_recorded": PRODUCER_BATCH_COMPLETE_SIGNAL,
     "production_completion_claimed": PRODUCER_COMPLETION_COMPLETE_SIGNAL,
+    "focused_review_requested": PRODUCER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
+    "review_finding_action_recorded": OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
+    "review_challenge_submitted": OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
+    "review_responded": REVIEWER_DECISION_COMPLETE_SIGNAL,
 }
 
 
@@ -49,7 +62,7 @@ def phase_action_domain_boundary_signal(
     run_id: str,
     phase_action_id: str,
 ) -> str | None:
-    """Return the producer boundary signal implied by a proven domain audit event."""
+    """Return the turn boundary signal implied by a proven domain audit event."""
 
     action = str(phase_action_id).strip()
     if not action:

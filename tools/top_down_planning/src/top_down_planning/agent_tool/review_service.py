@@ -27,6 +27,7 @@ from top_down_planning.agent_tool.request_audit import (
 )
 from top_down_planning.agent_tool.request_schema import validate_agent_request
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.domain.phase_action_events import with_active_phase_action_id
 from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
     PLAN_APPROVAL_DIGEST_KEYS,
@@ -297,16 +298,20 @@ class ReviewAgentService:
                 reviews=[loop.to_dict()],
                 events=[
                     apply_request_audit_fields(
-                        {
-                            "type": "focused_review_requested",
-                            "run_id": self._run_id,
-                            "loop_id": loop_id,
-                            "review_type": review_type,
-                            "scope": scope,
-                            "target_revision": target_revision,
-                            "target_digest": requested_digest,
-                            "requested_by": role,
-                        },
+                        with_active_phase_action_id(
+                            self._store,
+                            self._run_id,
+                            {
+                                "type": "focused_review_requested",
+                                "run_id": self._run_id,
+                                "loop_id": loop_id,
+                                "review_type": review_type,
+                                "scope": scope,
+                                "target_revision": target_revision,
+                                "target_digest": requested_digest,
+                                "requested_by": role,
+                            },
+                        ),
                         request_audit,
                     )
                 ],
@@ -737,14 +742,18 @@ class ReviewAgentService:
             updated = replace_loop_approved_digests(updated, approved_digests)
 
         event = apply_request_audit_fields(
-            {
-                "type": "review_responded",
-                "run_id": self._run_id,
-                "loop_id": loop_id,
-                "decision": decision,
-                "target_revision": target_revision,
-                "finding_count": len(updated.findings),
-            },
+            with_active_phase_action_id(
+                self._store,
+                self._run_id,
+                {
+                    "type": "review_responded",
+                    "run_id": self._run_id,
+                    "loop_id": loop_id,
+                    "decision": decision,
+                    "target_revision": target_revision,
+                    "finding_count": len(updated.findings),
+                },
+            ),
             request_audit,
         )
         if stage is not None:
@@ -1073,14 +1082,18 @@ class ReviewAgentService:
             raise _value_error_as_request_error(exc) from exc
 
         event: dict[str, Any] = apply_request_audit_fields(
-            {
-                "type": "review_finding_action_recorded",
-                "run_id": self._run_id,
-                "loop_id": loop_id,
-                "actor_role": role,
-                "action_count": len(parsed),
-                "actions": [action.action for action in parsed],
-            },
+            with_active_phase_action_id(
+                self._store,
+                self._run_id,
+                {
+                    "type": "review_finding_action_recorded",
+                    "run_id": self._run_id,
+                    "loop_id": loop_id,
+                    "actor_role": role,
+                    "action_count": len(parsed),
+                    "actions": [action.action for action in parsed],
+                },
+            ),
             request_audit,
         )
         if any(action.action == "challenge" for action in parsed):
