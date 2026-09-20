@@ -2060,11 +2060,19 @@ def focused_review_producer_owner_work_pending(
     if not focused_review_owner_revision_cycle_charged(loop):
         return False
     if loop.active_stage == "finding_verification":
+        if not focused_review_owner_actions_complete(loop):
+            return True
         return False
     if not focused_review_owner_actions_complete(loop):
         return True
-    active_actions = finding_actions_for_active_set(loop)
-    if owner_actions_require_revision(active_actions):
+    current_actions = list(
+        effective_owner_actions(
+            loop.finding_actions,
+            finding_set_id=loop.finding_set_id,
+            owner_revision_cycle=int(loop.revision_cycles),
+        ).values()
+    )
+    if owner_actions_require_revision(current_actions):
         return focused_review_owner_artifact_revision_pending(
             loop,
             store=store,

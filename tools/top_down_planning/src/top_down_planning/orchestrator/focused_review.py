@@ -312,6 +312,7 @@ class FocusedReviewAdapter:
             loop.with_reviewer_session_released(),
             status="pending",
             revision_cycles=revision_cycles,
+            active_stage=None,
         )
 
     def owner_revision_pending(self, loop: ReviewLoop) -> FocusedReviewResult:

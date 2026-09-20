@@ -873,13 +873,14 @@ class ReviewLoopDriver:
         if (
             not self.profile.is_mandatory_gate
             and focused_review_owner_revision_cycle_charged(loop)
-            and loop.active_stage != "finding_verification"
         ):
             if focused_review_producer_owner_work_pending(
                 loop,
                 store=self._store,
                 run_id=self._run_id,
             ):
+                return loop, False
+            if loop.active_stage == "finding_verification":
                 return loop, False
             return self._prepare_recheck(loop), True
 
