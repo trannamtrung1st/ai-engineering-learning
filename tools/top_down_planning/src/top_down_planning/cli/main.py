@@ -181,7 +181,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="plan",
         help=(
             "Continue until planning construction (plan), plan validation "
-            "(validated), or final outcome (completed)."
+            "(validated), or final outcome (completed), driving recoverable "
+            "internal orchestration handoffs until the target or a stop that "
+            "needs user/external intervention."
         ),
     )
     run_parser.add_argument(
@@ -317,10 +319,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--until",
         choices=["plan", "validated", "completed"],
         help=(
-            "Continue until the target lifecycle milestone. "
-            "Omit to advance one orchestrator step (default). "
-            "Targets: plan (past planning), validated (plan_validated+), "
-            "completed (output_validated or terminal completed)."
+            "Continue until the target lifecycle milestone, driving recoverable "
+            "internal orchestration handoffs until the target is reached or the "
+            "run needs user/external intervention. Omit to advance one orchestrator "
+            "step (default). Targets: plan (past planning), validated "
+            "(plan_validated+), completed (output_validated or terminal completed)."
         ),
     )
 

@@ -48,6 +48,7 @@ from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.session_bindings import primary_provider_session_id
+from top_down_planning.orchestrator.phase_step_disposition import PhaseStepDisposition
 from core_tools.provider import Provider
 
 _PLANNING_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["planning"]
@@ -64,6 +65,7 @@ class PlanningPhaseResult:
     agent_turns: int
     items_added: int
     reason: str | None = None
+    disposition: PhaseStepDisposition = PhaseStepDisposition.ADVANCED
 
 
 class PlanningPhaseOrchestrator:
@@ -438,6 +440,7 @@ class PlanningPhaseOrchestrator:
             run,
             ok=False,
             reason=focused_review_restore_pending_reason(focused.outcome),
+            disposition=PhaseStepDisposition.INTERNAL_HANDOFF,
         )
 
     def _result_from_run(
@@ -447,9 +450,16 @@ class PlanningPhaseOrchestrator:
         ok: bool,
         session_id: str | None = None,
         reason: str | None = None,
+        disposition: PhaseStepDisposition | None = None,
     ) -> PlanningPhaseResult:
         metrics = _planning_metrics(run)
         sessions = run.get("sessions") or {}
+        if disposition is None:
+            disposition = (
+                PhaseStepDisposition.ADVANCED
+                if ok
+                else PhaseStepDisposition.STOPPED
+            )
         return PlanningPhaseResult(
             ok=ok,
             phase=str(run.get("phase") or PLANNING),
@@ -459,6 +469,7 @@ class PlanningPhaseOrchestrator:
             agent_turns=metrics["agent_turns"],
             items_added=metrics["items_added"],
             reason=reason,
+            disposition=disposition,
         )
 
     def _append_event(self, event_type: str, **fields: Any) -> None:

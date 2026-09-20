@@ -378,6 +378,39 @@ def create_production_run_open_item_second(
     return session_id
 
 
+def advisory_optional_focused_output_loop(*, item_ids: list[str]) -> dict:
+    binding = new_session_binding(
+        role="reviewer",
+        kind="reviewer",
+    ).with_provider_session_id("reviewer-sess-advisory")
+    loop = review_loop_dict_with_binding(
+        {
+            "id": "review-focused-output-01",
+            "type": "focused_output",
+            "target_revision": 1,
+            "scope": {"kind": "focused_output", "item_ids": item_ids},
+            "status": "advisory_pending",
+            "revise_at": "blocker",
+            "revision_cycles": 0,
+            "finding_set_id": "fs-advisory-01",
+            "findings": [
+                {
+                    "id": "finding-opt",
+                    "severity": "minor",
+                    "category": "correctness",
+                    "target_refs": item_ids[:1],
+                    "issue": "Optional polish.",
+                    "recommended_change": "Improve wording.",
+                    "status": "unresolved",
+                }
+            ],
+            "finding_actions": [],
+        }
+    )
+    loop["reviewer_binding"] = binding.to_dict()
+    return loop
+
+
 def focused_owner_revision_pending_loop(*, item_ids: list[str]) -> dict:
     binding = new_session_binding(
         role="reviewer",

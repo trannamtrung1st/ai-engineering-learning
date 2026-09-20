@@ -69,6 +69,10 @@ from top_down_planning.orchestrator.plan_amendment import (
     PlanAmendmentOrchestrator,
     PlanAmendmentResult,
 )
+from top_down_planning.orchestrator.phase_step_disposition import (
+    PhaseStepDisposition,
+    disposition_from_phase_result,
+)
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
@@ -104,6 +108,8 @@ class RunStepResult:
     outcome: str | None
     details: dict[str, Any] = field(default_factory=dict)
     reason: str | None = None
+    disposition: PhaseStepDisposition = PhaseStepDisposition.ADVANCED
+    progress_key: tuple[Any, ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -135,6 +141,57 @@ def _target_reached(run: dict[str, Any], until: str) -> bool:
     if until == "completed":
         return phase == OUTPUT_VALIDATED or status == "completed"
     raise ValueError(f"unsupported until target: {until!r}")
+
+
+def _durable_progress_key(
+    store: RunStore,
+    run_id: str,
+    run: dict[str, Any],
+) -> tuple[Any, ...]:
+    key: list[Any] = [
+        int(run.get("revision") or 0),
+        str(run.get("phase") or ""),
+        str(run.get("phase_action_id") or ""),
+    ]
+    phase = str(run.get("phase") or "")
+    if phase in {PLAN_VALIDATED, PRODUCTION}:
+        production = store.load_production(run_id)
+        key.append(int(production.get("revision") or 0))
+    elif phase == PLANNING:
+        key.append(int(store.load_plan_model(run_id).revision))
+    return tuple(key)
+
+
+def _finalize_run_step(
+    store: RunStore,
+    run_id: str,
+    step: RunStepResult,
+    *,
+    phase_result: Any,
+) -> RunStepResult:
+    run = store.load_run(run_id)
+    return RunStepResult(
+        phase=step.phase,
+        ok=step.ok,
+        status=step.status,
+        outcome=step.outcome,
+        details=step.details,
+        reason=step.reason,
+        disposition=disposition_from_phase_result(phase_result),
+        progress_key=_durable_progress_key(store, run_id, run),
+    )
+
+
+def _internal_handoff_stalled(steps: list[RunStepResult]) -> bool:
+    if len(steps) < 2:
+        return False
+    previous = steps[-2]
+    current = steps[-1]
+    if current.disposition != PhaseStepDisposition.INTERNAL_HANDOFF:
+        return False
+    if previous.disposition != PhaseStepDisposition.INTERNAL_HANDOFF:
+        return False
+    return previous.progress_key == current.progress_key
 
 
 def _continuation_ok_from_run(run: dict[str, Any]) -> bool:
@@ -1144,9 +1201,30 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
 
+            step = _finalize_run_step(self._store, run_id, step, phase_result=result)
             steps.append(step)
             if not step.ok:
                 run = self._store.load_run(run_id)
+                if (
+                    not single_step
+                    and str(run.get("status") or "") == "running"
+                    and step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
+                ):
+                    if _internal_handoff_stalled(steps):
+                        result = _continuation_result_from_run(
+                            run,
+                            run_id,
+                            until=until,
+                            steps=steps,
+                            ok=False,
+                            reason=(
+                                "continuation made no durable progress across "
+                                "internal orchestration handoff"
+                            ),
+                        )
+                        self._emit_done(result, started_at=started_at)
+                        return result
+                    continue
                 result = _continuation_result_from_run(
                     run,
                     run_id,
