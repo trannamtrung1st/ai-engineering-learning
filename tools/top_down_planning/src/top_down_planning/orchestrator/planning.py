@@ -48,6 +48,9 @@ from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.session_bindings import primary_provider_session_id
+from top_down_planning.orchestrator.focused_review_handoff_progress import (
+    resolve_focused_handoff_loop_id,
+)
 from top_down_planning.orchestrator.phase_step_disposition import PhaseStepDisposition
 from core_tools.provider import Provider
 
@@ -65,7 +68,8 @@ class PlanningPhaseResult:
     agent_turns: int
     items_added: int
     reason: str | None = None
-    disposition: PhaseStepDisposition = PhaseStepDisposition.ADVANCED
+    disposition: PhaseStepDisposition | None = None
+    handoff_loop_id: str | None = None
 
 
 class PlanningPhaseOrchestrator:
@@ -142,6 +146,10 @@ class PlanningPhaseOrchestrator:
                 current_token=self._capability_token,
             )
             self._capability_token = focused.capability_token
+            session_id = (
+                primary_provider_session_id(self._store.load_run(self._run_id), "planner")
+                or session_id
+            )
             soft_pending = self._result_if_focused_review_soft_pending(focused)
             if soft_pending is not None:
                 return soft_pending
@@ -196,6 +204,10 @@ class PlanningPhaseOrchestrator:
                 current_token=self._capability_token,
             )
             self._capability_token = focused_after_turn.capability_token
+            session_id = (
+                primary_provider_session_id(self._store.load_run(self._run_id), "planner")
+                or session_id
+            )
             soft_pending = self._result_if_focused_review_soft_pending(focused_after_turn)
             if soft_pending is not None:
                 return soft_pending
@@ -436,11 +448,17 @@ class PlanningPhaseOrchestrator:
         if not focused_review_soft_pending_outcome(focused.outcome):
             return None
         run = self._store.load_run(self._run_id)
+        loop_id = resolve_focused_handoff_loop_id(
+            self._store,
+            self._run_id,
+            review_type="focused_plan",
+        )
         return self._result_from_run(
             run,
             ok=False,
             reason=focused_review_restore_pending_reason(focused.outcome),
             disposition=PhaseStepDisposition.INTERNAL_HANDOFF,
+            handoff_loop_id=loop_id,
         )
 
     def _result_from_run(
@@ -451,9 +469,9 @@ class PlanningPhaseOrchestrator:
         session_id: str | None = None,
         reason: str | None = None,
         disposition: PhaseStepDisposition | None = None,
+        handoff_loop_id: str | None = None,
     ) -> PlanningPhaseResult:
         metrics = _planning_metrics(run)
-        sessions = run.get("sessions") or {}
         if disposition is None:
             disposition = (
                 PhaseStepDisposition.ADVANCED
@@ -470,6 +488,7 @@ class PlanningPhaseOrchestrator:
             items_added=metrics["items_added"],
             reason=reason,
             disposition=disposition,
+            handoff_loop_id=handoff_loop_id,
         )
 
     def _append_event(self, event_type: str, **fields: Any) -> None:

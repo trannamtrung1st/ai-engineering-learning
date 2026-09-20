@@ -69,9 +69,13 @@ from top_down_planning.orchestrator.plan_amendment import (
     PlanAmendmentOrchestrator,
     PlanAmendmentResult,
 )
+from top_down_planning.orchestrator.focused_review_handoff_progress import (
+    focused_review_semantic_progress_token,
+)
 from top_down_planning.orchestrator.phase_step_disposition import (
     PhaseStepDisposition,
     disposition_from_phase_result,
+    phase_result_handoff_loop_id,
 )
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.domain.run_kind import (
@@ -143,23 +147,22 @@ def _target_reached(run: dict[str, Any], until: str) -> bool:
     raise ValueError(f"unsupported until target: {until!r}")
 
 
-def _durable_progress_key(
+def _step_progress_key(
     store: RunStore,
     run_id: str,
-    run: dict[str, Any],
+    *,
+    phase_result: Any,
+    disposition: PhaseStepDisposition,
 ) -> tuple[Any, ...]:
-    key: list[Any] = [
-        int(run.get("revision") or 0),
+    if disposition == PhaseStepDisposition.INTERNAL_HANDOFF:
+        loop_id = phase_result_handoff_loop_id(phase_result)
+        return focused_review_semantic_progress_token(store, run_id, loop_id)
+    run = store.load_run(run_id)
+    return (
         str(run.get("phase") or ""),
-        str(run.get("phase_action_id") or ""),
-    ]
-    phase = str(run.get("phase") or "")
-    if phase in {PLAN_VALIDATED, PRODUCTION}:
-        production = store.load_production(run_id)
-        key.append(int(production.get("revision") or 0))
-    elif phase == PLANNING:
-        key.append(int(store.load_plan_model(run_id).revision))
-    return tuple(key)
+        str(run.get("status") or ""),
+        disposition.value,
+    )
 
 
 def _finalize_run_step(
@@ -169,7 +172,7 @@ def _finalize_run_step(
     *,
     phase_result: Any,
 ) -> RunStepResult:
-    run = store.load_run(run_id)
+    disposition = disposition_from_phase_result(phase_result)
     return RunStepResult(
         phase=step.phase,
         ok=step.ok,
@@ -177,21 +180,27 @@ def _finalize_run_step(
         outcome=step.outcome,
         details=step.details,
         reason=step.reason,
-        disposition=disposition_from_phase_result(phase_result),
-        progress_key=_durable_progress_key(store, run_id, run),
+        disposition=disposition,
+        progress_key=_step_progress_key(
+            store,
+            run_id,
+            phase_result=phase_result,
+            disposition=disposition,
+        ),
     )
 
 
 def _internal_handoff_stalled(steps: list[RunStepResult]) -> bool:
-    if len(steps) < 2:
+    handoff_steps = [
+        step
+        for step in steps
+        if step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
+    ]
+    if len(handoff_steps) < 2:
         return False
-    previous = steps[-2]
-    current = steps[-1]
-    if current.disposition != PhaseStepDisposition.INTERNAL_HANDOFF:
-        return False
-    if previous.disposition != PhaseStepDisposition.INTERNAL_HANDOFF:
-        return False
-    return previous.progress_key == current.progress_key
+    current = handoff_steps[-1].progress_key
+    prior_keys = [step.progress_key for step in handoff_steps[:-1]]
+    return current in prior_keys
 
 
 def _continuation_ok_from_run(run: dict[str, Any]) -> bool:

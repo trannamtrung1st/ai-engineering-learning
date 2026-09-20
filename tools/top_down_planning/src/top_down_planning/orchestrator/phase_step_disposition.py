@@ -23,12 +23,23 @@ def disposition_from_phase_result(result: Any) -> PhaseStepDisposition:
     explicit = getattr(result, "disposition", None)
     if isinstance(explicit, PhaseStepDisposition):
         return explicit
-    if bool(getattr(result, "ok", False)):
-        return PhaseStepDisposition.ADVANCED
+    if explicit is None:
+        if bool(getattr(result, "ok", False)):
+            return PhaseStepDisposition.ADVANCED
+        return PhaseStepDisposition.STOPPED
     return PhaseStepDisposition.STOPPED
+
+
+def phase_result_handoff_loop_id(result: Any) -> str | None:
+    loop_id = getattr(result, "handoff_loop_id", None)
+    if loop_id is None:
+        return None
+    text = str(loop_id).strip()
+    return text or None
 
 
 __all__ = [
     "PhaseStepDisposition",
     "disposition_from_phase_result",
+    "phase_result_handoff_loop_id",
 ]

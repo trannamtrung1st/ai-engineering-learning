@@ -408,16 +408,21 @@ class ProductionAgentService:
             )
 
             updated = self._merge_batch(production, batch, disposition_records, outputs)
+            batch_event: dict[str, Any] = {
+                "type": "production_batch_recorded",
+                "run_id": self._run_id,
+                "batch_id": batch_id,
+                "plan_items": batch.plan_items,
+                "production_revision": updated["revision"],
+                "output_revision": updated["output_revision"],
+            }
+            run = self._store.load_run(self._run_id)
+            phase_action_id = str(run.get("phase_action_id") or "").strip()
+            if phase_action_id:
+                batch_event["phase_action_id"] = phase_action_id
             events = [
                 apply_request_audit_fields(
-                    {
-                        "type": "production_batch_recorded",
-                        "run_id": self._run_id,
-                        "batch_id": batch_id,
-                        "plan_items": batch.plan_items,
-                        "production_revision": updated["revision"],
-                        "output_revision": updated["output_revision"],
-                    },
+                    batch_event,
                     request_audit,
                 )
             ]

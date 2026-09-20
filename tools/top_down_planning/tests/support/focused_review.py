@@ -16,6 +16,7 @@ from tests.helpers import (
     bind_focused_review_freshness,
     create_run_kwargs,
     done_events,
+    ensure_plan_work_scope_contracts,
     plan_root_item,
     review_loop_dict_with_binding,
     save_review_payload,
@@ -272,11 +273,13 @@ def create_production_run_open_item_second(
         outcome="Second outcome.",
         kind="work",
     )
-    plan = Plan(
-        id=f"plan-{run_id}",
-        revision=0,
-        output_goal="Deliver the feature.",
-        items={"item-root": root, "item-first": first, "item-second": second},
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
+            id=f"plan-{run_id}",
+            revision=0,
+            output_goal="Deliver the feature.",
+            items={"item-root": root, "item-first": first, "item-second": second},
+        )
     )
     config = {
         "run": {

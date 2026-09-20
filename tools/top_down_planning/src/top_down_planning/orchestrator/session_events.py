@@ -42,7 +42,11 @@ from top_down_planning.persistence.session_bindings import (
 from core_tools.persistence import PersistenceError, RunNotFoundError
 from core_tools.provider import Provider
 from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted
-from core_tools.provider.errors import ProviderReplacementIdentityError, ProviderSessionError
+from core_tools.provider.errors import (
+    ProviderReplacementIdentityError,
+    ProviderSessionError,
+    ProviderSessionMismatchError,
+)
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
 DEFAULT_PROVIDER_LIFECYCLE_TIMEOUT_SECONDS = 2.0
@@ -1220,6 +1224,29 @@ def _complete_replacement_if_durable(
     )
 
 
+def resolve_provider_session_identity_chain(
+    provider: Provider,
+    session_id: str,
+) -> str:
+    """Follow provider-native alias chains to the durable session identity."""
+
+    current = provider.canonical_session_id(session_id)
+    seen: set[str] = set()
+    aliases = getattr(provider, "aliases", None)
+    while current not in seen:
+        seen.add(current)
+        if not isinstance(aliases, dict):
+            break
+        target = aliases.get(current)
+        if not target:
+            break
+        next_id = provider.canonical_session_id(str(target))
+        if next_id == current:
+            break
+        current = next_id
+    return current
+
+
 def sync_persisted_session_id(
     provider: Provider,
     store: RunStore,
@@ -1236,7 +1263,7 @@ def sync_persisted_session_id(
 
     if role not in _PRIMARY_ROLES:
         raise ValueError(f"unsupported primary session role: {role}")
-    resolved = provider.canonical_session_id(session_id)
+    resolved = resolve_provider_session_identity_chain(provider, session_id)
     if is_transient_provider_session_id(resolved):
         return resolved
     _assert_unique_durable_session_owner(
@@ -1271,11 +1298,15 @@ def sync_persisted_session_id(
         )
         return resolved
     if current and not is_transient_provider_session_id(current) and current != resolved:
-        raise ProviderSessionError(
-            "primary session id mismatch during resume: "
-            f"expected {current!r}, got {resolved!r}",
-            session_id=session_id,
-        )
+        chained = resolve_provider_session_identity_chain(provider, current)
+        if chained == resolved:
+            pass
+        else:
+            raise ProviderSessionMismatchError(
+                "primary session id mismatch during resume: "
+                f"expected {current!r}, got {resolved!r}",
+                session_id=session_id,
+            )
 
     commit_primary_provider_session_binding(
         store,

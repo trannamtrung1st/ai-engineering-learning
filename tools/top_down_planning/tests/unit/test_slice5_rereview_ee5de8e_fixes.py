@@ -741,7 +741,7 @@ def test_reviewer_release_rejects_other_loop_session(tmp_path: Path) -> None:
     assert rb in _active_ids(provider)
 
 
-def test_primary_sync_rejects_durable_identity_change(tmp_path: Path) -> None:
+def test_primary_sync_applies_proven_alias_chain_rotation(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T015115-015115"
     _create_run(store, run_id)
@@ -760,19 +760,14 @@ def test_primary_sync_rejects_durable_identity_change(tmp_path: Path) -> None:
         session_provider=provider,
     )
     provider.aliases[d1] = "cursor-durable-d2"
-    before = store.load_run(run_id)
-    before_caps = store.list_capabilities(run_id)
-    before_events = list(store.load_events(run_id))
-    with pytest.raises(ProviderSessionError):
-        sync_persisted_session_id(provider, store, run_id, d1, role="planner")
-    after = store.load_run(run_id)
-    assert after["sessions"] == before["sessions"]
-    assert after["revision"] == before["revision"]
-    assert store.list_capabilities(run_id) == before_caps
-    assert list(store.load_events(run_id)) == before_events
+    resolved = sync_persisted_session_id(provider, store, run_id, d1, role="planner")
+    assert resolved == "cursor-durable-d2"
+    binding = get_primary_binding(store.load_run(run_id), "planner")
+    assert binding is not None
+    assert binding.provider_session_id == "cursor-durable-d2"
 
 
-def test_producer_sync_rejects_durable_identity_change(tmp_path: Path) -> None:
+def test_producer_sync_applies_proven_alias_chain_rotation(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T015116-015116"
     _create_run(store, run_id)
@@ -791,11 +786,11 @@ def test_producer_sync_rejects_durable_identity_change(tmp_path: Path) -> None:
         session_provider=provider,
     )
     provider.aliases[d1] = "cursor-durable-d2"
-    with pytest.raises(ProviderSessionError):
-        sync_persisted_session_id(provider, store, run_id, d1, role="producer")
+    resolved = sync_persisted_session_id(provider, store, run_id, d1, role="producer")
+    assert resolved == "cursor-durable-d2"
     binding = get_primary_binding(store.load_run(run_id), "producer")
     assert binding is not None
-    assert binding.provider_session_id == d1
+    assert binding.provider_session_id == "cursor-durable-d2"
 
 
 def test_primary_sync_allows_pending_promotion_and_same_durable(tmp_path: Path) -> None:
