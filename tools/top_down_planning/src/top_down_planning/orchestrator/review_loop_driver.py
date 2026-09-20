@@ -875,9 +875,13 @@ class ReviewLoopDriver:
             and focused_review_owner_revision_cycle_charged(loop)
             and loop.active_stage != "finding_verification"
         ):
-            if self._owner_revision_complete(loop):
-                return self._prepare_recheck(loop), True
-            return loop, False
+            if focused_review_producer_owner_work_pending(
+                loop,
+                store=self._store,
+                run_id=self._run_id,
+            ):
+                return loop, False
+            return self._prepare_recheck(loop), True
 
         if loop.lifecycle_status == "revision_in_progress":
             if pending_unconsumed_revision_cycle_entry(loop):
