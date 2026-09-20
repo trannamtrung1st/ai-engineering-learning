@@ -230,6 +230,15 @@ class ProductionPhaseOrchestrator:
                 _persist_batch_agent_turns(self._store, self._run_id, 0)
                 continue
 
+            blocker = self._evaluate_blocker_report()
+            if blocker.disposition == "resolved":
+                self._persist_resolved_blocker(blocker)
+                continue
+            if blocker.disposition == "active_terminal":
+                return self._terminate_from_blocker_report(session_id)
+            if blocker.disposition == "active_wait":
+                return self._pause_for_focused_review_wait(session_id, blocker)
+
             self._capability_token = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
@@ -239,14 +248,6 @@ class ProductionPhaseOrchestrator:
                 current_token=self._capability_token,
             )
 
-            blocker = self._evaluate_blocker_report()
-            if blocker.disposition == "resolved":
-                self._persist_resolved_blocker(blocker)
-                continue
-            if blocker.disposition == "active_terminal":
-                return self._terminate_from_blocker_report(session_id)
-            if blocker.disposition == "active_wait":
-                return self._pause_for_focused_review_wait(session_id, blocker)
             if self._has_completion_claim():
                 return self._complete_production(session_id)
 
@@ -323,6 +324,14 @@ class ProductionPhaseOrchestrator:
                     replacement_token=turn_outcome.capability_token,
                     provider=self._provider,
                 )
+            blocker = self._evaluate_blocker_report()
+            if blocker.disposition == "resolved":
+                self._persist_resolved_blocker(blocker)
+            elif blocker.disposition == "active_terminal":
+                return self._terminate_from_blocker_report(session_id)
+            elif blocker.disposition == "active_wait":
+                return self._pause_for_focused_review_wait(session_id, blocker)
+
             self._capability_token = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
@@ -331,16 +340,9 @@ class ProductionPhaseOrchestrator:
                 role="producer",
                 current_token=self._capability_token,
             )
-            blocker = self._evaluate_blocker_report()
-            if blocker.disposition == "resolved":
-                self._persist_resolved_blocker(blocker)
-            elif blocker.disposition == "active_terminal":
-                return self._terminate_from_blocker_report(session_id)
             agent_turns = 1 if turn_outcome.domain_budget_committed else 0
             batch_agent_turns += agent_turns
             _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
-            if blocker.disposition == "active_wait":
-                return self._pause_for_focused_review_wait(session_id, blocker)
 
             if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0

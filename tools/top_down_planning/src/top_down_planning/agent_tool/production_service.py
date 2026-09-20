@@ -266,12 +266,15 @@ class ProductionAgentService:
                 revision_targets = focused_output_revision_target_ids(
                     reviews,
                     loop_id=focused_loop_id,
+                    store=self._store,
+                    run_id=self._run_id,
                 )
                 target_label = "open required focused-output findings"
                 if not revision_targets:
                     raise RequestError(
                         "evidence_revision during production requires an active "
-                        "focused_output review with status changes_requested"
+                        "focused_output review with open revision targets "
+                        "(changes_requested or owner revision in progress)"
                     )
                 if focused_loop_id is None:
                     raise RequestError(

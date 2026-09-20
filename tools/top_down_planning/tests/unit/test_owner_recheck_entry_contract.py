@@ -205,8 +205,10 @@ def test_focused_plan_artifact_without_owner_action_does_not_enter_verification_
         ),
     )
 
-    with pytest.raises(ProviderTurnError):
-        FocusedReviewOrchestrator(store, _RUN_ID, provider).run(loop_id)
+    result = FocusedReviewOrchestrator(store, _RUN_ID, provider).run(loop_id)
+
+    assert result.ok is False
+    assert "owner revision" in (result.reason or "").lower()
 
     review = store.load_review(_RUN_ID, loop_id)
     assert review["target_revision"] == 0

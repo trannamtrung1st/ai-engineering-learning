@@ -2174,6 +2174,11 @@ def find_pending_focused_review_loop_id(
 ) -> str | None:
     """Return a pending focused review loop that production should drive or resume."""
 
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        focused_review_owner_revision_in_progress,
+    )
+
     for review in store.list_reviews(run_id):
         if str(review.get("type") or "") != review_type:
             continue
@@ -2181,6 +2186,13 @@ def find_pending_focused_review_loop_id(
             continue
         loop_id = review.get("id")
         if loop_id is None:
+            continue
+        loop = ReviewLoop.from_dict(review)
+        if focused_review_owner_revision_in_progress(
+            loop,
+            store=store,
+            run_id=run_id,
+        ):
             continue
         return str(loop_id)
     return None
@@ -2198,7 +2210,28 @@ def run_pending_focused_review(
     Returns True when a focused review loop ran to completion.
     """
 
+    from top_down_planning.domain.production_blockers import evaluate_blocker_report
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        focused_review_owner_revision_in_progress,
+    )
     from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
+
+    production_payload: dict[str, Any] = {}
+    try:
+        loaded = store.load_production(run_id)
+        if isinstance(loaded, dict):
+            production_payload = loaded
+    except Exception:
+        production_payload = {}
+    reviews = [ReviewLoop.from_dict(raw) for raw in store.list_reviews(run_id)]
+    blocker = evaluate_blocker_report(
+        production_payload.get("blocker_report"),
+        reviews,
+        events=store.load_events(run_id),
+    )
+    if blocker.disposition == "active_terminal":
+        return False
 
     loop_id = find_pending_focused_review_loop_id(
         store,
@@ -2210,6 +2243,16 @@ def run_pending_focused_review(
 
     result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
     if not result.ok:
+        try:
+            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+        except Exception:
+            loop = None
+        if loop is not None and focused_review_owner_revision_in_progress(
+            loop,
+            store=store,
+            run_id=run_id,
+        ):
+            return False
         raise ReviewStateConflict(
             result.reason or f"{review_type} focused review did not complete successfully"
         )

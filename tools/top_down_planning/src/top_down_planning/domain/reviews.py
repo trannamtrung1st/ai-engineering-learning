@@ -1995,12 +1995,79 @@ def whole_output_revision_target_ids(reviews: list[dict[str, Any]]) -> set[str]:
     return evidence_revision_target_ids_for_loop(loop)
 
 
+def focused_review_owner_revision_in_progress(
+    loop: ReviewLoop,
+    *,
+    store: Any | None = None,
+    run_id: str | None = None,
+) -> bool:
+    """True when a focused loop is waiting on primary owner-revision work."""
+
+    if loop.type not in {"focused_plan", "focused_output"} or is_terminal_review_loop(
+        loop
+    ):
+        return False
+    if loop.status != "pending" or int(loop.revision_cycles) <= 0:
+        return False
+    if store is not None and run_id is not None:
+        from top_down_planning.orchestrator.provider_turns import owner_revision_complete
+
+        return not owner_revision_complete(store, run_id, loop.id)
+    if loop.active_stage == "finding_verification":
+        return False
+    return True
+
+
+def focused_output_owner_revision_in_progress(
+    loop: ReviewLoop,
+    *,
+    store: Any | None = None,
+    run_id: str | None = None,
+) -> bool:
+    """True when a focused-output loop is waiting on producer owner-revision work.
+
+    After ``enter_revision_cycle`` the loop ``status`` is ``pending`` while
+    ``revision_cycles`` records the charged owner cycle. That state must not
+    be confused with the initial reviewer ``pending`` state (``revision_cycles``
+    is zero and no reviewer decision has requested changes).
+    """
+
+    if loop.type != "focused_output":
+        return False
+    return focused_review_owner_revision_in_progress(
+        loop,
+        store=store,
+        run_id=run_id,
+    )
+
+
+def focused_output_evidence_revision_allowed(
+    loop: ReviewLoop,
+    *,
+    store: Any | None = None,
+    run_id: str | None = None,
+) -> bool:
+    """True when production may apply ``evidence_revision`` for this focused loop."""
+
+    if loop.type != "focused_output" or is_terminal_review_loop(loop):
+        return False
+    if loop.status == "changes_requested":
+        return True
+    return focused_output_owner_revision_in_progress(
+        loop,
+        store=store,
+        run_id=run_id,
+    )
+
+
 def focused_output_revision_target_ids(
     reviews: list[dict[str, Any]],
     *,
     loop_id: str | None = None,
+    store: Any | None = None,
+    run_id: str | None = None,
 ) -> set[str]:
-    """Plan item ids in scope for an active focused_output changes_requested loop."""
+    """Plan item ids in scope for focused-output evidence revision."""
 
     loop: ReviewLoop | None = None
     if loop_id is not None:
@@ -2017,7 +2084,11 @@ def focused_output_revision_target_ids(
 
     if loop is None:
         return set()
-    if loop.status != "changes_requested":
+    if not focused_output_evidence_revision_allowed(
+        loop,
+        store=store,
+        run_id=run_id,
+    ):
         return set()
 
     scope_items = {str(item_id) for item_id in (loop.scope.get("item_ids") or [])}

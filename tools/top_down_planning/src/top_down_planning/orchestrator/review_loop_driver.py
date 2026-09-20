@@ -376,9 +376,19 @@ class ReviewLoopDriver:
                         return resumed
                     loop = resumed
                     run = self._store.load_run(self._run_id)
-                    if str(run.get("status") or "") != "running":
-                        return self.result_from_run(run, ok=False, loop=loop)
-                    continue
+                if str(run.get("status") or "") != "running":
+                    return self.result_from_run(run, ok=False, loop=loop)
+                continue
+            if (
+                not self.profile.is_mandatory_gate
+                and loop.status == "pending"
+                and int(loop.revision_cycles) > 0
+                and not self._owner_revision_complete(loop)
+            ):
+                run = self._store.load_run(self._run_id)
+                if str(run.get("status") or "") != "running":
+                    return self.result_from_run(run, ok=False, loop=loop)
+                return self._focused_adapter().owner_revision_pending(loop)
             if loop.status == "pending":
                 consumed_persisted_decision = False
                 if self.profile.is_mandatory_gate:
