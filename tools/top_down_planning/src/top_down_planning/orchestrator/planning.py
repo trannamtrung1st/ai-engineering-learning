@@ -35,7 +35,7 @@ from top_down_planning.orchestrator.planner_session import (
 from top_down_planning.orchestrator.provider_turns import (
     FocusedReviewRestoreResult,
     build_planner_turn_recovery,
-    consume_provider_turn_with_session_recovery,
+    consume_planner_provider_turn_with_session_recovery,
     focused_review_restore_pending_reason,
     focused_review_soft_pending_outcome,
     restore_primary_capability_after_focused_review,
@@ -159,12 +159,11 @@ class PlanningPhaseOrchestrator:
                 self._store.load_plan_model(self._run_id).items.keys()
             )
             try:
-                turn_outcome = consume_provider_turn_with_session_recovery(
+                turn_outcome = consume_planner_provider_turn_with_session_recovery(
                     self._store,
                     self._run_id,
                     self._provider,
                     session_id,
-                    allowed_signals=_COMPLETION_SIGNALS,
                     recovery=build_planner_turn_recovery(
                         self._store,
                         self._run_id,

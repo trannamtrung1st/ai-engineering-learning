@@ -39,7 +39,9 @@ from tests.support.focused_review import (
     focused_owner_revision_pending_loop,
 )
 from tests.support.focused_until_completed import (
+    allow_owner_finding_action_recording,
     assert_focused_output_workflow_complete,
+    reset_owner_finding_action_recording_gate,
     script_focused_output_through_completion,
     script_focused_plan_through_plan_target,
     seed_focused_output_owner_pending_after_evidence,
@@ -51,9 +53,10 @@ from tests.support.stub_provider_factory import RotatingStubProviderFactory
 def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     tmp_path: Path,
 ) -> None:
+    reset_owner_finding_action_recording_gate()
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009001-009001"
-    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=False)
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
         store,
@@ -65,10 +68,22 @@ def test_until_completed_reaches_accepted_through_focused_output_owner_handoff(
     assert not loop_before.get("finding_actions")
     script_focused_output_through_completion(factory, store, run_id, loop_id)
 
-    continuation = RunEngine(
-        store,
-        create_provider=factory.create_provider,
-    ).continue_run(run_id, until="completed")
+    engine = RunEngine(store, create_provider=factory.create_provider)
+    first_step = engine.continue_run(run_id, single_step=True)
+    assert not store.load_review(run_id, loop_id).get("finding_actions")
+    assert any(
+        step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
+        for step in first_step.steps
+    )
+    handoff = next(
+        step
+        for step in first_step.steps
+        if step.disposition == PhaseStepDisposition.INTERNAL_HANDOFF
+    )
+    assert handoff.progress_key[0] == loop_id
+
+    allow_owner_finding_action_recording()
+    continuation = engine.continue_run(run_id, until="completed")
 
     assert continuation.ok is True
     assert continuation.target_reached is True
@@ -145,7 +160,7 @@ def test_until_completed_recovers_recoverably_incomplete_focused_output_to_compl
 def test_until_plan_continues_focused_plan_owner_handoff(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009010-009010"
-    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=False)
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     loop_id = seed_focused_plan_owner_pending(store, run_id=run_id)
     assert not store.load_review(run_id, loop_id).get("finding_actions")
     script_focused_plan_through_plan_target(factory, store, run_id, loop_id)
@@ -268,9 +283,11 @@ def test_until_completed_fails_when_internal_handoff_makes_no_progress(
 def test_cli_resume_until_completed_exits_zero_with_target_reached(
     tmp_path: Path,
 ) -> None:
+    reset_owner_finding_action_recording_gate()
+    allow_owner_finding_action_recording()
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009004-009004"
-    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=False)
+    factory = RotatingStubProviderFactory(store, run_id, strict_session_scripts=True)
     seed_provider = StubProvider()
     loop_id = seed_focused_output_owner_pending_after_evidence(
         store,

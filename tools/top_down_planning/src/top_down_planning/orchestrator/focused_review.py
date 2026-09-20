@@ -273,6 +273,12 @@ class FocusedReviewAdapter:
         model: str | None,
         review_package: dict[str, Any],
     ) -> Any:
+        def build_review_package() -> dict[str, Any]:
+            run = self._store.load_run(self._run_id)
+            config = self._store.load_resolved_config(self._run_id)
+            loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+            return self.build_review_package(run, config, loop)
+
         return build_reviewer_turn_recovery(
             self._store,
             self._run_id,
@@ -281,7 +287,7 @@ class FocusedReviewAdapter:
             expected_next_action="continue reviewer turn",
             append_event=append_event,
             model=model,
-            review_package=review_package,
+            build_review_package=build_review_package,
         )
 
     def after_owner_turn(self, session_id: str) -> None:

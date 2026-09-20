@@ -1815,10 +1815,9 @@ def build_planner_turn_recovery(
     model: str | None,
     activity: str = "initial_plan",
 ) -> PrimarySessionRecoverySpec:
-    config = store.load_resolved_config(run_id)
-    plan = store.load_plan_model(run_id)
-
     def build_manifest(phase_action_id: str) -> dict[str, Any]:
+        config = store.load_resolved_config(run_id)
+        plan = store.load_plan_model(run_id)
         return build_planner_recovery_manifest(
             store,
             run_id,
@@ -2117,6 +2116,14 @@ class StoreBoundaryProbe:
         from top_down_planning.persistence.file_store import FileRunStore
 
         store = FileRunStore(Path(self.store_root))
+        if self.kind == "planner":
+            if focused_review_request_count(store, self.run_id) > self.baseline_focused_reviews:
+                from top_down_planning.orchestrator.planner_session import (
+                    PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL,
+                )
+
+                return PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL
+            return None
         if self.kind in {"producer", "producer_batch"}:
             if production_batch_count(store, self.run_id) > self.baseline_batches:
                 return PRODUCER_BATCH_COMPLETE_SIGNAL
@@ -2214,6 +2221,20 @@ def build_owner_revision_boundary_observer(
     )
 
 
+def build_planner_turn_boundary_observer(
+    store: RunStore,
+    run_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that closes planner turns when a focused-plan review is requested."""
+
+    return StoreBoundaryProbe(
+        kind="planner",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        baseline_focused_reviews=focused_review_request_count(store, run_id),
+    )
+
+
 def build_producer_turn_boundary_observer(
     store: RunStore,
     run_id: str,
@@ -2281,14 +2302,20 @@ def consume_planner_provider_turn_with_session_recovery(
     *,
     recovery: PrimarySessionRecoverySpec,
 ) -> ProviderTurnOutcome:
-    """Drain a planner primary turn; same store boundaries as production."""
+    """Drain a planner primary turn; close on focused-plan review request."""
 
-    return consume_producer_provider_turn_with_session_recovery(
+    from top_down_planning.orchestrator.planner_session import (
+        PLANNER_CANDIDATE_READY_SIGNAL,
+    )
+
+    return _consume_provider_turn_with_session_recovery(
         store,
         run_id,
         provider,
         session_id,
+        allowed_signals=frozenset({PLANNER_CANDIDATE_READY_SIGNAL}),
         recovery=recovery,
+        on_boundary=build_planner_turn_boundary_observer(store, run_id),
     )
 
 
@@ -2371,18 +2398,26 @@ def build_reviewer_turn_recovery(
     expected_next_action: str,
     append_event: Any,
     model: str | None,
-    review_package: dict[str, Any],
+    review_package: dict[str, Any] | None = None,
+    build_review_package: Callable[[], dict[str, Any]] | None = None,
 ) -> ReviewerSessionRecoverySpec:
-    config = store.load_resolved_config(run_id)
-    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    if build_review_package is None and review_package is None:
+        raise ValueError("build_review_package or review_package is required")
 
     def build_manifest(phase_action_id: str) -> dict[str, Any]:
+        config = store.load_resolved_config(run_id)
+        loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+        if build_review_package is not None:
+            package = build_review_package()
+        else:
+            package = review_package
+        assert package is not None
         return build_reviewer_recovery_manifest(
             store,
             run_id,
             config,
             loop,
-            review_package=review_package,
+            review_package=package,
             phase_action_id=phase_action_id,
             expected_next_action=expected_next_action,
         )

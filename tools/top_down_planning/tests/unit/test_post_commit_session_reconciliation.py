@@ -22,7 +22,6 @@ from top_down_planning.orchestrator.provider_turns import (
     build_producer_turn_recovery,
     build_reviewer_turn_recovery,
     consume_owner_finding_action_turn_with_session_recovery,
-    consume_planner_provider_turn_with_session_recovery,
     consume_producer_provider_turn_with_session_recovery,
     consume_reviewer_provider_turn_with_session_recovery,
     build_planner_turn_recovery,
@@ -650,7 +649,13 @@ def test_reviewer_turn_reconciles_terminal_respond_when_session_sync_mismatches(
                 expected_next_action="continue reviewer turn",
                 append_event=lambda *_args, **_kwargs: None,
                 model=None,
-                review_package=package,
+                build_review_package=lambda: build_focused_review_package(
+                    run_id,
+                    store.load_run(run_id),
+                    store.load_resolved_config(run_id),
+                    ReviewLoop.from_dict(store.load_review(run_id, loop_id)),
+                    plan=store.load_plan_model(run_id),
+                ),
             ),
         )
 
@@ -672,32 +677,14 @@ def test_reviewer_turn_reconciles_terminal_respond_when_session_sync_mismatches(
 def test_planner_turn_reconciles_after_focused_plan_request_when_session_sync_mismatches(
     tmp_path: Path,
 ) -> None:
+    from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
+
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T010307-010307"
     provider = StubProvider()
     create_planning_run(store, run_id=run_id)
-    from tests.helpers import bind_primary_session_for_tests
-
-    provider.script_turn(done_events(text="planner bootstrap"))
-    planner_session = provider.start_primary_session(
-        "planner",
-        {"run_id": run_id, "phase": PLANNING},
-    )
-    list(provider.stream_events(planner_session))
-    run = store.load_run(run_id)
-    config = store.load_resolved_config(run_id)
-    run = dict(run)
-    run["revision"] = int(run["revision"]) + 1
-    run["sessions"] = bind_primary_session_for_tests(
-        run["sessions"],
-        role="planner",
-        provider_session_id=planner_session,
-        config=config,
-        workspace=store.root,
-    )
-    store.save_run(run_id, run, int(run["revision"]) - 1)
-    phase_action_id = ensure_phase_action_id(store, run_id)
     requests_before = focused_review_request_count(store, run_id)
+    loop_id = "review-focused-plan-01"
 
     def _request_focused_plan_review() -> None:
         request_focused_review(
@@ -716,37 +703,7 @@ def test_planner_turn_reconciles_after_focused_plan_request_when_session_sync_mi
         mutate_store=_request_focused_plan_review,
     )
     provider.script_turn(done_events(text="replacement session bootstrap"))
-    provider.resume_primary_session(
-        planner_session,
-        {"action": "continue", "phase": PLANNING},
-        role="planner",
-    )
-
-    with patch(
-        "top_down_planning.orchestrator.provider_turns.sync_persisted_session_id",
-        side_effect=sync_failure_after_domain_commit(store, run_id, phase_action_id),
-    ):
-        outcome = consume_planner_provider_turn_with_session_recovery(
-            store,
-            run_id,
-            provider,
-            planner_session,
-            recovery=build_planner_turn_recovery(
-                store,
-                run_id,
-                phase=PLANNING,
-                expected_next_action="continue planning",
-                append_event=lambda *_args, **_kwargs: None,
-                model=None,
-            ),
-        )
-
-    assert outcome.signal == PLANNER_FOCUSED_REVIEW_REQUESTED_SIGNAL
-    assert outcome.replaced is True
-    assert focused_review_request_count(store, run_id) == requests_before + 1
-    loop_id = "review-focused-plan-01"
-    follow_provider = StubProvider()
-    follow_provider.script_turn(
+    provider.script_turn(
         done_events(text="reviewer approve"),
         mutate_store=respond_review(
             store,
@@ -761,11 +718,59 @@ def test_planner_turn_reconciles_after_focused_plan_request_when_session_sync_mi
             loop_id=loop_id,
         ),
     )
-    focused_result = FocusedReviewOrchestrator(store, run_id, follow_provider).run(
-        loop_id
+    provider.script_turn(
+        done_events(signal="candidate_plan_ready", text="planning complete"),
     )
-    assert focused_result.ok is True
+
+    from top_down_planning.orchestrator.phase_action_domain_audit import (
+        phase_action_domain_proven_by_audit,
+    )
+    from top_down_planning.orchestrator.session_events import sync_persisted_session_id
+
+    post_commit_sync_failures_remaining = 1
+
+    def _sync_after_focused_plan_request(
+        bound_provider,
+        bound_store,
+        bound_run_id,
+        session_id,
+        *,
+        role: str,
+    ) -> str:
+        nonlocal post_commit_sync_failures_remaining
+        run_row = bound_store.load_run(bound_run_id)
+        phase_action_id = str(run_row.get("phase_action_id") or "").strip()
+        if (
+            post_commit_sync_failures_remaining > 0
+            and phase_action_id
+            and phase_action_domain_proven_by_audit(
+                bound_store,
+                bound_run_id,
+                phase_action_id,
+            )
+        ):
+            post_commit_sync_failures_remaining -= 1
+            raise ProviderSessionMismatchError(
+                "simulated post-commit session sync failure",
+                session_id=session_id,
+            )
+        return sync_persisted_session_id(
+            bound_provider,
+            bound_store,
+            bound_run_id,
+            session_id,
+            role=role,
+        )
+
+    with patch(
+        "top_down_planning.orchestrator.provider_turns.sync_persisted_session_id",
+        side_effect=_sync_after_focused_plan_request,
+    ):
+        result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
     assert focused_review_request_count(store, run_id) == requests_before + 1
+    assert focused_review_request_count(store, run_id) == 1
 
 
 def test_reviewer_turn_replaces_session_when_sync_mismatches_after_nonterminal_respond(
@@ -776,6 +781,7 @@ def test_reviewer_turn_replaces_session_when_sync_mismatches_after_nonterminal_r
         mandatory_verification_needs_revision_request,
     )
     from top_down_planning.orchestrator.whole_output_review import (
+        OutputWholeReviewAdapter,
         build_whole_output_review_package,
     )
     from top_down_planning.orchestrator.reviewer_session import reviewer_loop_binding
@@ -783,6 +789,7 @@ def test_reviewer_turn_replaces_session_when_sync_mismatches_after_nonterminal_r
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T010308-010308"
     loop_id = "review-whole-output-01"
+    adapter = OutputWholeReviewAdapter(store, run_id)
     provider = StubProvider()
     create_run_at_whole_output_review(store, run_id=run_id, provider=provider)
     finding_set_id = "review-whole-output-01-fs-01"
@@ -886,15 +893,12 @@ def test_reviewer_turn_replaces_session_when_sync_mismatches_after_nonterminal_r
             provider,
             session_id,
             loop_id=loop_id,
-            recovery=build_reviewer_turn_recovery(
-                store,
-                run_id,
-                loop_id=loop_id,
-                phase=WHOLE_OUTPUT_REVIEW,
-                expected_next_action="continue reviewer turn",
-                append_event=lambda *_args, **_kwargs: None,
-                model=None,
-                review_package=package,
+            recovery=adapter.build_reviewer_turn_recovery(
+                loop_id,
+                WHOLE_OUTPUT_REVIEW,
+                lambda *_args, **_kwargs: None,
+                None,
+                package,
             ),
         )
 
@@ -931,11 +935,12 @@ def test_mandatory_whole_output_driver_recovers_after_nonterminal_reviewer_misma
     from top_down_planning.orchestrator.whole_output_review import (
         OutputWholeReviewAdapter,
     )
+    from tests.support.manifest_capturing_stub import ManifestCapturingStubProvider
 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T010309-010309"
     loop_id = "review-whole-output-01"
-    provider = StubProvider()
+    provider = ManifestCapturingStubProvider()
     create_run_at_whole_output_review(store, run_id=run_id, provider=provider)
     loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
     target_revision = int(loop.target_revision)
@@ -1055,3 +1060,11 @@ def test_mandatory_whole_output_driver_recovers_after_nonterminal_reviewer_misma
     if old_sessions:
         assert binding_after.provider_session_id not in old_sessions
     assert str(loop_after.status) == "approved"
+    replacement_manifests = provider.reviewer_session_manifests
+    assert len(replacement_manifests) >= 2
+    post_response_manifest = replacement_manifests[-1]
+    active_stage = str(
+        post_response_manifest.get("active_review_loop", {}).get("active_stage") or ""
+    )
+    assert active_stage == "scope_review"
+    assert active_stage != "initial_review"

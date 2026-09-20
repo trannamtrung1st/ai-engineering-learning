@@ -3228,13 +3228,12 @@ class CursorProvider:
 
                 yield from _observe()
             finally:
-                if teardown_deadline[0] is None:
-                    teardown_deadline[0] = (
-                        time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                    )
+                final_cleanup_deadline = CursorProvider._turn_tree_cleanup_deadline()
                 context = self._get_collect_context()
                 wait_session_id = context[0] if context is not None else None
-                remaining = max(0.0, teardown_deadline[0] - time.monotonic())
+                remaining = CursorProvider._remaining_turn_tree_cleanup_seconds(
+                    final_cleanup_deadline
+                )
                 self._wait_turn_enrichment(
                     timeout=remaining,
                     session_id=wait_session_id,
@@ -3253,8 +3252,8 @@ class CursorProvider:
                         if tracked is not None:
                             self._refresh_tracked_members(
                                 tracked,
-                                timeout=max(
-                                    0.0, teardown_deadline[0] - time.monotonic()
+                                timeout=CursorProvider._remaining_turn_tree_cleanup_seconds(
+                                    final_cleanup_deadline
                                 ),
                             )
                         tree_clean = terminate_process_tree(
@@ -3266,8 +3265,8 @@ class CursorProvider:
                                 if tracked is not None and tracked.member_identities is not None
                                 else None
                             ),
-                            timeout=max(
-                                0.0, teardown_deadline[0] - time.monotonic()
+                            timeout=CursorProvider._remaining_turn_tree_cleanup_seconds(
+                                final_cleanup_deadline
                             ),
                         )
                         if tree_clean:

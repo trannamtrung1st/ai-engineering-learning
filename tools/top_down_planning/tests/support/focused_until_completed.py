@@ -32,6 +32,20 @@ from tests.support.focused_review import (
 )
 from tests.support.stub_provider_factory import RotatingStubProviderFactory
 
+_OWNER_FINDING_ACTION_RECORDING_ALLOWED = False
+
+
+def allow_owner_finding_action_recording() -> None:
+    """Enable owner finding-action mutation after an internal handoff is observed."""
+
+    global _OWNER_FINDING_ACTION_RECORDING_ALLOWED
+    _OWNER_FINDING_ACTION_RECORDING_ALLOWED = True
+
+
+def reset_owner_finding_action_recording_gate() -> None:
+    global _OWNER_FINDING_ACTION_RECORDING_ALLOWED
+    _OWNER_FINDING_ACTION_RECORDING_ALLOWED = False
+
 
 def seed_focused_output_owner_pending_after_evidence(
     store: FileRunStore,
@@ -127,6 +141,8 @@ def script_focused_output_through_completion(
     }
 
     def _record_owner_actions() -> None:
+        if not _OWNER_FINDING_ACTION_RECORDING_ALLOWED:
+            return
         if state["finding_actions"]:
             return
         loop_payload = store.load_review(run_id, loop_id)
@@ -287,32 +303,13 @@ def script_focused_output_through_completion(
 
     factory.script_turn(
         done_events(text="production primary resume"),
-        mutate_store=_record_owner_actions,
         expected_role="producer",
         expected_kind="primary",
     )
     factory.script_turn(
         done_events(text="owner session rotate"),
-        mutate_store=_record_owner_actions,
         expected_role="producer",
         expected_kind="primary",
-    )
-    factory.script_turn(
-        done_events(text="producer owner revision turn"),
-        mutate_store=_record_owner_actions,
-        expected_role="producer",
-        expected_kind="primary",
-    )
-    factory.script_turn(
-        done_events(text="recheck delivery without respond"),
-        expected_role="reviewer",
-        expected_kind="reviewer",
-    )
-    factory.script_turn(
-        done_events(text="reviewer verify"),
-        mutate_store=_verify_focused_review,
-        expected_role="reviewer",
-        expected_kind="reviewer",
     )
     factory.allow_autofill_after_expected_scripts()
     whole_output_gate_state = {"initial": False}
@@ -332,7 +329,8 @@ def script_focused_output_through_completion(
         run = store.load_run(run_id)
         phase = str(run.get("phase") or "")
         if phase == PRODUCTION:
-            _record_owner_actions()
+            if not state["finding_actions"]:
+                _record_owner_actions()
             if not state["finding_actions"]:
                 return
             if not state["verified"]:
