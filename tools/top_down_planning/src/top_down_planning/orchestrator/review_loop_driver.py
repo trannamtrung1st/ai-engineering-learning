@@ -881,6 +881,8 @@ class ReviewLoopDriver:
             ):
                 return loop, False
             if loop.active_stage == "finding_verification":
+                if self._owner_work_complete_for_recheck(loop):
+                    return self._prepare_recheck(loop), True
                 return loop, False
             return self._prepare_recheck(loop), True
 

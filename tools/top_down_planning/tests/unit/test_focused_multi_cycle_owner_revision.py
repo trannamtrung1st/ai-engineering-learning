@@ -174,6 +174,84 @@ def test_cycle2_restart_before_owner_work_resumes_owner_not_reviewer(
     )
 
 
+def test_cycle2_stale_verification_stage_rebases_target_when_fix_complete(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000807-000807"
+    create_planning_run(store, run_id)
+    loop_id, target_revision = _charge_focused_plan_owner_cycle(store, run_id)
+    apply_plan(
+        store,
+        run_id,
+        base_revision=target_revision,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-api",
+                "patch": {"outcome": "REST API endpoints exist."},
+            }
+        ],
+        phase=PLANNING,
+    )()
+    plan_revision = int(store.load_plan_model(run_id).revision)
+    assert plan_revision == target_revision + 1
+    _append_owner_action(
+        store,
+        run_id,
+        loop_id,
+        action="fix",
+        owner_revision_cycle=1,
+        artifact_revision=plan_revision,
+    )
+    _append_owner_action(
+        store,
+        run_id,
+        loop_id,
+        action="fix",
+        owner_revision_cycle=2,
+        artifact_revision=plan_revision,
+    )
+    loop_payload = dict(store.load_review(run_id, loop_id))
+    loop_payload["revision_cycles"] = 2
+    loop_payload["active_stage"] = "finding_verification"
+    loop_payload["status"] = "pending"
+    loop_payload["target_revision"] = target_revision
+    save_review_payload(store, run_id, loop_payload)
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert int(loop.target_revision) == target_revision
+    assert focused_review_producer_owner_work_pending(
+        loop,
+        store=store,
+        run_id=run_id,
+    ) is False
+    assert verification_required_for_loop(loop) is True
+
+    reviewer_session_id = reviewer_loop_provider_session_id(loop) or "reviewer-sess"
+    provider.script_session_turn(
+        reviewer_session_id,
+        done_events(text="verification recheck delivery"),
+    )
+    adapter = FocusedReviewAdapter(store, run_id)
+    adapter.bind_loop(loop)
+    driver = ReviewLoopDriver(store, run_id, provider, adapter)
+    adapter.bind_driver(driver)
+    normalized, reviewer_turn_delivered = driver._normalize_loop_for_resume(loop)
+
+    assert reviewer_turn_delivered is True
+    review = store.load_review(run_id, loop_id)
+    assert int(review["target_revision"]) == plan_revision
+    assert review["active_stage"] == "finding_verification"
+    assert any(
+        event.get("type") == "focused_review_recheck_requested"
+        and event.get("loop_id") == loop_id
+        for event in store.load_events(run_id)
+    )
+    assert normalized.active_stage == "finding_verification"
+
+
 def test_cycle2_stale_verification_stage_still_blocks_premature_recheck(
     tmp_path: Path,
 ) -> None:
